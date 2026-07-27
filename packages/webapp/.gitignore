@@ -1,3 +1,7 @@
+# Env files
+.env
+.env.vercel
+
 # Don't check auto-generated stuff into git
 coverage
 build

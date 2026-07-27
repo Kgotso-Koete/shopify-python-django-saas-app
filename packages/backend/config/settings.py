@@ -661,6 +661,7 @@ TASK_BACKEND = env("TASK_BACKEND", default="lambda")
 
 # Celery Configuration
 CELERY_RESULT_BACKEND = "django-db"
+CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
 CELERY_BROKER_URL = f"{env('REDIS_CONNECTION')}/0"
 CELERY_BROKER_TRANSPORT_OPTIONS = {
     "visibility_timeout": 3600,

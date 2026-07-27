@@ -4,6 +4,7 @@ __pycache__/
 db.sqlite3
 .pytest_cache/
 .env
+.env.render
 .ruff_cache
 .venv/
 docs/

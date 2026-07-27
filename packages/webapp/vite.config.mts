@@ -26,7 +26,7 @@ export default defineConfig(({ mode }): UserConfig => {
   const envWithProcessPrefix = Object.entries(env).reduce((prev, [key, val]) => {
     return {
       ...prev,
-      ['process.env.' + key]: `"${val}"`,
+      ['process.env.' + key]: JSON.stringify(val),
     };
   }, {});
 
