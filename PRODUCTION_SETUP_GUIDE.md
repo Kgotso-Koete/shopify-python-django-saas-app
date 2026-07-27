@@ -169,6 +169,12 @@ Since Render doesn't offer free worker services, background tasks will fail to p
 
 > **💡 Pro Tip:** To prevent your Render Free Web Service from going to sleep, sign up for a free uptime monitoring service like [cron-job.org](https://cron-job.org/) and set it to ping your backend URL `https://saas-backend.onrender.com/api/health/` every 10 minutes.
 
+**Run database migrations:**
+
+```bash
+docker-compose -f docker-compose.yml run --no-deps --rm backend bash -c "DATABASE_URL='postgresql://<your-database-url>' DJANGO_SECRET_KEY='dummy-key-for-migrations' HASHID_FIELD_SALT='dummy-salt' REDIS_CONNECTION='redis://localhost:6379' DJANGO_DEBUG='False' ./scripts/runtime/run_migrations.sh"
+```
+
 ---
 
 ### Step 6: Frontend - Vercel or Render Static Sites (Free)
