@@ -216,6 +216,169 @@ Restart your Render backend service. You now have a fully functioning, 100% free
 
 ---
 
+### Step 8: Background Tasks — Making Celery Work on the Free Tier
+
+The codebase supports two task backends (`TASK_BACKEND` setting): `lambda` (default, requires AWS EventBridge) and `celery` (built for exactly this scenario — see `packages/backend/common/task_backends/__init__.py`). On Render's free tier there is no persistent worker process available, so background tasks currently fail silently: the `lambda` backend tries to call AWS and errors/no-ops outside AWS.
+
+**8.1 — Fix on-demand tasks (zero cost, no new service needed)**
+
+Add these two environment variables to your existing `saas-backend` Render web service (the same one from Step 5):
+
+| Variable                   | Value    |
+| -------------------------- | -------- |
+| `TASK_BACKEND`             | `celery` |
+| `CELERY_TASK_ALWAYS_EAGER` | `True`   |
+
+With `CELERY_TASK_ALWAYS_EAGER=True`, any task sent via `send_task()`/`.delay()` (e.g. a user requesting a data export) runs **synchronously, inline, in the same request** — no broker connection or worker process required. This is a pure config change; no code needs to change.
+
+**8.2 — Understand what this does _not_ fix**
+
+`CELERY_BEAT_SCHEDULE` entries — the hourly backup-schedule check, the daily backup cleanup, and (once Contentful is enabled in Step 11) the 5-minute Contentful sync — rely on **Celery Beat**, a scheduler that needs a continuously running process. There is no free way to run a continuous process on Render, so none of these will fire automatically on the free stack. On-demand actions (anything a user triggers directly) will work; anything meant to happen "every N minutes/hours" won't, until you add a real worker.
+
+**8.3 — Your options if you need real scheduling later**
+
+- **Stay free:** move the whole stack to an Oracle Cloud Always Free VPS (see the section at the bottom of this doc) and run `docker-compose.prod.yml` as-is — real Celery worker + Beat, no compromises.
+- **Spend a little:** add just the `celery-beat` service (and `celery-worker` if you have real async work) from `render.yaml` on Render's Starter plan (~$7/mo each).
+- **Stay manual:** trigger the periodic jobs yourself from Django admin or `python manage.py <command>` when needed, and skip auto-scheduling for now.
+
+---
+
+### Step 9: AI Integration — OpenAI (Optional)
+
+OpenAI powers a few optional features in the boilerplate: the demo "generate SaaS ideas" form, AI-assisted translations, and the MCP-based AI agent/chat. None of these are required for the app to run — leave `OPENAI_API_KEY` unset and they simply stay disabled.
+
+**Cost reality check:** the OpenAI API is pay-as-you-go, not free. Reports on whether new accounts still get an automatic trial credit conflict as of mid-2026 — some say a small ($5) credit still appears automatically, others say it's been discontinued and requires a manual top-up. Don't rely on getting one; budget for OpenAI's $5 minimum prepaid balance if you want to test this feature.
+
+1. Go to [platform.openai.com/api-keys](https://platform.openai.com/api-keys) and create a key.
+2. Add a billing method (min. $5 prepaid) — the API rejects requests without one.
+3. Add to your Render backend env vars:
+
+   | Variable         | Value                                        |
+   | ---------------- | -------------------------------------------- |
+   | `OPENAI_API_KEY` | `sk-...`                                     |
+   | `OPENAI_MODEL`   | e.g. `gpt-4o-mini` (cheapest capable option) |
+
+---
+
+### Step 10: Payments — Stripe (Test/Dev Mode)
+
+Test mode is genuinely free — no live charges, no payout/country restrictions, since no real money moves. This is the right choice for validating the repo before you need real payouts.
+
+1. In the [Stripe Dashboard](https://dashboard.stripe.com/apikeys), make sure the **Test mode** toggle (top right) is on, then go to Developers → API keys and copy the Secret key (`sk_test_...`).
+2. Add to your Render backend env vars:
+
+   | Variable                 | Value         |
+   | ------------------------ | ------------- |
+   | `STRIPE_TEST_SECRET_KEY` | `sk_test_...` |
+   | `STRIPE_LIVE_MODE`       | `False`       |
+   | `STRIPE_CHECKS_ENABLED`  | `True`        |
+
+3. Create the Stripe products/prices. The repo already has a management command that reads your plan definitions (`free_plan`, `monthly_plan`, `yearly_plan` — see `packages/backend/apps/finances/constants.py`) and creates matching Stripe Products and Prices via the API. Run it once from the Render Shell tab:
+
+   ```bash
+   python manage.py init_subscriptions
+   ```
+
+4. Set up the webhook: Dashboard → Developers → Webhooks → Add endpoint.
+   - **URL:** `https://<your-backend>.onrender.com/api/finances/stripe/webhook/` (this is dj-stripe's default path — confirmed from `apps/finances/urls.py`, which mounts `djstripe.urls` at `api/finances/stripe/`)
+   - Select **all events** ("Select all") — this is a test-mode sandbox, so there's no cost or risk to over-selecting, and it saves you from guessing which categories the app's handlers in `apps/finances/webhooks.py` actually need (currently a mix of Subscription Schedule, Invoice, Payment Method, and Charge/Refund events).
+   - If you're on Stripe's newer wizard (Select events → Choose destination type → Configure), pick **Webhook endpoint** as the destination type on the next step, then enter the URL.
+   - If asked to choose a payload format, pick **Snapshot** (the classic full-payload format), not **Thin payload**. dj-stripe 2.8.1 (the version this app pins) reads event fields directly off the payload it receives — it has no code to fetch an object separately, which is what thin events would require. Thin payload will silently break webhook processing.
+   - Copy the **Signing secret** (`whsec_...`) and add it as `DJSTRIPE_WEBHOOK_SECRET` on the backend.
+
+5. Frontend: add `VITE_STRIPE_PUBLISHABLE_KEY=pk_test_...` to your Vercel/Render Static Site env vars. This one is a publishable key — safe to expose in the browser bundle.
+
+---
+
+### Step 11: CMS — Contentful (Free Tier, incl. Privacy Policy & Terms)
+
+Contentful's free (Community) plan covers this easily — one space, generous API limits. The privacy policy and terms & conditions pages are already wired up in the webapp; they just need the content type and content created in Contentful.
+
+**11.1 — Create a space and get your tokens**
+
+You'll need two different token types — mixing them up is the most common mistake:
+
+- **Content Delivery token** (read-only, safe to expose publicly, used by the live webapp): in your space, go to Settings → API keys → Add API key (or use the default one Contentful creates) → copy the **Space ID** and the **"Content Delivery API - access token"**. Use Delivery, not Preview — the app only ever queries published content and has no preview-mode code path at all.
+- **Content Management token** (write access, used once, locally, for the migration script): this has moved in Contentful's UI — it's no longer nested under the per-space API keys page. Go to the account-level **Settings (gear icon, top right) → CMA tokens** → **Create personal access token** → name it → **Generate**. Copy it immediately (starts with `CFPAT-`) — it's shown once only. **Important:** this token is account-wide, not auto-scoped to your space — if the migration script later fails with an access error, come back here and check for an **Authorize** button next to your token for this specific space.
+
+**11.2 — Create the content model**
+
+The repo's migration script creates _both_ content types you need in one run — `appConfig` (with `privacyPolicy` and `termsAndConditions` fields) and `demoItem`:
+
+```bash
+cd packages/contentful
+cp .env.shared .env
+# edit .env with:
+#   CONTENTFUL_SPACE_ID=<space id>
+#   CONTENTFUL_ACCESS_TOKEN=<the MANAGEMENT token, starts with CFPAT- — not the delivery one>
+#   CONTENTFUL_ENVIRONMENT=master
+node scripts/run_migrations.js
+```
+
+This runs entirely on your own machine and only talks to Contentful's API — it doesn't touch Render, Docker Compose, or your Django backend at all, so nothing else needs to be running for it. A successful run ends with `Migration Done!`.
+
+> **Troubleshooting — "The provided space does not exist or you do not have access":** Contentful reached your request and rejected it on auth grounds, not a script bug. Check, in order: (1) your CMA token is authorized for this specific space (see 11.1), (2) `CONTENTFUL_SPACE_ID` matches exactly what's in your space's URL — `app.contentful.com/spaces/<this part>/home`, (3) `CONTENTFUL_ACCESS_TOKEN` actually starts with `CFPAT-` and isn't a Delivery/Preview token, (4) you didn't leave a `<CHANGE_ME>`-style placeholder from `.env.shared` uncommented in `.env`.
+
+**11.3 — Add the privacy policy and terms content**
+
+In the Contentful web app: Content → Add entry → **App Config**, then fill in:
+
+- **Name:** `Global App Config` (this exact value — it's a locked dropdown field)
+- **Privacy policy:** your markdown text
+- **Terms and Conditions:** your markdown text
+
+Click **Publish** (top right) — not just Save. Unpublished entries never reach the Content Delivery API your frontend queries.
+
+> **Troubleshooting — "Validation failed" on publish, with no specifics:** Contentful's toast message is generic; the actual reason is shown as a small red note directly under the specific failing field once you look at the entry. Most likely culprits: the Name field isn't exactly `Global App Config` (typos, casing, trailing spaces), or one of the three required fields (name / privacyPolicy / termsAndConditions) is still empty.
+
+**11.4 — Wire up the frontend**
+
+The webapp's Apollo Client queries Contentful's GraphQL Content Delivery API (`graphql.contentful.com`) **directly from the browser** — it doesn't go through the Django backend at all (confirmed in `packages/webapp-libs/webapp-api-client/src/graphql/apolloClient.ts`). So only the frontend needs these:
+
+| Variable                | Value                      |
+| ----------------------- | -------------------------- |
+| `VITE_CONTENTFUL_SPACE` | `<space id>`               |
+| `VITE_CONTENTFUL_TOKEN` | `<content DELIVERY token>` |
+| `VITE_CONTENTFUL_ENV`   | `master`                   |
+
+Add these to your Vercel/Render Static Site env vars, then **trigger a genuinely new deploy** — not just a restart.
+
+> **Troubleshooting — page shows "Received status code 400" and the failed request URL contains `environments/undefined`:** this means `VITE_CONTENTFUL_ENV` never reached the built JS bundle. Vite bakes every `VITE_*` variable into the bundle at **build time**, not runtime — adding the variable in your host's dashboard does nothing to an already-built deployment. You need a fresh build (disable build cache if your platform offers that toggle) after adding or changing any `VITE_*` variable, then a hard-refresh/private window to rule out browser caching.
+
+`/privacy-policy` and `/terms-and-conditions` will now render your Contentful content instead of the "not configured" placeholder.
+
+**11.5 — Demo Item content (optional — skip unless you specifically want to see it)**
+
+There's a second content type from the same migration, `demoItem`, powering an optional `/demo-items` showcase page. It has zero bearing on the actual app and is safe to skip entirely.
+
+If you do want it working: there's a **confirmed bug in the boilerplate itself** (verified identical against the upstream `apptension/saas-boilerplate` repo, not something introduced by this fork). The migration creates the `image` field as plain text (`Symbol`), but the frontend's GraphQL query expects a Media/Asset reference (`image { title url }`). Creating an entry with a plain image URL fails at publish-time query with:
+
+```json
+{
+  "errors": [
+    {
+      "message": "Field \"image\" must not have a selection since type \"String\" has no subfields."
+    }
+  ]
+}
+```
+
+Fix, if you want it: **Content model → Demo Item** → delete the **Image** field → re-add it as **Media → One file**, keeping the field ID exactly `image` → save the content type → go back to your entry, upload an actual image file (not a URL string) → publish. Note that even after this fix, the uploaded image may not render correctly in the demo UI itself — this is throwaway showcase code, not something worth spending more time on beyond confirming the GraphQL error is resolved.
+
+> **Note:** the backend's `synchronize_contentful_content` Celery Beat task (every 5 minutes) mirrors Contentful's `demoItem` data server-side for the CRUD demo — it is unrelated to the privacy policy/terms pages above, and per Step 8, won't run on the free stack anyway. This is expected and doesn't block anything you're setting up here.
+
+---
+
+### Step 12: Other Deployment Items Worth Knowing About
+
+A few remaining pieces from the codebase that don't need action now, but are worth flagging:
+
+- **Sentry (error tracking, optional):** `SENTRY_DSN` — Sentry's free Developer plan (5k errors/month) works fine here. Leave unset to skip.
+- **WebSockets/real-time notifications:** the in-app notification center uses a `WEB_SOCKET_API_ENDPOINT_URL` designed for AWS API Gateway. On Render this isn't wired up in `render.yaml` at all — real-time notifications likely won't work on the free stack without extra work. Not required for anything else to function.
+- **Flower (Celery monitoring):** only relevant once you have a real worker running (see Step 8.3) — skip for now.
+
+---
+
 ## Alternative Free Option: Oracle Cloud Always Free VPS
 
 If you need Celery Background Workers and a complete replica of a paid deployment, the only truly free option is an **Oracle Cloud ARM VPS** (4 vCPUs, 24GB RAM).
