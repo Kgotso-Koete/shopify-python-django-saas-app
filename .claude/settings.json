@@ -1,0 +1,16 @@
+{
+  "enabledPlugins": {
+    "apptension-sdlc@apptension-sdlc": true,
+    "apptension-review@apptension-sdlc": true,
+    "apptension-e2e-testing@apptension-sdlc": true,
+    "superpowers@apptension-sdlc": true
+  },
+  "extraKnownMarketplaces": {
+    "apptension-sdlc": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/apptension/apptension-sdlc.git"
+      }
+    }
+  }
+}
