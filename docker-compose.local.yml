@@ -73,7 +73,7 @@ services:
       - db
       - mailcatcher
     ports:
-      - '3005:3005'
+      - '${WORKERS_HOST_PORT:-3005}:3005'
 
   redis:
     volumes:
@@ -85,7 +85,7 @@ services:
     env_file:
       - ./packages/backend/.env
     ports:
-      - '5555:5555'
+      - '${FLOWER_HOST_PORT:-5555}:5555'
     depends_on:
       redis:
         condition: service_healthy
@@ -93,7 +93,7 @@ services:
   localstack:
     image: localstack/localstack:2.3.0
     ports:
-      - '4566:4566'
+      - '${LOCALSTACK_HOST_PORT:-4566}:4566'
     environment:
       - SERVICES=s3,serverless,events,cloudformation,ses,secretsmanager
       - DEFAULT_REGION=eu-west-1
@@ -116,6 +116,6 @@ services:
   mailcatcher:
     image: sj26/mailcatcher:v0.9.0
     ports:
-      - '1080:1080'
-      - '1025:1025'
+      - '${MAILCATCHER_WEB_HOST_PORT:-1080}:1080'
+      - '${MAILCATCHER_SMTP_HOST_PORT:-1025}:1025'
     restart: always

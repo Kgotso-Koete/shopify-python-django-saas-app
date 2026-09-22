@@ -373,7 +373,18 @@ Fix, if you want it: **Content model → Demo Item** → delete the **Image** fi
 
 A few remaining pieces from the codebase that don't need action now, but are worth flagging:
 
-- **Sentry (error tracking, optional):** `SENTRY_DSN` — Sentry's free Developer plan (5k errors/month) works fine here. Leave unset to skip.
+- **Sentry (error tracking, optional):** Sentry's free Developer plan (5,000 errors/month) works well for monitoring production errors. To set it up:
+  1. Go to [sentry.io](https://sentry.io) and sign up
+  2. Create a new project (select Django as the platform)
+  3. In your project settings, find the **DSN (Data Source Name)** — it looks like `https://<key>@sentry.io/<project-id>`
+  4. Add `SENTRY_DSN` as an environment variable to your Render backend service (the same service from Step 5):
+
+  | Variable     | Value                                  |
+  | ------------ | -------------------------------------- |
+  | `SENTRY_DSN` | `https://<key>@sentry.io/<project-id>` |
+
+  Leave `SENTRY_DSN` unset to skip Sentry entirely. The free plan is sufficient for development and early production use.
+
 - **WebSockets/real-time notifications:** the in-app notification center uses a `WEB_SOCKET_API_ENDPOINT_URL` designed for AWS API Gateway. On Render this isn't wired up in `render.yaml` at all — real-time notifications likely won't work on the free stack without extra work. Not required for anything else to function.
 - **Flower (Celery monitoring):** only relevant once you have a real worker running (see Step 8.3) — skip for now.
 

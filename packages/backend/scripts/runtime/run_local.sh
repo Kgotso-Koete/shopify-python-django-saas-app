@@ -25,7 +25,9 @@ python manage.py migrate
 
 # Sync translation keys from master.json if it exists (mounted from webapp)
 TRANSLATIONS_MASTER_FILE="/app/translations/master.json"
-if [ -f "$TRANSLATIONS_MASTER_FILE" ]; then
+if [ "${SKIP_TRANSLATION_SYNC:-false}" = "true" ]; then
+    echo "Translation sync skipped (SKIP_TRANSLATION_SYNC=true)"
+elif [ -f "$TRANSLATIONS_MASTER_FILE" ]; then
     echo "Syncing translation keys..."
     python manage.py sync_translations "$TRANSLATIONS_MASTER_FILE"
 else

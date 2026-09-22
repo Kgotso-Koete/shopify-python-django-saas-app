@@ -112,6 +112,12 @@ cd <project-name>
 
 #### Install dependencies
 
+> ⚠️ **IMPORTANT: Node.js 20+ is required.** Before running any `pnpm` commands below, you must ensure you are using the correct Node version. Run the following command in your terminal:
+>
+> ```sh
+> nvm install 20 && nvm use 20
+> ```
+
 The project is configured to use pnpm workspaces, which means that you can install `node_modules` of all packages in
 repository, with single command:
 
@@ -127,6 +133,8 @@ pnpm install
 > ```
 
 ### Start the app
+
+> ⚠️ **REMINDER: Ensure you are using Node 20 (`nvm use 20`) before running these `pnpm saas` commands!**
 
 Start both: backend and webapp
 

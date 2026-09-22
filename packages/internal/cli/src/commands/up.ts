@@ -208,7 +208,7 @@ export default class Up extends BaseCommand<typeof Up> {
 
       const backendEndpoint = await getBackendEndpoint(this);
       const result = await waitForBackendWithHealth(backendEndpoint, {
-        retryCount: 200,
+        retryCount: 3600, // Increased to 60 minutes for slow remote DB queries
         stepTime: 1000,
         healthDashboard: this.healthDashboard,
       });
