@@ -4,6 +4,7 @@ import { DynamicIntlProvider } from '@sb/webapp-core/providers';
 import { CrudDemoItem } from '@sb/webapp-crud-demo/routes';
 import { Documents } from '@sb/webapp-documents/routes';
 import { ActiveSubscriptionContext } from '@sb/webapp-finances/components/activeSubscriptionContext';
+import { PaymentBackendSwitch } from '@sb/webapp-finances/payfast/paymentBackendSwitch.component';
 import {
   CancelSubscription,
   CurrentSubscriptionContent,
@@ -11,6 +12,7 @@ import {
   EditSubscription,
   PaymentConfirm,
   PaymentMethodContent,
+  PayfastReturn,
   Subscriptions,
   TransactionHistory,
   TransactionsHistoryContent,
@@ -29,7 +31,7 @@ import {
   TenantSecuritySettings,
   TenantSettings,
 } from '@sb/webapp-tenants/routes';
-import { Route, Routes } from 'react-router-dom';
+import { Outlet, Route, Routes } from 'react-router-dom';
 
 import { Role } from '../modules/auth/auth.types';
 import { Admin } from '../routes/admin';
@@ -91,7 +93,8 @@ export const App = () => {
             </Route>
             {/* Billing/Subscriptions - requires billing.view */}
             <Route element={<PermissionAuthRoute permissions="billing.view" />}>
-              <Route element={<ActiveSubscriptionContext />}>
+              {/* The Stripe subscription context loads Stripe data, so PayFast pages skip it. */}
+              <Route element={<PaymentBackendSwitch stripe={<ActiveSubscriptionContext />} payfast={<Outlet />} />}>
                 <Route element={<Subscriptions />}>
                   <Route index path={RoutesConfig.subscriptions.index} element={<CurrentSubscriptionContent />} />
                   <Route path={RoutesConfig.subscriptions.paymentMethods.index} element={<PaymentMethodContent />} />
@@ -105,6 +108,7 @@ export const App = () => {
                 <Route path={RoutesConfig.subscriptions.paymentMethods.edit} element={<EditPaymentMethod />} />
               </Route>
               <Route path={RoutesConfig.finances.paymentConfirm} element={<PaymentConfirm />} />
+              <Route path={RoutesConfig.finances.payfastReturn} element={<PayfastReturn />} />
               <Route path={RoutesConfig.subscriptions.transactionHistory.history} element={<TransactionHistory />} />
             </Route>
             {/* Content Items - protected by features.content.view */}

@@ -1,3 +1,7 @@
+### Working agreement
+
+Read `docs/superpowers/agents.md` before starting any work: it holds the standing rules for AI agents in this repo, and it wins over an agent's own defaults.
+
 ### Dev flow bindings
 
 Concrete values for this repo, in one place so every contributor — human or

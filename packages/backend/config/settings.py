@@ -90,6 +90,8 @@ LOCAL_APPS = [
     "apps.sso",
     "apps.translations",
     "apps.backup",
+    # Always installed, whichever PAYMENT_BACKEND is active, so its tables and migrations are stable.
+    "apps.payfast",
 ]
 
 INSTALLED_APPS = (
@@ -531,6 +533,14 @@ BACKUP_MASTER_KEY = env("BACKUP_MASTER_KEY", default=None)
 LAMBDA_TASKS_BASE_HANDLER = env("LAMBDA_TASKS_BASE_HANDLER", default="common.tasks.LambdaTask")
 LAMBDA_TASKS_LOCAL_URL = env("LAMBDA_TASKS_LOCAL_URL", default=None)
 
+# Which payment provider the app uses: "payfast" (default, for South Africa) or "stripe" (the
+# boilerplate's original provider).
+# See docs/superpowers/plans/2026-09-30-payfast-payment-backend-plan.md
+PAYMENT_BACKEND_STRIPE = "stripe"
+PAYMENT_BACKEND_PAYFAST = "payfast"
+PAYMENT_BACKENDS = (PAYMENT_BACKEND_STRIPE, PAYMENT_BACKEND_PAYFAST)
+PAYMENT_BACKEND = env("PAYMENT_BACKEND", default=PAYMENT_BACKEND_PAYFAST)
+
 STRIPE_LIVE_SECRET_KEY = env("STRIPE_LIVE_SECRET_KEY", default="sk_<CHANGE_ME>")
 STRIPE_TEST_SECRET_KEY = env("STRIPE_TEST_SECRET_KEY", default="sk_test_<CHANGE_ME>")
 STRIPE_LIVE_MODE = env.bool("STRIPE_LIVE_MODE", default=False)
@@ -555,9 +565,42 @@ if not STRIPE_CHECKS_ENABLED:
         ]
     )
 
-STRIPE_ENABLED = "<CHANGE_ME>" not in STRIPE_LIVE_SECRET_KEY or "<CHANGE_ME>" not in STRIPE_TEST_SECRET_KEY
+# Stripe is only ever enabled when it is the selected payment backend, so choosing PayFast
+# switches off every code path guarded by STRIPE_ENABLED (e.g. the free-plan signal).
+STRIPE_ENABLED = PAYMENT_BACKEND == PAYMENT_BACKEND_STRIPE and (
+    "<CHANGE_ME>" not in STRIPE_LIVE_SECRET_KEY or "<CHANGE_ME>" not in STRIPE_TEST_SECRET_KEY
+)
 
 SUBSCRIPTION_TRIAL_PERIOD_DAYS = env("SUBSCRIPTION_TRIAL_PERIOD_DAYS", default=7)
+
+# PayFast (https://developers.payfast.co.za/docs), used when PAYMENT_BACKEND == "payfast".
+# Always defined, whichever backend is active, so PayFast code can import them safely; the
+# apps.payfast system checks report missing or invalid values when PayFast is selected.
+#
+# Credentials come in two sets, *_DEVELOPMENT (PayFast sandbox) and *_PRODUCTION (live PayFast),
+# and ENVIRONMENT_NAME picks one: "production" uses the live set, anything else ("local", "test",
+# "qa", ...) uses the sandbox set. Only the resolved names below are used by the application.
+PAYFAST_ENVIRONMENT = "production" if ENVIRONMENT_NAME == "production" else "development"
+# Sandbox everywhere except production, so a non-production environment can never take real money.
+PAYFAST_SANDBOX = PAYFAST_ENVIRONMENT != "production"
+_PAYFAST_SUFFIX = PAYFAST_ENVIRONMENT.upper()
+PAYFAST_MERCHANT_ID = env(f"PAYFAST_MERCHANT_ID_{_PAYFAST_SUFFIX}", default="")
+PAYFAST_MERCHANT_KEY = env(f"PAYFAST_MERCHANT_KEY_{_PAYFAST_SUFFIX}", default="")
+# Required for subscriptions and the PayFast API; must match "Salt Passphrase" in the PayFast dashboard.
+PAYFAST_PASSPHRASE = env(f"PAYFAST_PASSPHRASE_{_PAYFAST_SUFFIX}", default="")
+# Public HTTPS URL of the ITN view (apps.payfast.views), e.g. https://<api-host>/api/payfast/notify/
+PAYFAST_NOTIFY_URL = env(f"PAYFAST_NOTIFY_URL_{_PAYFAST_SUFFIX}", default="")
+# Check that ITNs come from PayFast's servers. Turn off only for local testing behind a tunnel such as ngrok.
+PAYFAST_VERIFY_SOURCE_IP = env.bool("PAYFAST_VERIFY_SOURCE_IP", default=True)
+# Plan prices and donation amounts in ZAR (PayFast's minimum is 5.00).
+PAYFAST_MONTHLY_PRICE = env("PAYFAST_MONTHLY_PRICE", default="199.00")
+PAYFAST_YEARLY_PRICE = env("PAYFAST_YEARLY_PRICE", default="1990.00")
+PAYFAST_DONATION_AMOUNTS = env.list("PAYFAST_DONATION_AMOUNTS", default=["50", "100", "150"])
+
+if PAYMENT_BACKEND == PAYMENT_BACKEND_PAYFAST:
+    # dj-stripe stays installed (its tables and admin remain), but its API-key checks are
+    # irrelevant when PayFast takes the payments.
+    SILENCED_SYSTEM_CHECKS.extend(["djstripe.C001", "djstripe.I001", "djstripe.I002"])
 
 GRAPHENE = {
     "SCHEMA": "config.schema.schema",
@@ -688,6 +731,15 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': 60 * 60 * 24,  # Every 24 hours (in seconds)
     },
 }
+
+# PayFast has no events for trial reminders or failed renewals, so it needs a daily check
+# (apps.payfast.services.run_daily_maintenance). Without Celery, run
+# `python manage.py payfast_daily_maintenance` from a daily cron job instead.
+if PAYMENT_BACKEND == PAYMENT_BACKEND_PAYFAST:
+    CELERY_BEAT_SCHEDULE["payfast-daily-maintenance"] = {
+        "task": "apps.payfast.tasks.daily_maintenance",
+        "schedule": 60 * 60 * 24,  # Every 24 hours (in seconds)
+    }
 
 # Contentful CMS settings (optional)
 CONTENTFUL_SPACE_ID = env("VITE_CONTENTFUL_SPACE", default=None)

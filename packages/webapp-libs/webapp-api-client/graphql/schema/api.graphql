@@ -107,6 +107,12 @@ type Query {
     "The ID of the object"
     id: ID!
   ): Node
+  paymentConfig: PaymentConfigType!
+  payfastSubscriptionPlans: [PayFastPlanType!]!
+  payfastDonationAmounts: [Decimal!]!
+  payfastActiveSubscription(tenantId: ID!): PayFastSubscriptionType
+  payfastPayments(tenantId: ID!, before: String, after: String, first: Int, last: Int): PayFastPaymentConnection
+  payfastCheckoutStatus(tenantId: ID!, mPaymentId: ID!): String
 }
 "GraphQL type for BackupConfig."
 type BackupConfigType implements Node {
@@ -1475,6 +1481,17 @@ type ApiMutation {
   deleteDocumentDemoItem(input: DeleteDocumentDemoItemMutationInput!): DeleteDocumentDemoItemMutationPayload
   createFavoriteContentfulDemoItem(input: CreateFavoriteContentfulDemoItemMutationInput!): CreateFavoriteContentfulDemoItemMutationPayload
   deleteFavoriteContentfulDemoItem(input: DeleteFavoriteContentfulDemoItemMutationInput!): DeleteFavoriteContentfulDemoItemMutationPayload
+  """
+  Start a subscription, or switch a paying organisation to another plan: returns the signed PayFast
+  form for the chosen paid plan (services.create_subscription_checkout).
+  """
+  payfastCreateCheckout(input: PayFastCreateCheckoutMutationInput!): PayFastCreateCheckoutMutationPayload
+  """Start a once-off donation of one of the offered amounts."""
+  payfastCreateDonationCheckout(input: PayFastCreateDonationCheckoutMutationInput!): PayFastCreateDonationCheckoutMutationPayload
+  """
+  Cancel the paid plan: billing stops now, the plan lasts until the end of the period.
+  """
+  payfastCancelSubscription(input: PayFastCancelSubscriptionMutationInput!): PayFastCancelSubscriptionMutationPayload
 }
 "Create or update backup configuration for a tenant."
 type UpdateBackupConfigMutation {
@@ -3109,3 +3126,105 @@ directive @specifiedBy(
     "The URL that specifies the behaviour of this scalar."
     url: String!
   ) on SCALAR
+"""
+Which payment backend the server uses, so the web app can show the matching pages.
+"""
+type PaymentConfigType {
+  backend: String!
+  currency: String!
+}
+type PayFastPlanType {
+  name: String!
+  amount: Decimal!
+  currency: String!
+  """month, year, or null for the free plan"""
+  interval: String
+}
+type PayFastSubscriptionType {
+  """The plan paid for in the current period"""
+  plan: String!
+  """The plan the organisation has right now"""
+  effectivePlan: String!
+  """A plan change that takes effect at the next renewal"""
+  pendingPlan: String
+  status: String!
+  amount: Decimal!
+  currentPeriodStart: DateTime
+  currentPeriodEnd: DateTime
+  trialEnd: DateTime
+  cancelAtPeriodEnd: Boolean!
+  canActivateTrial: Boolean!
+  hasCard: Boolean!
+  """PayFast-hosted page to update the card on file"""
+  cardUpdateUrl(returnPath: String): String
+}
+type PayFastPaymentConnection {
+  """Pagination data for this connection."""
+  pageInfo: PageInfo!
+  """Contains the nodes in this connection."""
+  edges: [PayFastPaymentEdge]!
+}
+"""A Relay edge containing a `PayFastPayment` and its cursor."""
+type PayFastPaymentEdge {
+  """The item at the end of the edge"""
+  node: PayFastPaymentType
+  """A cursor for use in pagination"""
+  cursor: String!
+}
+type PayFastPaymentType implements Node {
+  """The ID of the object"""
+  id: ID!
+  createdAt: DateTime!
+  kind: String!
+  plan: String!
+  pfPaymentId: String!
+  amountGross: Decimal!
+  paymentStatus: String!
+  itemName: String!
+}
+"""
+Start a subscription, or switch a paying organisation to another plan: returns the signed PayFast
+form for the chosen paid plan (services.create_subscription_checkout).
+"""
+type PayFastCreateCheckoutMutationPayload {
+  checkout: PayFastCheckoutType
+  clientMutationId: String
+}
+"""
+POST `fields` to `action_url` (an HTML form) to send the buyer to PayFast.
+"""
+type PayFastCheckoutType {
+  actionUrl: String!
+  fields: GenericScalar!
+  mPaymentId: ID!
+}
+input PayFastCreateCheckoutMutationInput {
+  tenantId: String!
+  plan: String!
+  returnPath: String!
+  cancelPath: String!
+  clientMutationId: String
+}
+"""Start a once-off donation of one of the offered amounts."""
+type PayFastCreateDonationCheckoutMutationPayload {
+  checkout: PayFastCheckoutType
+  clientMutationId: String
+}
+input PayFastCreateDonationCheckoutMutationInput {
+  tenantId: String!
+  amount: String!
+  returnPath: String!
+  cancelPath: String!
+  clientMutationId: String
+}
+"""
+Cancel the paid plan: billing stops now, the plan lasts until the end of the period.
+"""
+type PayFastCancelSubscriptionMutationPayload {
+  activeSubscription: PayFastSubscriptionType
+  clientMutationId: String
+}
+input PayFastCancelSubscriptionMutationInput {
+  tenantId: String!
+  clientMutationId: String
+}

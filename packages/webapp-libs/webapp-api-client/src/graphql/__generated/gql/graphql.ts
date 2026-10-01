@@ -267,6 +267,15 @@ export type ApiMutation = {
   markReadAllNotifications?: Maybe<MarkReadAllNotificationsMutationPayload>;
   passwordReset?: Maybe<PasswordResetMutationPayload>;
   passwordResetConfirm?: Maybe<PasswordResetConfirmationMutationPayload>;
+  /** Cancel the paid plan: billing stops now, the plan lasts until the end of the period. */
+  payfastCancelSubscription?: Maybe<PayFastCancelSubscriptionMutationPayload>;
+  /**
+   * Start a subscription, or switch a paying organisation to another plan: returns the signed PayFast
+   * form for the chosen paid plan (services.create_subscription_checkout).
+   */
+  payfastCreateCheckout?: Maybe<PayFastCreateCheckoutMutationPayload>;
+  /** Start a once-off donation of one of the offered amounts. */
+  payfastCreateDonationCheckout?: Maybe<PayFastCreateDonationCheckoutMutationPayload>;
   /** Publish translations for a locale to S3/CDN. */
   publishTranslations?: Maybe<PublishTranslationsMutationPayload>;
   /**
@@ -545,6 +554,21 @@ export type ApiMutationPasswordResetArgs = {
 
 export type ApiMutationPasswordResetConfirmArgs = {
   input: PasswordResetConfirmationMutationInput;
+};
+
+
+export type ApiMutationPayfastCancelSubscriptionArgs = {
+  input: PayFastCancelSubscriptionMutationInput;
+};
+
+
+export type ApiMutationPayfastCreateCheckoutArgs = {
+  input: PayFastCreateCheckoutMutationInput;
+};
+
+
+export type ApiMutationPayfastCreateDonationCheckoutArgs = {
+  input: PayFastCreateDonationCheckoutMutationInput;
 };
 
 
@@ -2804,6 +2828,130 @@ export type PasswordResetMutationPayload = {
   ok?: Maybe<Scalars['Boolean']['output']>;
 };
 
+export type PayFastCancelSubscriptionMutationInput = {
+  clientMutationId?: InputMaybe<Scalars['String']['input']>;
+  tenantId: Scalars['String']['input'];
+};
+
+/** Cancel the paid plan: billing stops now, the plan lasts until the end of the period. */
+export type PayFastCancelSubscriptionMutationPayload = {
+  __typename?: 'PayFastCancelSubscriptionMutationPayload';
+  activeSubscription?: Maybe<PayFastSubscriptionType>;
+  clientMutationId?: Maybe<Scalars['String']['output']>;
+};
+
+/** POST `fields` to `action_url` (an HTML form) to send the buyer to PayFast. */
+export type PayFastCheckoutType = {
+  __typename?: 'PayFastCheckoutType';
+  actionUrl: Scalars['String']['output'];
+  fields: Scalars['GenericScalar']['output'];
+  mPaymentId: Scalars['ID']['output'];
+};
+
+export type PayFastCreateCheckoutMutationInput = {
+  cancelPath: Scalars['String']['input'];
+  clientMutationId?: InputMaybe<Scalars['String']['input']>;
+  plan: Scalars['String']['input'];
+  returnPath: Scalars['String']['input'];
+  tenantId: Scalars['String']['input'];
+};
+
+/**
+ * Start a subscription, or switch a paying organisation to another plan: returns the signed PayFast
+ * form for the chosen paid plan (services.create_subscription_checkout).
+ */
+export type PayFastCreateCheckoutMutationPayload = {
+  __typename?: 'PayFastCreateCheckoutMutationPayload';
+  checkout?: Maybe<PayFastCheckoutType>;
+  clientMutationId?: Maybe<Scalars['String']['output']>;
+};
+
+export type PayFastCreateDonationCheckoutMutationInput = {
+  amount: Scalars['String']['input'];
+  cancelPath: Scalars['String']['input'];
+  clientMutationId?: InputMaybe<Scalars['String']['input']>;
+  returnPath: Scalars['String']['input'];
+  tenantId: Scalars['String']['input'];
+};
+
+/** Start a once-off donation of one of the offered amounts. */
+export type PayFastCreateDonationCheckoutMutationPayload = {
+  __typename?: 'PayFastCreateDonationCheckoutMutationPayload';
+  checkout?: Maybe<PayFastCheckoutType>;
+  clientMutationId?: Maybe<Scalars['String']['output']>;
+};
+
+export type PayFastPaymentConnection = {
+  __typename?: 'PayFastPaymentConnection';
+  /** Contains the nodes in this connection. */
+  edges: Array<Maybe<PayFastPaymentEdge>>;
+  /** Pagination data for this connection. */
+  pageInfo: PageInfo;
+};
+
+/** A Relay edge containing a `PayFastPayment` and its cursor. */
+export type PayFastPaymentEdge = {
+  __typename?: 'PayFastPaymentEdge';
+  /** A cursor for use in pagination */
+  cursor: Scalars['String']['output'];
+  /** The item at the end of the edge */
+  node?: Maybe<PayFastPaymentType>;
+};
+
+export type PayFastPaymentType = Node & {
+  __typename?: 'PayFastPaymentType';
+  amountGross: Scalars['Decimal']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  /** The ID of the object */
+  id: Scalars['ID']['output'];
+  itemName: Scalars['String']['output'];
+  kind: Scalars['String']['output'];
+  paymentStatus: Scalars['String']['output'];
+  pfPaymentId: Scalars['String']['output'];
+  plan: Scalars['String']['output'];
+};
+
+export type PayFastPlanType = {
+  __typename?: 'PayFastPlanType';
+  amount: Scalars['Decimal']['output'];
+  currency: Scalars['String']['output'];
+  /** month, year, or null for the free plan */
+  interval?: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+};
+
+export type PayFastSubscriptionType = {
+  __typename?: 'PayFastSubscriptionType';
+  amount: Scalars['Decimal']['output'];
+  canActivateTrial: Scalars['Boolean']['output'];
+  cancelAtPeriodEnd: Scalars['Boolean']['output'];
+  /** PayFast-hosted page to update the card on file */
+  cardUpdateUrl?: Maybe<Scalars['String']['output']>;
+  currentPeriodEnd?: Maybe<Scalars['DateTime']['output']>;
+  currentPeriodStart?: Maybe<Scalars['DateTime']['output']>;
+  /** The plan the organisation has right now */
+  effectivePlan: Scalars['String']['output'];
+  hasCard: Scalars['Boolean']['output'];
+  /** A plan change that takes effect at the next renewal */
+  pendingPlan?: Maybe<Scalars['String']['output']>;
+  /** The plan paid for in the current period */
+  plan: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  trialEnd?: Maybe<Scalars['DateTime']['output']>;
+};
+
+
+export type PayFastSubscriptionTypeCardUpdateUrlArgs = {
+  returnPath?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Which payment backend the server uses, so the web app can show the matching pages. */
+export type PaymentConfigType = {
+  __typename?: 'PaymentConfigType';
+  backend: Scalars['String']['output'];
+  currency: Scalars['String']['output'];
+};
+
 export type PaymentMethodConnection = {
   __typename?: 'PaymentMethodConnection';
   /** Contains the nodes in this connection. */
@@ -2935,6 +3083,12 @@ export type Query = {
   mySessions?: Maybe<SsoSessionConnection>;
   node?: Maybe<Node>;
   organizationRole?: Maybe<OrganizationRoleType>;
+  payfastActiveSubscription?: Maybe<PayFastSubscriptionType>;
+  payfastCheckoutStatus?: Maybe<Scalars['String']['output']>;
+  payfastDonationAmounts: Array<Scalars['Decimal']['output']>;
+  payfastPayments?: Maybe<PayFastPaymentConnection>;
+  payfastSubscriptionPlans: Array<PayFastPlanType>;
+  paymentConfig: PaymentConfigType;
   paymentIntent?: Maybe<StripePaymentIntentType>;
   /** Get restore records for a tenant */
   restoreRecords?: Maybe<RestoreRecordConnection>;
@@ -3207,6 +3361,26 @@ export type QueryNodeArgs = {
 
 export type QueryOrganizationRoleArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryPayfastActiveSubscriptionArgs = {
+  tenantId: Scalars['ID']['input'];
+};
+
+
+export type QueryPayfastCheckoutStatusArgs = {
+  mPaymentId: Scalars['ID']['input'];
+  tenantId: Scalars['ID']['input'];
+};
+
+
+export type QueryPayfastPaymentsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+  tenantId: Scalars['ID']['input'];
 };
 
 
@@ -5286,6 +5460,72 @@ export type SubscriptionActivePlanDetailsQuery_Query = { __typename?: 'Query', a
     & { ' $fragmentRefs'?: { 'SubscriptionActiveSubscriptionFragmentFragment': SubscriptionActiveSubscriptionFragmentFragment } }
   ) | null };
 
+export type PaymentConfigQueryQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PaymentConfigQueryQuery = { __typename?: 'Query', paymentConfig: { __typename?: 'PaymentConfigType', backend: string, currency: string } };
+
+export type PayfastActiveSubscriptionQueryQueryVariables = Exact<{
+  tenantId: Scalars['ID']['input'];
+}>;
+
+
+export type PayfastActiveSubscriptionQueryQuery = { __typename?: 'Query', payfastActiveSubscription?: { __typename?: 'PayFastSubscriptionType', plan: string, effectivePlan: string, pendingPlan?: string | null, status: string, amount: any, currentPeriodEnd?: any | null, trialEnd?: any | null, cancelAtPeriodEnd: boolean, canActivateTrial: boolean, hasCard: boolean } | null };
+
+export type PayfastCardUpdateUrlQueryQueryVariables = Exact<{
+  tenantId: Scalars['ID']['input'];
+  returnPath?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type PayfastCardUpdateUrlQueryQuery = { __typename?: 'Query', payfastActiveSubscription?: { __typename?: 'PayFastSubscriptionType', hasCard: boolean, cardUpdateUrl?: string | null } | null };
+
+export type PayfastSubscriptionPlansQueryQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PayfastSubscriptionPlansQueryQuery = { __typename?: 'Query', payfastSubscriptionPlans: Array<{ __typename?: 'PayFastPlanType', name: string, amount: any, currency: string, interval?: string | null }> };
+
+export type PayfastDonationAmountsQueryQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PayfastDonationAmountsQueryQuery = { __typename?: 'Query', payfastDonationAmounts: Array<any> };
+
+export type PayfastPaymentsQueryQueryVariables = Exact<{
+  tenantId: Scalars['ID']['input'];
+}>;
+
+
+export type PayfastPaymentsQueryQuery = { __typename?: 'Query', payfastPayments?: { __typename?: 'PayFastPaymentConnection', edges: Array<{ __typename?: 'PayFastPaymentEdge', node?: { __typename?: 'PayFastPaymentType', id: string, pfPaymentId: string, kind: string, plan: string, amountGross: any, itemName: string, createdAt: any } | null } | null> } | null };
+
+export type PayfastCheckoutStatusQueryQueryVariables = Exact<{
+  tenantId: Scalars['ID']['input'];
+  mPaymentId: Scalars['ID']['input'];
+}>;
+
+
+export type PayfastCheckoutStatusQueryQuery = { __typename?: 'Query', payfastCheckoutStatus?: string | null };
+
+export type PayfastCreateCheckoutMutationMutationVariables = Exact<{
+  input: PayFastCreateCheckoutMutationInput;
+}>;
+
+
+export type PayfastCreateCheckoutMutationMutation = { __typename?: 'ApiMutation', payfastCreateCheckout?: { __typename?: 'PayFastCreateCheckoutMutationPayload', checkout?: { __typename?: 'PayFastCheckoutType', actionUrl: string, fields: any, mPaymentId: string } | null } | null };
+
+export type PayfastCreateDonationCheckoutMutationMutationVariables = Exact<{
+  input: PayFastCreateDonationCheckoutMutationInput;
+}>;
+
+
+export type PayfastCreateDonationCheckoutMutationMutation = { __typename?: 'ApiMutation', payfastCreateDonationCheckout?: { __typename?: 'PayFastCreateDonationCheckoutMutationPayload', checkout?: { __typename?: 'PayFastCheckoutType', actionUrl: string, fields: any, mPaymentId: string } | null } | null };
+
+export type PayfastCancelSubscriptionMutationMutationVariables = Exact<{
+  input: PayFastCancelSubscriptionMutationInput;
+}>;
+
+
+export type PayfastCancelSubscriptionMutationMutation = { __typename?: 'ApiMutation', payfastCancelSubscription?: { __typename?: 'PayFastCancelSubscriptionMutationPayload', activeSubscription?: { __typename?: 'PayFastSubscriptionType', plan: string, effectivePlan: string, pendingPlan?: string | null, status: string, amount: any, currentPeriodEnd?: any | null, trialEnd?: any | null, cancelAtPeriodEnd: boolean, canActivateTrial: boolean, hasCard: boolean } | null } | null };
+
 export type SubscriptionCancelActiveSubscriptionMutationMutationVariables = Exact<{
   input: CancelActiveSubscriptionMutationInput;
 }>;
@@ -5995,6 +6235,16 @@ export const StripeSubscriptionQueryDocument = {"kind":"Document","definitions":
 export const StripeDeletePaymentMethodMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"stripeDeletePaymentMethodMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DeletePaymentMethodMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deletePaymentMethod"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deletedIds"}},{"kind":"Field","name":{"kind":"Name","value":"activeSubscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"defaultPaymentMethod"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"stripePaymentMethodFragment"}}]}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"stripePaymentMethodFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"StripePaymentMethodType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"card"}},{"kind":"Field","name":{"kind":"Name","value":"billingDetails"}}]}}]} as unknown as DocumentNode<StripeDeletePaymentMethodMutationMutation, StripeDeletePaymentMethodMutationMutationVariables>;
 export const StripeUpdateDefaultPaymentMethodMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"stripeUpdateDefaultPaymentMethodMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateDefaultPaymentMethodMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateDefaultPaymentMethod"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"activeSubscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"subscriptionActiveSubscriptionFragment"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"paymentMethodEdge"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"stripePaymentMethodFragment"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"stripePaymentMethodFragment_"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"StripePaymentMethodType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"card"}},{"kind":"Field","name":{"kind":"Name","value":"billingDetails"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"subscriptionActiveSubscriptionFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubscriptionScheduleType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"phases"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startDate"}},{"kind":"Field","name":{"kind":"Name","value":"endDate"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"item"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"price"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"product"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"unitAmount"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"quantity"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"subscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startDate"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"trialStart"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"canActivateTrial"}},{"kind":"Field","name":{"kind":"Name","value":"defaultPaymentMethod"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"stripePaymentMethodFragment_"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"stripePaymentMethodFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"StripePaymentMethodType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"card"}},{"kind":"Field","name":{"kind":"Name","value":"billingDetails"}}]}}]} as unknown as DocumentNode<StripeUpdateDefaultPaymentMethodMutationMutation, StripeUpdateDefaultPaymentMethodMutationMutationVariables>;
 export const SubscriptionActivePlanDetailsQuery_Document = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"subscriptionActivePlanDetailsQuery_"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"activeSubscription"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"subscriptionActiveSubscriptionFragment"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"stripePaymentMethodFragment_"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"StripePaymentMethodType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"card"}},{"kind":"Field","name":{"kind":"Name","value":"billingDetails"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"subscriptionActiveSubscriptionFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubscriptionScheduleType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"phases"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startDate"}},{"kind":"Field","name":{"kind":"Name","value":"endDate"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"item"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"price"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"product"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"unitAmount"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"quantity"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"subscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startDate"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"trialStart"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"canActivateTrial"}},{"kind":"Field","name":{"kind":"Name","value":"defaultPaymentMethod"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"stripePaymentMethodFragment_"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]} as unknown as DocumentNode<SubscriptionActivePlanDetailsQuery_Query, SubscriptionActivePlanDetailsQuery_QueryVariables>;
+export const PaymentConfigQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"paymentConfigQuery"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"paymentConfig"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"backend"}},{"kind":"Field","name":{"kind":"Name","value":"currency"}}]}}]}}]} as unknown as DocumentNode<PaymentConfigQueryQuery, PaymentConfigQueryQueryVariables>;
+export const PayfastActiveSubscriptionQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"payfastActiveSubscriptionQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastActiveSubscription"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"plan"}},{"kind":"Field","name":{"kind":"Name","value":"effectivePlan"}},{"kind":"Field","name":{"kind":"Name","value":"pendingPlan"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"currentPeriodEnd"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"cancelAtPeriodEnd"}},{"kind":"Field","name":{"kind":"Name","value":"canActivateTrial"}},{"kind":"Field","name":{"kind":"Name","value":"hasCard"}}]}}]}}]} as unknown as DocumentNode<PayfastActiveSubscriptionQueryQuery, PayfastActiveSubscriptionQueryQueryVariables>;
+export const PayfastCardUpdateUrlQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"payfastCardUpdateUrlQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"returnPath"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastActiveSubscription"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasCard"}},{"kind":"Field","name":{"kind":"Name","value":"cardUpdateUrl"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"returnPath"},"value":{"kind":"Variable","name":{"kind":"Name","value":"returnPath"}}}]}]}}]}}]} as unknown as DocumentNode<PayfastCardUpdateUrlQueryQuery, PayfastCardUpdateUrlQueryQueryVariables>;
+export const PayfastSubscriptionPlansQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"payfastSubscriptionPlansQuery"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastSubscriptionPlans"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"currency"}},{"kind":"Field","name":{"kind":"Name","value":"interval"}}]}}]}}]} as unknown as DocumentNode<PayfastSubscriptionPlansQueryQuery, PayfastSubscriptionPlansQueryQueryVariables>;
+export const PayfastDonationAmountsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"payfastDonationAmountsQuery"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastDonationAmounts"}}]}}]} as unknown as DocumentNode<PayfastDonationAmountsQueryQuery, PayfastDonationAmountsQueryQueryVariables>;
+export const PayfastPaymentsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"payfastPaymentsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastPayments"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"pfPaymentId"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"plan"}},{"kind":"Field","name":{"kind":"Name","value":"amountGross"}},{"kind":"Field","name":{"kind":"Name","value":"itemName"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]}}]}}]} as unknown as DocumentNode<PayfastPaymentsQueryQuery, PayfastPaymentsQueryQueryVariables>;
+export const PayfastCheckoutStatusQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"payfastCheckoutStatusQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"mPaymentId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastCheckoutStatus"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}},{"kind":"Argument","name":{"kind":"Name","value":"mPaymentId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"mPaymentId"}}}]}]}}]} as unknown as DocumentNode<PayfastCheckoutStatusQueryQuery, PayfastCheckoutStatusQueryQueryVariables>;
+export const PayfastCreateCheckoutMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"payfastCreateCheckoutMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"PayFastCreateCheckoutMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastCreateCheckout"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkout"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"actionUrl"}},{"kind":"Field","name":{"kind":"Name","value":"fields"}},{"kind":"Field","name":{"kind":"Name","value":"mPaymentId"}}]}}]}}]}}]} as unknown as DocumentNode<PayfastCreateCheckoutMutationMutation, PayfastCreateCheckoutMutationMutationVariables>;
+export const PayfastCreateDonationCheckoutMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"payfastCreateDonationCheckoutMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"PayFastCreateDonationCheckoutMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastCreateDonationCheckout"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkout"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"actionUrl"}},{"kind":"Field","name":{"kind":"Name","value":"fields"}},{"kind":"Field","name":{"kind":"Name","value":"mPaymentId"}}]}}]}}]}}]} as unknown as DocumentNode<PayfastCreateDonationCheckoutMutationMutation, PayfastCreateDonationCheckoutMutationMutationVariables>;
+export const PayfastCancelSubscriptionMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"payfastCancelSubscriptionMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"PayFastCancelSubscriptionMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastCancelSubscription"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"activeSubscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"plan"}},{"kind":"Field","name":{"kind":"Name","value":"effectivePlan"}},{"kind":"Field","name":{"kind":"Name","value":"pendingPlan"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"currentPeriodEnd"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"cancelAtPeriodEnd"}},{"kind":"Field","name":{"kind":"Name","value":"canActivateTrial"}},{"kind":"Field","name":{"kind":"Name","value":"hasCard"}}]}}]}}]}}]} as unknown as DocumentNode<PayfastCancelSubscriptionMutationMutation, PayfastCancelSubscriptionMutationMutationVariables>;
 export const SubscriptionCancelActiveSubscriptionMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"subscriptionCancelActiveSubscriptionMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CancelActiveSubscriptionMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"cancelActiveSubscription"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"subscriptionSchedule"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"subscriptionActiveSubscriptionFragment"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"stripePaymentMethodFragment_"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"StripePaymentMethodType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"card"}},{"kind":"Field","name":{"kind":"Name","value":"billingDetails"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"subscriptionActiveSubscriptionFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubscriptionScheduleType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"phases"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startDate"}},{"kind":"Field","name":{"kind":"Name","value":"endDate"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"item"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"price"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"product"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"unitAmount"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"quantity"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"subscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startDate"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"trialStart"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"canActivateTrial"}},{"kind":"Field","name":{"kind":"Name","value":"defaultPaymentMethod"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"stripePaymentMethodFragment_"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]} as unknown as DocumentNode<SubscriptionCancelActiveSubscriptionMutationMutation, SubscriptionCancelActiveSubscriptionMutationMutationVariables>;
 export const StripeCreateSetupIntentMutation_Document = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"stripeCreateSetupIntentMutation_"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CreateSetupIntentMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createSetupIntent"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"setupIntent"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"stripeSetupIntentFragment"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"stripeSetupIntentFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"StripeSetupIntentType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"clientSecret"}}]}}]} as unknown as DocumentNode<StripeCreateSetupIntentMutation_Mutation, StripeCreateSetupIntentMutation_MutationVariables>;
 export const SubscriptionChangeActiveSubscriptionMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"subscriptionChangeActiveSubscriptionMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ChangeActiveSubscriptionMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"changeActiveSubscription"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"subscriptionSchedule"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"subscriptionActiveSubscriptionFragment"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"stripePaymentMethodFragment_"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"StripePaymentMethodType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"card"}},{"kind":"Field","name":{"kind":"Name","value":"billingDetails"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"subscriptionActiveSubscriptionFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubscriptionScheduleType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"phases"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startDate"}},{"kind":"Field","name":{"kind":"Name","value":"endDate"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"item"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"price"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"product"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"unitAmount"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"quantity"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"subscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startDate"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"trialStart"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"canActivateTrial"}},{"kind":"Field","name":{"kind":"Name","value":"defaultPaymentMethod"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"stripePaymentMethodFragment_"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]} as unknown as DocumentNode<SubscriptionChangeActiveSubscriptionMutationMutation, SubscriptionChangeActiveSubscriptionMutationMutationVariables>;

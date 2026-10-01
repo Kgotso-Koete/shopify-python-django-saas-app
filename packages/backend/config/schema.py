@@ -5,6 +5,7 @@ from common.graphql import scalars  # noqa: F401
 
 from apps.demo import schema as demo_schema
 from apps.finances import schema as finances_schema
+from apps.payfast import schema as payfast_schema
 from apps.notifications import schema as notifications_schema
 from apps.users import schema as users_schema
 from apps.integrations import schema as integrations_schema
@@ -22,6 +23,7 @@ schema = graphene.Schema(
             notifications_schema.Query,
             users_schema.Query,
             finances_schema.Query,
+            payfast_schema.Query,
             multitenancy_schema.Query,
             sso_schema.Query,
             sso_schema.TenantSSOQuery,
@@ -38,6 +40,7 @@ schema = graphene.Schema(
             users_schema.AuthenticatedMutation,
             users_schema.Mutation,
             finances_schema.Mutation,
+            payfast_schema.Mutation,
             integrations_schema.Mutation,
             ai_assistant_subscription.Mutation,
             multitenancy_schema.Mutation,
