@@ -30,6 +30,7 @@ pytest_plugins = [
     "apps.integrations.tests.fixtures",
     "apps.multitenancy.tests.fixtures",
     "apps.sso.tests.fixtures",
+    "apps.payfast.tests.fixtures",
 ]
 
 

@@ -14,6 +14,14 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender=Tenant)
 def create_free_plan_subscription(sender, instance, created, **kwargs):
+    # With PayFast, the free plan is a local record, so there is no provider call that can fail.
+    if settings.PAYMENT_BACKEND == settings.PAYMENT_BACKEND_PAYFAST:
+        if created:
+            from . import billing
+
+            billing.initialize_tenant(instance)
+        return
+
     if not settings.STRIPE_ENABLED:
         return
 

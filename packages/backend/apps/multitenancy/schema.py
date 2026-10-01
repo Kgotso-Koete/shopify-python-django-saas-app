@@ -14,8 +14,7 @@ from common.graphql import mutations, exceptions
 from common.graphql.acl.decorators import permission_classes, requires
 from common.action_logging.decorators import action_logged
 from common.action_logging.service import log_action, log_delete
-from apps.finances.services import subscriptions
-from apps.finances.serializers import CancelTenantActiveSubscriptionSerializer
+from apps.finances import billing
 from apps.sso.enforcement import filter_tenants_for_password_session
 from . import models
 from . import serializers
@@ -376,13 +375,8 @@ class DeleteTenantMutation(mutations.DeleteModelMutation):
             )
 
             try:
-                schedule = subscriptions.get_schedule(tenant)
-                if schedule:
-                    cancel_subscription_serializer = CancelTenantActiveSubscriptionSerializer(
-                        instance=schedule, data={}
-                    )
-                    if cancel_subscription_serializer.is_valid():
-                        cancel_subscription_serializer.save()
+                # Cancels with whichever payment backend is active (Stripe or PayFast).
+                billing.cancel_tenant_subscription(tenant)
             except Exception as e:
                 import logging
 

@@ -45,6 +45,25 @@ Say goodbye to weeks of setup and coding. Our proven stack and ready-to-use feat
 project and prioritize building your product's intellectual property. Unlock your SaaS potential faster than ever before
 and seamlessly transition from setup to innovation.
 
+## Keeping this fork in sync
+
+This repository is a fork of [Apptension's SaaS Boilerplate](https://github.com/apptension/saas-boilerplate). To bring the latest commits from the original repository into this fork, add the original repository as an `upstream` remote once:
+
+```sh
+git remote add upstream https://github.com/apptension/saas-boilerplate.git
+```
+
+Then run the following commands whenever you want to sync the `master` branch:
+
+```sh
+git fetch upstream
+git checkout master
+git merge upstream/master
+git push origin master
+```
+
+If Git reports merge conflicts, resolve them, stage the resolved files with `git add`, complete the merge commit, and then run `git push origin master`. Check `git status` first and commit or stash any local changes you want to keep before syncing.
+
 ## Getting started
 
 ### Requirements
