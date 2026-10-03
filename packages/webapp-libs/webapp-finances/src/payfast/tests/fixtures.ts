@@ -27,6 +27,7 @@ export type PayfastSubscriptionMock = {
   plan: string;
   effectivePlan: string;
   pendingPlan: string | null;
+  pendingAmount: string | null;
   status: string;
   amount: string;
   currentPeriodEnd: string | null;
@@ -40,6 +41,7 @@ export const freeSubscription: PayfastSubscriptionMock = {
   plan: 'free_plan',
   effectivePlan: 'free_plan',
   pendingPlan: null,
+  pendingAmount: null,
   status: 'active',
   amount: '0.00',
   currentPeriodEnd: null,
@@ -53,6 +55,7 @@ export const monthlySubscription: PayfastSubscriptionMock = {
   plan: 'monthly_plan',
   effectivePlan: 'monthly_plan',
   pendingPlan: null,
+  pendingAmount: null,
   status: 'active',
   amount: '199.00',
   currentPeriodEnd: '2099-01-31T10:00:00+00:00',

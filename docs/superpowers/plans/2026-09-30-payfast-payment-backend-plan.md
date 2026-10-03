@@ -37,14 +37,14 @@ API. PayFast redirects to a hosted page and reports back through ITN. A shared a
 An earlier draft existed at this path. Its structure was reasonable, but a few of its choices would fail
 in this codebase. The fixes are built into this plan:
 
-| Earlier draft                                                                                                                  | Problem                                                                                                                                                                                                                                                                                   | This plan                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Swap `Query`/`Mutation` classes in [`config/schema.py`](../../../packages/backend/config/schema.py) based on `PAYMENT_BACKEND` | The frontend's types are generated from a **committed** [`webapp-api-client/graphql/schema/api.graphql`](../../../packages/webapp-libs/webapp-api-client/graphql/schema/api.graphql). Swapping schemas at runtime breaks codegen and makes the Stripe UI fail type-checking under PayFast | Schema is **always the union** of both. Only resolver behaviour depends on the backend          |
-| PayFast models in `apps/finances/payfast/models.py` with `app_label="finances"` and a `payfast/migrations/` folder             | Django doesn't discover models in a subpackage unless something imports them, and migrations for `app_label="finances"` must live in `apps/finances/migrations`. Mixing them into the Stripe app's migration history is fragile                                                           | Separate `apps.payfast` app, always installed, with its own migrations                          |
-| `PAYFAST_*` settings defined only `if PAYMENT_BACKEND == "payfast"`                                                            | Importing any PayFast module under `stripe` raises `AttributeError`, and tests can't `override_settings` cleanly                                                                                                                                                                          | Always define settings; validate them with a system check when `payfast` is active              |
-| Plan change = cancel + new checkout                                                                                            | Makes the customer re-enter card details for a monthly↔yearly switch                                                                                                                                                                                                                      | Use the Subscriptions API `update` endpoint (amount/frequency/run_date) on the existing token   |
-| ITN source check via `Referer` header (copied from the Flask app)                                                              | PayFast doesn't reliably send `Referer`, and headers can be spoofed                                                                                                                                                                                                                       | Check the resolved client IP against IPs resolved from PayFast hostnames                        |
-| Trust `custom_str2` (tenant id) from the ITN                                                                                   | Anyone can put any value in a checkout form field                                                                                                                                                                                                                                         | Look up tenant and expected amount from **our** pending checkout record keyed by `m_payment_id` |
+| Earlier draft                                                                                                                  | Problem                                                                                                                                                                                                                                                                                   | This plan                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Swap `Query`/`Mutation` classes in [`config/schema.py`](../../../packages/backend/config/schema.py) based on `PAYMENT_BACKEND` | The frontend's types are generated from a **committed** [`webapp-api-client/graphql/schema/api.graphql`](../../../packages/webapp-libs/webapp-api-client/graphql/schema/api.graphql). Swapping schemas at runtime breaks codegen and makes the Stripe UI fail type-checking under PayFast | Schema is **always the union** of both. Only resolver behaviour depends on the backend                                                                                                      |
+| PayFast models in `apps/finances/payfast/models.py` with `app_label="finances"` and a `payfast/migrations/` folder             | Django doesn't discover models in a subpackage unless something imports them, and migrations for `app_label="finances"` must live in `apps/finances/migrations`. Mixing them into the Stripe app's migration history is fragile                                                           | Separate `apps.payfast` app, always installed, with its own migrations                                                                                                                      |
+| `PAYFAST_*` settings defined only `if PAYMENT_BACKEND == "payfast"`                                                            | Importing any PayFast module under `stripe` raises `AttributeError`, and tests can't `override_settings` cleanly                                                                                                                                                                          | Always define settings; validate them with a system check when `payfast` is active                                                                                                          |
+| Plan change = cancel + new checkout                                                                                            | Makes the customer re-enter card details for a monthly↔yearly switch                                                                                                                                                                                                                      | Use the Subscriptions API `update` endpoint on the existing token. Superseded on 2026-10-01: that endpoint fails in the sandbox, so plan changes use a new R0 checkout instead (section 10) |
+| ITN source check via `Referer` header (copied from the Flask app)                                                              | PayFast doesn't reliably send `Referer`, and headers can be spoofed                                                                                                                                                                                                                       | Check the resolved client IP against IPs resolved from PayFast hostnames                                                                                                                    |
+| Trust `custom_str2` (tenant id) from the ITN                                                                                   | Anyone can put any value in a checkout form field                                                                                                                                                                                                                                         | Look up tenant and expected amount from **our** pending checkout record keyed by `m_payment_id`                                                                                             |
 
 A copy of that draft is in the session scratchpad, in case you want to compare.
 
@@ -258,7 +258,7 @@ something, the table says so and names the closest equivalent.
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Tenant created                                        | Schedule on free plan (Stripe API)                                                                                          | Local `PayFastSubscription(plan=free_plan, status=active)`, no PayFast call                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Free → paid                                           | `changeActiveSubscription` with a price and a stored card                                                                   | `payfastCreateCheckout(plan)` returns form fields; the browser POSTs to PayFast; the ITN activates the subscription and stores the `token`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Paid → other paid (monthly↔yearly)                    | Next schedule phase                                                                                                         | `PATCH /update` with the new `amount` + `frequency`, `run_date` = current period end; record `pending_plan` locally and apply it on the next ITN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Paid → other paid (monthly↔yearly)                    | Next schedule phase                                                                                                         | A new R0 subscription checkout (the card is entered again) billing from the current period's end; `pending_plan` is applied on its first charge, and the old subscription is cancelled once PayFast confirms the new one (section 10). PayFast's `update` API isn't used: it fails in the sandbox                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Cancel (paid → free)                                  | Schedule ends at period end                                                                                                 | `PUT /cancel` straight away (stops future charges); locally `cancel_at_period_end=True`; the effective plan stays paid until `current_period_end`, then free                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Trial                                                 | Trial phase once per customer (`utils.customer_can_activate_trial`); a card is still required                               | Same rule (`has_used_trial` on the tenant's subscription) and the same `SUBSCRIPTION_TRIAL_PERIOD_DAYS`. Checkout with initial `amount=0.00`, `billing_date=today+trial_days`, `recurring_amount=price`, so the card is captured at checkout (with 3-D Secure) and nothing is charged, as with Stripe. R0 initial amounts are explicitly supported (section 1.2, https://developers.payfast.co.za/docs#subscriptions)                                                                                                                                                                                                                                                                                                                                   |
 | Trial ending soon email                               | `customer.subscription.trial_will_end` webhook → `TrialExpiresSoonEmail`                                                    | PayFast's own notice is fixed at 7 days before trial end and goes to a dashboard-configured URL (section 1.2), which doesn't fit a 7-day trial. A daily Celery beat task sends the same `TrialExpiresSoonEmail` 3 days before `trial_end` (Stripe's lead time), once per trial (`trial_reminder_sent_at`). Checkout posts `subscription_notify_buyer=false`, so the buyer doesn't also get PayFast's email                                                                                                                                                                                                                                                                                                                                              |
@@ -354,9 +354,9 @@ apps/payfast/
 ├── admin.py             # read-only admin for the three models
 ├── migrations/0001_initial.py
 ├── signature.py         # checkout_signature(), itn_param_string(), api_signature() — pure functions
-├── client.py            # PayFastApiClient: fetch/cancel/pause/unpause/update (requests, 10s timeout)
+├── client.py            # PayFastApiClient: fetch/cancel/refunds; update exists but is unused (section 10)
 ├── itn.py               # validate_itn(request) -> ValidatedItn | raises ItnError
-├── services.py          # initialize_tenant, create_checkout, change_plan, cancel, handle_itn, effective_plan
+├── services.py          # initialize_tenant, create_*_checkout (plan changes too), cancel, process_itn, daily maintenance
 ├── views.py             # payfast_itn_view (csrf_exempt, POST only)
 ├── urls.py              # path("notify/", ...)
 ├── schema.py            # GraphQL types, queries, mutations
@@ -525,7 +525,6 @@ type Query {
 type Mutation {
   payfastCreateCheckout(input: {tenantId, plan}): PayFastCheckoutType                            # billing.manage
   payfastCreateDonationCheckout(input: {tenantId, amount}): PayFastCheckoutType                  # billing.manage (same ACL as createPaymentIntent)
-  payfastChangePlan(input: {tenantId, plan}): { activeSubscription }                             # billing.manage
   payfastCancelSubscription(input: {tenantId}): { activeSubscription }                           # billing.manage
 }
 ```
@@ -570,7 +569,7 @@ src/payfast/
 ├── submitPayfastCheckout.ts           # builds a hidden <form method="POST" action={actionUrl}> and submits it
 ├── routes/
 │   ├── currentSubscription.content.tsx  # plan, status, next billing date, "Change plan", "Cancel"
-│   ├── editSubscription.component.tsx   # plan cards (ZAR); free→paid = checkout, paid→paid = changePlan
+│   ├── editSubscription.component.tsx   # plan cards (ZAR); every plan choice = checkout (paid→paid too, section 10)
 │   ├── cancelSubscription.component.tsx
 │   ├── paymentMethod.content.tsx        # "Your card is stored securely by PayFast" + Update card link
 │   ├── transactionsHistory.content.tsx  # payfastPayments list ("Donation" / "{plan} plan" labels)
@@ -621,7 +620,7 @@ Verify each step with `pnpm nx run backend:lint`, `pnpm nx run backend:test`, an
    `pending_plan`, a donation COMPLETE, and a trial checkout that expects R0. Mock the `/validate` call.
    Build fixtures from the documented ITN payload
    (https://developers.payfast.co.za/docs#step_4_confirm_payment).
-5. **Plan change + cancel + tenant deletion.** `change_plan` (API update), `cancel`. _Test:_ API client
+5. **Plan change + cancel + tenant deletion.** Plan change by a new checkout (originally the update API; see section 10), `cancel`. _Test:_ API client
    calls are mocked, local state transitions are checked, and effective plan after period end is free.
    Also test trial parity: a second checkout after a trial was used is not a trial, and changing plan
    during a trial ends it (as `TenantSubscriptionScheduleSerializer` does for Stripe).
@@ -829,7 +828,8 @@ Checks (each: what to do, what a correct result looks like):
    plan **Monthly**, a **Free trial expiry date** 7 days away. (In the sandbox dashboard → ITN, the notification shows as delivered.)
 9. **Edit subscription** again: Monthly says "Current plan"; choose **Yearly** → PayFast sandbox shows R 0.00 now and
    R 1 990.00 yearly from the end of your current period → confirm → back via the return page, the subscription page shows
-   **Next billing plan: Yearly**, and the plan page marks Yearly "Scheduled". In the PayFast sandbox dashboard the old
+   "Free trial, then Yearly at R 1 990.00 / year" (during a trial) and **Next billing plan: Yearly, R 1 990.00 / year**,
+   and the plan page marks Yearly "Scheduled". In the PayFast sandbox dashboard the old
    monthly subscription is cancelled and the new yearly one is active.
 10. **Payment methods** says the card is stored by PayFast and has **Update card** (the page itself only works on live PayFast, section 1.6).
 11. **Cancel subscription** → Continue → toast about moving to the free plan at the end of the period; the page now shows
@@ -838,14 +838,23 @@ Checks (each: what to do, what a correct result looks like):
     Home with "Payment successful"; Transaction history lists a new "Donation" R 100.00.
 13. Django admin (http://localhost:5001/admin/, superuser) → PayFast → PayFast payments → open the donation → "Refund this
     payment via PayFast" opens the refund form (actual refunds only work on live PayFast, section 1.7).
-14. Switch back: `PAYMENT_BACKEND=stripe`, restart → the subscription pages are the original Stripe ones,
+14. Cancel on PayFast's side (section 12, issue 4): in the sandbox dashboard, cancel the active subscription. The
+    backend log shows "PayFast cancellation ITN for … confirmed by the Subscriptions API" (or nothing unusual if
+    validate answered VALID), the ITN shows as delivered in the sandbox dashboard, and the subscription page shows
+    **Expiry date**. If the log says "PayFast did not confirm the notification (payment_status 'CANCELLED')"
+    instead, `GET /fetch` doesn't report `status_text` `CANCELLED` for a cancelled subscription: note what it
+    does return, so `itn.cancellation_confirmed_by_api` can be corrected.
+15. Seeding refuses production: with `ENVIRONMENT_NAME=production`,
+    `docker compose run --rm backend python manage.py payfast_seed_demo --email <your email>` fails with
+    "Refusing to seed example payments in production".
+16. Switch back: `PAYMENT_BACKEND=stripe`, restart → the subscription pages are the original Stripe ones,
     and check 2's endpoint returns `404`.
 
-## 12. Known issues to fix (found 2026-10-01)
+## 12. Known issues (found 2026-10-01, fixed 2026-10-02)
 
 Found in the code review behind the walkthrough
-([`2026-10-01-payfast-walkthrough.md`](../specs/2026-10-01-payfast-walkthrough.md)). Not fixed yet. In order
-of risk; each is fixed test-first (RED before GREEN), and the walkthrough is updated in the same change.
+([`2026-10-01-payfast-walkthrough.md`](../specs/2026-10-01-payfast-walkthrough.md)). In order of risk. All
+were fixed test-first (RED before GREEN) on 2026-10-02; each item ends with what was done. Issue 4's one untested assumption was confirmed in the sandbox on 2026-10-02 (see issue 7).
 
 1. **A missed renewal ITN loses data.** When a renewal's ITN never arrives, the daily task's
    `_check_overdue_renewal` in [`services.py`](../../../packages/backend/apps/payfast/services.py) catches up
@@ -853,34 +862,71 @@ of risk; each is fixed test-first (RED before GREEN), and the walkthrough is upd
    transaction history. If that renewal is the first charge after a plan switch, it also doesn't apply
    `pending_plan`, so the organisation stays on the old plan for a period. Fix: the catch-up should apply a
    pending plan and record the charge (marked as caught up), as `_renew` does.
+   **Fixed:** the catch-up now goes through `_start_next_period` (shared with `_renew`, so a pending plan is
+   applied) and records a `PayFastPayment` with `caught_up=True` and a placeholder `pf_payment_id`
+   (`caught-up-…`; migration `0003_payment_caught_up`). If the lost ITN arrives later, while still more than a day
+   before the caught-up period ends, it fills in that record (`_complete_caught_up_payment`) instead of renewing a
+   second time.
 2. **A charge on a replaced subscription isn't recorded.** While `superseded_token` is still waiting to be
    cancelled (see `_cancel_superseded`), PayFast can still bill the old subscription. That ITN's token matches
    no subscription, so `process_itn` ignores it: the money is taken but not recorded. Fix: match ITNs on
    `superseded_token` too, record the payment, and flag it (log an error) so it can be refunded.
+   **Fixed:** `process_itn` finds the tenant of a replaced token through `superseded_token` or, once that was
+   cleared, the completed plan-change checkout's `replaces_token` (`_find_replaced_subscription`). A `COMPLETE`
+   ITN is recorded without moving the period and logged as an error asking for a refund
+   (`_record_replaced_charge`); a `CANCELLED` one clears a pending cancel retry and never touches the new
+   subscription.
 3. **Repeated "payment failed" emails.** In `_check_overdue_renewal`, a failed first charge after a trial
    sends `SubscriptionErrorEmail` and then cancels the subscription. If that cancel call fails, the "sent"
    timestamp is never saved, so the next daily run sends the email again. Fix: save
    `payment_failed_notified_at` before the cancel attempt.
+   **Fixed:** the timestamp is saved right after the email, before the cancel call.
 4. **Cancellation ITNs are rejected.** Seen in the sandbox on 2026-10-01: the `CANCELLED` ITN PayFast
    sent for a replaced subscription got HTTP 400, logged as "PayFast did not confirm the notification"
    (PayFast's `/eng/query/validate` didn't answer `VALID`). Harmless there, since that token had been
    replaced, but it means a cancellation made on PayFast's side (the buyer's email link, or the merchant
    dashboard) would never reach the app, and PayFast keeps retrying. Fix: find out what `/eng/query/validate`
    expects for cancellation ITNs (they carry no amount), and handle them without weakening the other checks.
+   **Fixed** (confirmed in the sandbox on 2026-10-02): neither PayFast's docs nor other integrations (for example the PMPro
+   PayFast plugin, which also posts cancellations to validate) explain the refusal. So `itn.verify_itn` keeps
+   every check, and only when validate won't confirm a `CANCELLED` ITN does it ask the Subscriptions API instead:
+   `GET /fetch` must report `status_text` `CANCELLED` for the ITN's token (`cancellation_confirmed_by_api`).
+   Payments (`COMPLETE`) still need validate's `VALID`. The rejection log now names the `payment_status`.
+   What `/fetch` returns for a cancelled subscription isn't documented, so section 11's check 14 confirms it.
 5. **The current-plan page can show a price that will never be charged.** After switching during a trial
    (seen 2026-10-01), the page shows "Monthly R199.00 / month" (the replaced subscription's agreed price)
    and "Next billing plan: Yearly", while what PayFast will actually charge is R10.00 a year from 8 October.
    Fix: show what's charged next and when, e.g. "Free trial until 8 October, then Yearly R10.00 / year".
+   **Fixed:** `payfastActiveSubscription` now returns `pendingAmount`. During a trial the price line reads
+   "Free trial, then Yearly at R 10.00 / year" (the pending plan if there is one, else the current one), and
+   **Next billing plan** shows its price, e.g. "Yearly, R 10.00 / year". The trial expiry date row still gives
+   the date. The Stripe page is unchanged: it reads Stripe's own schedule.
 6. **Minor:**
    - The billing read queries in [`schema.py`](../../../packages/backend/apps/payfast/schema.py)
      (`payfastActiveSubscription` and friends) don't call `require_payfast()`, and `get_subscription` creates
      an empty `PayFastSubscription` row on read, even on a Stripe deployment. Fix: refuse on Stripe, as the
-     mutations do.
+     mutations do. **Fixed:** `payfastActiveSubscription`, `payfastPayments` and `payfastCheckoutStatus` call
+     `require_payfast()` first. The public queries (plans, donation amounts, `paymentConfig`) stay open.
    - [`payfast_seed_demo`](../../../packages/backend/apps/payfast/management/commands/payfast_seed_demo.py) says
      "development only" but would also run in production. Fix: refuse when `PAYFAST_ENVIRONMENT` is
-     `production`.
+     `production`. **Fixed**, with a new `test_commands.py`.
    - The return page's "Go to my subscription" link after a timeout
      ([`payfastReturn.component.tsx`](../../../packages/webapp-libs/webapp-finances/src/payfast/routes/payfastReturn.component.tsx))
-     is also shown after a donation, where Home would fit better.
+     is also shown after a donation, where Home would fit better. **Fixed:** after a donation the timeout
+     message points to the transaction history and the link goes Home.
    - Section 2's behaviour table and section 4's file list in this plan still describe the removed update-API plan change
      (`PATCH /update`, `changePlan`); section 10 records what replaced it. Fix: update those passages.
+     **Fixed:** sections 0, 2, 3.2, 3.4, 4 and 5 now point to the checkout-based plan change (section 10).
+7. **Cancellation ITNs were dropped as duplicates** (found in the sandbox on 2026-10-02, after the fixes above). A
+   `CANCELLED` ITN carries the `pf_payment_id` of the subscription's sign-up ITN, and `process_itn` treated any
+   known id as a re-sent ITN, so a cancellation made on PayFast's side never applied. The same sandbox run confirmed
+   issue 4's assumption (`GET /fetch` reports `CANCELLED`). **Fixed:** a repeat now needs the same id _and_ status,
+   and `_record_payment` keeps one row per PayFast id.
+8. **Cancelling timed out with "PayFast could not process the request"** (found in the sandbox on 2026-10-02). PayFast
+   sends its `CANCELLED` ITN before it answers a cancel call, and waits for our reply. `cancel_subscription` held the
+   subscription's row lock during the call, and the ITN handler needs that lock, so each waited for the other until
+   our 15-second timeout. The cancellation then went through via the ITN, but the user saw an error first. A plan
+   change cancelled the old subscription the same way, inside the ITN's transaction. **Fixed:** PayFast is never
+   called while a transaction is open. `cancel_subscription` calls PayFast first and locks the row afterwards;
+   `process_itn` runs follow-up API calls (`_cancel_superseded`) after its transaction commits. A test fixture
+   (`api_called_outside_transactions`) fails any test that calls the API inside a transaction.

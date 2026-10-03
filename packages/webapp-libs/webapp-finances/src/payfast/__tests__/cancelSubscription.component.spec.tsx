@@ -45,6 +45,41 @@ describe('PayFast cancel subscription', () => {
     expect(cancelMock.result).toHaveBeenCalled();
   });
 
+  const renderPage = (subscription: Parameters<typeof fillPayfastSubscriptionQuery>[0]) =>
+    render(<PayfastCancelSubscription />, {
+      routerProps: createMockRouterProps(RoutesConfig.subscriptions.currentSubscription.cancel, { tenantId }),
+      apolloMocks: [tenantMock(), fillPayfastSubscriptionQuery(subscription, tenantId)],
+    });
+
+  // Like the current subscription page: during a trial nothing is charged, and a plan switch shows
+  // what will be charged next (seen 2026-10-02: Yearly R10 switched to Monthly R5 during the trial).
+  it('shows a trial as free and the switched plan with its price', async () => {
+    renderPage({
+      ...monthlySubscription,
+      plan: 'yearly_plan',
+      effectivePlan: 'yearly_plan',
+      amount: '10.00',
+      status: 'trialing',
+      trialEnd: '2099-01-31T10:00:00+00:00',
+      pendingPlan: 'monthly_plan',
+      pendingAmount: '5.00',
+    });
+
+    expect(await screen.findByText('Yearly')).toBeInTheDocument();
+    expect(screen.getByText(/^free trial$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/10\.00/)).not.toBeInTheDocument();
+    expect(screen.getByText(/next billing plan:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Monthly, .*5\.00 \/ month/)).toBeInTheDocument();
+  });
+
+  it('shows the paid plan and the switch it is scheduled to make', async () => {
+    renderPage({ ...monthlySubscription, pendingPlan: 'yearly_plan', pendingAmount: '1990.00' });
+
+    expect(await screen.findByText('Monthly')).toBeInTheDocument();
+    expect(screen.getByText(/199\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/Yearly, .*1,?990\.00 \/ year/)).toBeInTheDocument();
+  });
+
   it('explains there is nothing to cancel on the free plan', async () => {
     render(<PayfastCancelSubscription />, {
       routerProps: createMockRouterProps(RoutesConfig.subscriptions.currentSubscription.cancel, { tenantId }),

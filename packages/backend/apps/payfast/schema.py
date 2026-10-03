@@ -84,6 +84,7 @@ class PayFastSubscriptionType(graphene.ObjectType):
     plan = graphene.String(required=True, description="The plan paid for in the current period")
     effective_plan = graphene.String(required=True, description="The plan the organisation has right now")
     pending_plan = graphene.String(description="A plan change that takes effect at the next renewal")
+    pending_amount = graphene.Decimal(description="What the pending plan charges, from the next renewal")
     status = graphene.String(required=True)
     amount = graphene.Decimal(required=True)
     current_period_start = graphene.DateTime()
@@ -176,11 +177,13 @@ class Query(graphene.ObjectType):
     @staticmethod
     @permission_classes(IsTenantMemberAccess, requires("billing.view"))
     def resolve_payfast_active_subscription(root, info, tenant_id, **kwargs):
+        require_payfast()
         return services.get_subscription(request_tenant(info, tenant_id))
 
     @staticmethod
     @permission_classes(IsTenantMemberAccess, requires("billing.view"))
     def resolve_payfast_payments(root, info, tenant_id, **kwargs):
+        require_payfast()
         # Only real charges: not R0 trial starts, and not cancellation notices.
         return PayFastPayment.objects.filter(
             tenant=request_tenant(info, tenant_id), payment_status="COMPLETE", amount_gross__gt=0
@@ -189,6 +192,7 @@ class Query(graphene.ObjectType):
     @staticmethod
     @permission_classes(IsTenantMemberAccess, requires("billing.view"))
     def resolve_payfast_checkout_status(root, info, tenant_id, m_payment_id, **kwargs):
+        require_payfast()
         try:
             checkout_id = uuid.UUID(str(m_payment_id))
         except ValueError:

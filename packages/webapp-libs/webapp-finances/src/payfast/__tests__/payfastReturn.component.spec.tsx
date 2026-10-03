@@ -1,6 +1,6 @@
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
 import { tenantFactory } from '@sb/webapp-tenants/tests/factories/tenant';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { generatePath } from 'react-router';
 import { Route, Routes } from 'react-router-dom';
 
@@ -43,6 +43,29 @@ describe('PayFast return page', () => {
     renderReturnPage('?kind=donation&m=m-2', [fillCheckoutStatusQuery('complete', 'm-2', tenantId)]);
 
     expect(await screen.findByText('home page')).toBeInTheDocument();
+  });
+
+  describe('when PayFast takes longer than a minute', () => {
+    beforeEach(() => jest.useFakeTimers({ advanceTimers: true }));
+    afterEach(() => jest.useRealTimers());
+
+    // Plan section 12, issue 6: after a donation, the way out is Home, as on success.
+    it('offers Home after a donation', async () => {
+      renderReturnPage('?kind=donation&m=m-4', [fillCheckoutStatusQuery('pending', 'm-4', tenantId)]);
+      await act(() => jest.advanceTimersByTimeAsync(60000));
+
+      expect(await screen.findByText(/still waiting for payfast/i)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /go to home/i })).toBeInTheDocument();
+      expect(screen.getByText(/appear in your transaction history/i)).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /go to my subscription/i })).not.toBeInTheDocument();
+    });
+
+    it('offers the subscription page after a subscription checkout', async () => {
+      renderReturnPage('?kind=subscription&m=m-5', [fillCheckoutStatusQuery('pending', 'm-5', tenantId)]);
+      await act(() => jest.advanceTimersByTimeAsync(60000));
+
+      expect(await screen.findByRole('link', { name: /go to my subscription/i })).toBeInTheDocument();
+    });
   });
 
   it('keeps waiting while PayFast has not confirmed yet', async () => {

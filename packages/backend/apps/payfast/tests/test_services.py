@@ -14,6 +14,7 @@ from decimal import Decimal
 from unittest import mock
 
 import pytest
+from django.db import connection
 from django.utils import timezone
 
 from apps.finances import constants as finance_constants
@@ -275,6 +276,33 @@ class TestProcessItnCancelled:
         assert paid_subscription.effective_plan() == MONTHLY
         assert not PayFastPayment.objects.filter(subscription=paid_subscription, payment_status="COMPLETE").exists()
 
+    def test_cancellation_carrying_the_sign_up_payment_id_is_applied(self, paid_subscription):
+        # Seen in the sandbox on 2026-10-02: a CANCELLED ITN carries the pf_payment_id of the
+        # subscription's first (sign-up) ITN, so it must not be mistaken for a re-sent copy of it.
+        services.process_itn(itn_data(token=paid_subscription.token, pf_payment_id="3424910", amount_gross="199.00"))
+
+        outcome = services.process_itn(
+            itn_data(token=paid_subscription.token, pf_payment_id="3424910", payment_status="CANCELLED")
+        )
+
+        assert outcome == "processed"
+        paid_subscription.refresh_from_db()
+        assert paid_subscription.cancel_at_period_end
+        # The charge stays recorded once, as the charge it was.
+        assert list(
+            PayFastPayment.objects.filter(pf_payment_id="3424910").values_list("payment_status", flat=True)
+        ) == ["COMPLETE"]
+
+    def test_a_resent_cancellation_is_harmless(self, paid_subscription):
+        data = itn_data(token=paid_subscription.token, pf_payment_id="3424911", payment_status="CANCELLED")
+        services.process_itn(data)
+
+        services.process_itn(data)
+
+        paid_subscription.refresh_from_db()
+        assert paid_subscription.cancel_at_period_end
+        assert PayFastPayment.objects.filter(pf_payment_id="3424911").count() == 1
+
 
 class TestProcessItnDonation:
     def test_donation_is_recorded(self, tenant, owner):
@@ -426,6 +454,71 @@ class TestProcessItnPlanChange:
         assert not paid_subscription.cancel_at_period_end
         assert paid_subscription.pending_plan == YEARLY
 
+    def test_charge_on_the_replaced_subscription_is_recorded_and_flagged(
+        self, caplog, paid_subscription, switch_checkout, payfast_api
+    ):
+        # Plan section 12, issue 2. Until PayFast has cancelled the old subscription, it can still bill it.
+        # The money is taken either way, so it must show in the history and be flagged for a refund.
+        old_token = paid_subscription.token
+        payfast_api.cancel.side_effect = PayFastApiError("boom")
+        services.process_itn(self.switch_itn(switch_checkout))
+        paid_subscription.refresh_from_db()
+        period_end = paid_subscription.current_period_end
+
+        outcome = services.process_itn(itn_data(token=old_token, pf_payment_id="950"))
+
+        assert outcome == "processed"
+        payment = PayFastPayment.objects.get(pf_payment_id="950")
+        assert payment.subscription == paid_subscription
+        assert payment.plan == MONTHLY
+        # It pays for nothing new: the period and the scheduled switch are unchanged.
+        paid_subscription.refresh_from_db()
+        assert paid_subscription.current_period_end == period_end
+        assert paid_subscription.pending_plan == YEARLY
+        assert "refund" in caplog.text
+
+    def test_charge_on_the_replaced_subscription_is_recorded_after_it_was_cancelled(
+        self, paid_subscription, switch_checkout, payfast_api
+    ):
+        # The charge can also land just before our cancel call took effect, after superseded_token
+        # was cleared; the completed plan-change checkout still links the old token to the tenant.
+        old_token = paid_subscription.token
+        services.process_itn(self.switch_itn(switch_checkout))
+
+        assert services.process_itn(itn_data(token=old_token, pf_payment_id="951")) == "processed"
+
+        assert PayFastPayment.objects.get(pf_payment_id="951").tenant == paid_subscription.tenant
+
+    def test_cancellation_itn_for_the_replaced_subscription_ends_the_retries(
+        self, paid_subscription, switch_checkout, payfast_api
+    ):
+        # If our cancel call failed but PayFast cancelled it anyway, its CANCELLED ITN settles it.
+        old_token = paid_subscription.token
+        payfast_api.cancel.side_effect = PayFastApiError("boom")
+        services.process_itn(self.switch_itn(switch_checkout))
+
+        services.process_itn(itn_data(token=old_token, payment_status="CANCELLED", amount_gross="0.00"))
+
+        paid_subscription.refresh_from_db()
+        assert paid_subscription.superseded_token == ""
+        assert not paid_subscription.cancel_at_period_end
+
+    def test_cancellation_of_the_replaced_subscription_with_its_sign_up_payment_id_ends_the_retries(
+        self, paid_subscription, switch_checkout, payfast_api, pay_fast_payment_factory
+    ):
+        # The same as above, with the pf_payment_id PayFast really sends: the old subscription's first ITN's.
+        old_token = paid_subscription.token
+        pay_fast_payment_factory(tenant=paid_subscription.tenant, pf_payment_id="3424910", amount_gross=Decimal("0.00"))
+        payfast_api.cancel.side_effect = PayFastApiError("boom")
+        services.process_itn(self.switch_itn(switch_checkout))
+
+        services.process_itn(
+            itn_data(token=old_token, pf_payment_id="3424910", payment_status="CANCELLED", amount_gross="0.00")
+        )
+
+        paid_subscription.refresh_from_db()
+        assert paid_subscription.superseded_token == ""
+
     def test_failed_cancellation_of_the_old_subscription_is_retried_daily(
         self, freezer, paid_subscription, switch_checkout, payfast_api
     ):
@@ -444,6 +537,55 @@ class TestProcessItnPlanChange:
         paid_subscription.refresh_from_db()
         assert paid_subscription.superseded_token == ""
         assert payfast_api.cancel.call_args_list[-1] == mock.call(old_token)
+
+
+@pytest.fixture
+def api_called_outside_transactions(payfast_api):
+    """
+    Fails the test if a PayFast API call is made while a database transaction is open. PayFast sends its
+    CANCELLED ITN before it answers a cancel call, and our ITN handler needs the subscription's row lock:
+    a lock held across the call makes both wait until the call times out (seen in the sandbox on 2026-10-02).
+    The test itself runs inside pytest-django's transaction, so only blocks opened beyond that count.
+    """
+    baseline = len(connection.atomic_blocks)
+    calls = []
+
+    def record(*args, **kwargs):
+        calls.append(len(connection.atomic_blocks) - baseline)
+
+    payfast_api.cancel.side_effect = record
+    return calls
+
+
+class TestPayFastApiIsCalledWithoutHoldingLocks:
+    def test_cancel_subscription(self, paid_subscription, api_called_outside_transactions):
+        services.cancel_subscription(tenant=paid_subscription.tenant)
+
+        assert api_called_outside_transactions == [0]
+        paid_subscription.refresh_from_db()
+        assert paid_subscription.cancel_at_period_end
+
+    def test_cancel_subscription_with_a_superseded_token(self, paid_subscription, api_called_outside_transactions):
+        paid_subscription.superseded_token = "old-token"
+        paid_subscription.save()
+
+        services.cancel_subscription(tenant=paid_subscription.tenant)
+
+        assert api_called_outside_transactions == [0, 0]
+
+    def test_plan_change_cancels_the_old_subscription_after_committing(
+        self, owner, paid_subscription, api_called_outside_transactions
+    ):
+        form = subscription_checkout(paid_subscription.tenant, owner, plan=YEARLY)
+
+        services.process_itn(
+            itn_data(m_payment_id=str(form.m_payment_id), amount_gross="0.00", token="new-yearly-token")
+        )
+
+        assert api_called_outside_transactions == [0]
+        paid_subscription.refresh_from_db()
+        assert paid_subscription.token == "new-yearly-token"
+        assert paid_subscription.superseded_token == ""
 
 
 class TestCancelSubscription:
@@ -554,6 +696,90 @@ class TestDailyMaintenance:
         assert paid_subscription.status == PayFastSubscription.Status.ACTIVE
         assert paid_subscription.current_period_end.date() == datetime.date(2026, 11, 30)
         send_email.apply_async.assert_not_called()
+
+    def test_caught_up_renewal_records_the_charge(self, send_email, freezer, paid_subscription, payfast_api):
+        # Plan section 12, issue 1: the charge happened, so it belongs in the transaction history even
+        # though its ITN was lost. It is marked as caught up, since only /fetch vouched for it.
+        freezer.move_to("2026-11-02 10:00:00")
+        payfast_api.fetch.return_value = {"status_text": "ACTIVE", "run_date": "2026-11-30T00:00:00+02:00"}
+
+        services.run_daily_maintenance()
+
+        payment = PayFastPayment.objects.get(subscription=paid_subscription)
+        assert payment.caught_up
+        assert payment.kind == PayFastPayment.Kind.SUBSCRIPTION
+        assert payment.plan == MONTHLY
+        assert payment.amount_gross == Decimal("199.00")
+        assert payment.payment_status == "COMPLETE"
+
+    def test_caught_up_renewal_applies_a_pending_plan_change(self, send_email, freezer, paid_subscription, payfast_api):
+        # The lost ITN may be the first charge of a plan switch: the switch must still happen.
+        paid_subscription.pending_plan = YEARLY
+        paid_subscription.pending_amount = Decimal("1990.00")
+        paid_subscription.save()
+        freezer.move_to("2026-11-02 10:00:00")
+        payfast_api.fetch.return_value = {"status_text": "ACTIVE", "run_date": "2027-10-31T00:00:00+02:00"}
+
+        services.run_daily_maintenance()
+
+        paid_subscription.refresh_from_db()
+        assert paid_subscription.plan == YEARLY
+        assert paid_subscription.amount == Decimal("1990.00")
+        assert paid_subscription.frequency == constants.Frequency.ANNUAL
+        assert paid_subscription.pending_plan == ""
+        assert paid_subscription.current_period_end.date() == datetime.date(2027, 10, 31)
+        payment = PayFastPayment.objects.get(subscription=paid_subscription)
+        assert payment.plan == YEARLY
+        assert payment.amount_gross == Decimal("1990.00")
+
+    def test_late_itn_after_a_catch_up_completes_the_record_without_renewing_twice(
+        self, send_email, freezer, paid_subscription, payfast_api
+    ):
+        # PayFast keeps re-sending an ITN, so the "lost" one may still arrive after the catch-up.
+        freezer.move_to("2026-11-02 10:00:00")
+        payfast_api.fetch.return_value = {"status_text": "ACTIVE", "run_date": "2026-11-30T00:00:00+02:00"}
+        services.run_daily_maintenance()
+
+        assert services.process_itn(itn_data(token=paid_subscription.token, pf_payment_id="777")) == "processed"
+
+        paid_subscription.refresh_from_db()
+        assert paid_subscription.current_period_end.date() == datetime.date(2026, 11, 30)
+        payment = PayFastPayment.objects.get(subscription=paid_subscription)
+        assert payment.pf_payment_id == "777"
+        assert payment.amount_fee == Decimal("-4.58")
+        assert payment.caught_up
+
+    def test_next_renewal_after_a_catch_up_whose_itn_never_came_still_renews(
+        self, send_email, freezer, paid_subscription, payfast_api
+    ):
+        # If the lost ITN never arrives, next month's renewal ITN must not be taken for it.
+        freezer.move_to("2026-11-02 10:00:00")
+        payfast_api.fetch.return_value = {"status_text": "ACTIVE", "run_date": "2026-11-30T00:00:00+02:00"}
+        services.run_daily_maintenance()
+
+        freezer.move_to("2026-11-30 08:00:00")
+        services.process_itn(itn_data(token=paid_subscription.token, pf_payment_id="778"))
+
+        paid_subscription.refresh_from_db()
+        assert paid_subscription.current_period_end.date() == datetime.date(2026, 12, 30)
+        assert PayFastPayment.objects.filter(subscription=paid_subscription).count() == 2
+
+    def test_payment_failed_email_is_sent_once_even_if_cancelling_the_trial_fails(
+        self, send_email, freezer, paid_subscription, payfast_api
+    ):
+        # Plan section 12, issue 3: the cancel call fails, so the next daily run retries it, but the
+        # customer must not get the "payment failed" email again.
+        paid_subscription.status = PayFastSubscription.Status.TRIALING
+        paid_subscription.save()
+        freezer.move_to("2026-11-02 10:00:00")
+        payfast_api.fetch.return_value = {"status_text": "ACTIVE", "run_date": "2026-10-31T00:00:00+02:00"}
+        payfast_api.cancel.side_effect = PayFastApiError("boom")
+
+        services.run_daily_maintenance()
+        services.run_daily_maintenance()
+
+        send_email.apply_async.assert_called_once()
+        assert payfast_api.cancel.call_count == 2
 
     def test_failed_first_charge_after_a_trial_cancels_the_subscription(
         self, send_email, freezer, paid_subscription, payfast_api

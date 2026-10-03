@@ -1,8 +1,8 @@
 import { useQuery } from '@apollo/client/react';
-import { RoutesConfig as CoreRoutesConfig } from '@sb/webapp-core/config/routes';
 import { PageLayout } from '@sb/webapp-core/components/pageLayout';
 import { Paragraph } from '@sb/webapp-core/components/typography';
 import { Card, CardContent, CardHeader, CardTitle } from '@sb/webapp-core/components/ui/card';
+import { RoutesConfig as CoreRoutesConfig } from '@sb/webapp-core/config/routes';
 import { useToast } from '@sb/webapp-core/toast/useToast';
 import { useGenerateTenantPath } from '@sb/webapp-tenants/hooks';
 import { useCurrentTenant } from '@sb/webapp-tenants/providers';
@@ -65,9 +65,7 @@ export const PayfastReturn = () => {
     });
     // Like the Stripe donation page, a donation goes home; a subscription shows its new plan.
     navigate(
-      isDonation
-        ? generateTenantPath(CoreRoutesConfig.home)
-        : generateTenantPath(RoutesConfig.subscriptions.index),
+      isDonation ? generateTenantPath(CoreRoutesConfig.home) : generateTenantPath(RoutesConfig.subscriptions.index),
       { replace: true }
     );
   }, [isComplete, isDonation, navigate, generateTenantPath, stopPolling, toast, intl]);
@@ -89,7 +87,12 @@ export const PayfastReturn = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             <Paragraph>
-              {timedOut ? (
+              {timedOut && isDonation ? (
+                <FormattedMessage
+                  defaultMessage="PayFast hasn't confirmed your donation yet. It will appear in your transaction history as soon as it does; you don't need to pay again."
+                  id="PayFast / Return / Timed out donation description"
+                />
+              ) : timedOut ? (
                 <FormattedMessage
                   defaultMessage="PayFast hasn't confirmed your payment yet. It will appear on your subscription page as soon as it does; you don't need to pay again."
                   id="PayFast / Return / Timed out description"
@@ -101,11 +104,16 @@ export const PayfastReturn = () => {
                 />
               )}
             </Paragraph>
-            {timedOut && (
-              <Link to={generateTenantPath(RoutesConfig.subscriptions.index)} className="underline">
-                <FormattedMessage defaultMessage="Go to my subscription" id="PayFast / Return / Go to subscription" />
-              </Link>
-            )}
+            {timedOut &&
+              (isDonation ? (
+                <Link to={generateTenantPath(CoreRoutesConfig.home)} className="underline">
+                  <FormattedMessage defaultMessage="Go to home" id="PayFast / Return / Go home" />
+                </Link>
+              ) : (
+                <Link to={generateTenantPath(RoutesConfig.subscriptions.index)} className="underline">
+                  <FormattedMessage defaultMessage="Go to my subscription" id="PayFast / Return / Go to subscription" />
+                </Link>
+              ))}
           </CardContent>
         </Card>
       </div>

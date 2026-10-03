@@ -44,6 +44,8 @@ IGNORED = "ignored"
 TRIAL_REMINDER_LEAD_TIME = datetime.timedelta(days=3)
 # How late a renewal ITN may be before the daily task asks PayFast what happened.
 RENEWAL_ITN_GRACE = datetime.timedelta(days=1)
+# pf_payment_id of a charge recorded from GET /fetch, until its real ITN arrives (PayFastPayment.caught_up).
+CAUGHT_UP_ID_PREFIX = "caught-up-"
 
 # Display names used as PayFast's item_name (shown to the buyer on PayFast's payment page).
 ITEM_NAMES = {
@@ -226,38 +228,68 @@ def process_itn(data: dict) -> str:
 
     Returns PROCESSED, DUPLICATE (an ITN PayFast re-sent) or IGNORED (not something we started).
     Raises ItnRejected if the amount isn't what we expected.
+
+    The ITN is applied in one transaction with row locks. PayFast API calls it leads to (cancelling a
+    subscription a plan change replaced) run only after that commits: PayFast sends its CANCELLED ITN
+    before answering a cancel call, and that ITN needs the same row lock.
     """
+    after_commit = []
+    with transaction.atomic():
+        outcome = _apply_itn(data, after_commit)
+    for action in after_commit:
+        action()
+    return outcome
+
+
+def _apply_itn(data: dict, after_commit: list) -> str:
+    """process_itn's work inside its transaction. PayFast API calls go into `after_commit`."""
     pf_payment_id = data.get("pf_payment_id") or ""
     payment_status = (data.get("payment_status") or "").upper()
     token = data.get("token") or ""
 
-    with transaction.atomic():
-        if pf_payment_id and PayFastPayment.objects.filter(pf_payment_id=pf_payment_id).exists():
-            return DUPLICATE
+    # A re-sent ITN repeats both the id and the status. A CANCELLED ITN carries the id of the
+    # subscription's sign-up ITN (seen in the sandbox), so the id alone doesn't make it a repeat.
+    if (
+        pf_payment_id
+        and PayFastPayment.objects.filter(pf_payment_id=pf_payment_id, payment_status=payment_status).exists()
+    ):
+        return DUPLICATE
 
-        checkout = _find_checkout(data.get("m_payment_id"))
-        subscription = PayFastSubscription.objects.select_for_update().filter(token=token).first() if token else None
+    checkout = _find_checkout(data.get("m_payment_id"))
+    subscription = PayFastSubscription.objects.select_for_update().filter(token=token).first() if token else None
+    replaced = _find_replaced_subscription(token) if token and subscription is None else None
 
-        if payment_status == "CANCELLED":
-            if subscription is None:
-                return IGNORED
-            _apply_cancelled_itn(subscription, data)
+    if payment_status == "CANCELLED":
+        if replaced is not None:
+            _apply_replaced_cancelled_itn(replaced, token)
             return PROCESSED
-
-        if payment_status != "COMPLETE":
-            logger.warning("Ignoring PayFast ITN with payment_status %r", payment_status)
+        if subscription is None:
             return IGNORED
+        _apply_cancelled_itn(subscription, data)
+        return PROCESSED
 
-        if checkout is not None and checkout.status == PayFastCheckout.Status.PENDING:
-            if checkout.kind == PayFastCheckout.Kind.DONATION:
-                _complete_donation(checkout, data)
-            else:
-                _complete_subscription_checkout(checkout, token, data)
-            return PROCESSED
+    if payment_status != "COMPLETE":
+        logger.warning("Ignoring PayFast ITN with payment_status %r", payment_status)
+        return IGNORED
 
-        if subscription is not None:
+    if checkout is not None and checkout.status == PayFastCheckout.Status.PENDING:
+        if checkout.kind == PayFastCheckout.Kind.DONATION:
+            _complete_donation(checkout, data)
+        else:
+            _complete_subscription_checkout(checkout, token, data, after_commit)
+        return PROCESSED
+
+    if subscription is not None:
+        caught_up = _caught_up_payment_awaiting_itn(subscription)
+        if caught_up is not None:
+            _complete_caught_up_payment(caught_up, data)
+        else:
             _renew(subscription, data)
-            return PROCESSED
+        return PROCESSED
+
+    if replaced is not None:
+        _record_replaced_charge(replaced, token, data)
+        return PROCESSED
 
     logger.warning("Ignoring PayFast ITN %s: no matching checkout or subscription", pf_payment_id)
     return IGNORED
@@ -282,7 +314,8 @@ def _check_amount(expected: Decimal, data: dict):
 
 
 def _record_payment(*, tenant, kind, data, subscription=None, plan="") -> None:
-    if not data.get("pf_payment_id"):
+    # One row per PayFast transaction: a cancellation reusing the sign-up's id leaves that charge's row as it is.
+    if not data.get("pf_payment_id") or PayFastPayment.objects.filter(pf_payment_id=data["pf_payment_id"]).exists():
         return
 
     def decimal_field(name):
@@ -314,11 +347,11 @@ def _complete_donation(checkout: PayFastCheckout, data: dict):
     checkout.save(update_fields=["status", "updated_at"])
 
 
-def _complete_subscription_checkout(checkout: PayFastCheckout, token: str, data: dict):
+def _complete_subscription_checkout(checkout: PayFastCheckout, token: str, data: dict, after_commit: list):
     _check_amount(checkout.amount, data)
     subscription = PayFastSubscription.objects.select_for_update().get(pk=get_subscription(checkout.tenant).pk)
     if checkout.replaces_token:
-        _complete_plan_change(checkout, subscription, token, data)
+        _complete_plan_change(checkout, subscription, token, data, after_commit)
         return
     now = timezone.now()
 
@@ -353,11 +386,14 @@ def _complete_subscription_checkout(checkout: PayFastCheckout, token: str, data:
     checkout.save(update_fields=["status", "updated_at"])
 
 
-def _complete_plan_change(checkout: PayFastCheckout, subscription: PayFastSubscription, token: str, data: dict):
+def _complete_plan_change(
+    checkout: PayFastCheckout, subscription: PayFastSubscription, token: str, data: dict, after_commit: list
+):
     """
     The new subscription for a plan change is set up. The current paid period carries on unchanged;
     the new plan is "pending" and applies on the new subscription's first charge (in _renew), at the
-    end of the period. The old subscription is cancelled now, so only the new one bills from then on.
+    end of the period. The old subscription is cancelled once this commits (see process_itn), so only the
+    new one bills from then on.
     """
     subscription.token = token
     subscription.pending_plan = checkout.plan
@@ -374,14 +410,16 @@ def _complete_plan_change(checkout: PayFastCheckout, subscription: PayFastSubscr
     checkout.status = PayFastCheckout.Status.COMPLETE
     checkout.save(update_fields=["status", "updated_at"])
 
-    _cancel_superseded(subscription, checkout.replaces_token)
+    old_token = checkout.replaces_token
+    after_commit.append(lambda: _cancel_superseded(subscription, old_token))
 
 
 def _cancel_superseded(subscription: PayFastSubscription, old_token: str):
     """
     Cancel a subscription replaced by a plan change. If PayFast can't be reached, remember the token
     so the daily task retries; otherwise the customer would be billed by both subscriptions.
-    The cancellation ITN that PayFast then sends for the old token matches no subscription and is ignored.
+    The cancellation ITN that PayFast then sends for the old token only clears a pending retry
+    (_apply_replaced_cancelled_itn); it never cancels the new subscription.
     """
     try:
         PayFastApiClient().cancel(old_token)
@@ -393,11 +431,16 @@ def _cancel_superseded(subscription: PayFastSubscription, old_token: str):
     subscription.save(update_fields=["superseded_token", "updated_at"])
 
 
-def _renew(subscription: PayFastSubscription, data: dict):
-    """A recurring charge succeeded: apply any pending plan change and start the next period."""
-    expected = subscription.pending_amount if subscription.pending_plan else subscription.amount
-    _check_amount(expected, data)
+def _next_charge_amount(subscription: PayFastSubscription) -> Decimal:
+    """What the next recurring charge is: the pending plan's price if a plan change is waiting."""
+    return subscription.pending_amount if subscription.pending_plan else subscription.amount
 
+
+def _start_next_period(subscription: PayFastSubscription, period_end: Optional[datetime.datetime] = None):
+    """
+    A recurring charge succeeded: apply any pending plan change and start the next period, which ends
+    at `period_end` if given (PayFast's run date, when catching up), else one billing period later.
+    """
     if subscription.pending_plan:
         subscription.plan = subscription.pending_plan
         subscription.amount = subscription.pending_amount
@@ -407,10 +450,16 @@ def _renew(subscription: PayFastSubscription, data: dict):
 
     start = subscription.current_period_end or timezone.now()
     subscription.current_period_start = start
-    subscription.current_period_end = next_period_end(start, subscription.frequency)
+    subscription.current_period_end = period_end or next_period_end(start, subscription.frequency)
     subscription.status = PayFastSubscription.Status.ACTIVE
     subscription.payment_failed_notified_at = None
     subscription.save()
+
+
+def _renew(subscription: PayFastSubscription, data: dict):
+    """A recurring charge's ITN: check the amount, start the next period and record the charge."""
+    _check_amount(_next_charge_amount(subscription), data)
+    _start_next_period(subscription)
 
     _record_payment(
         tenant=subscription.tenant,
@@ -435,6 +484,84 @@ def _apply_cancelled_itn(subscription: PayFastSubscription, data: dict):
     )
 
 
+def _find_replaced_subscription(token: str) -> Optional[PayFastSubscription]:
+    """
+    The subscription whose plan change replaced the PayFast subscription `token`: still waiting to be
+    cancelled (superseded_token), or already cancelled (recorded on the completed plan-change checkout).
+    """
+    subscription = PayFastSubscription.objects.select_for_update().filter(superseded_token=token).first()
+    if subscription is not None:
+        return subscription
+    checkout = PayFastCheckout.objects.filter(replaces_token=token, status=PayFastCheckout.Status.COMPLETE).first()
+    if checkout is None:
+        return None
+    return PayFastSubscription.objects.select_for_update().filter(tenant=checkout.tenant).first()
+
+
+def _apply_replaced_cancelled_itn(subscription: PayFastSubscription, token: str):
+    """PayFast confirms a replaced subscription is cancelled: stop retrying our own cancel call."""
+    if subscription.superseded_token == token:
+        subscription.superseded_token = ""
+        subscription.save(update_fields=["superseded_token", "updated_at"])
+
+
+def _record_replaced_charge(subscription: PayFastSubscription, token: str, data: dict):
+    """
+    PayFast charged a subscription that a plan change replaced, before its cancellation took effect.
+    The money was taken, so the charge is recorded (it pays for nothing new, so the period stays as it
+    is), and logged as an error so someone refunds it from the admin.
+    """
+    _record_payment(
+        tenant=subscription.tenant,
+        kind=PayFastPayment.Kind.SUBSCRIPTION,
+        data=data,
+        subscription=subscription,
+        plan=subscription.plan,
+    )
+    logger.error(
+        "PayFast charged replaced subscription %s for tenant %s (pf_payment_id %s); refund it from the admin",
+        token,
+        subscription.tenant_id,
+        data.get("pf_payment_id"),
+    )
+
+
+def _caught_up_payment_awaiting_itn(subscription: PayFastSubscription) -> Optional[PayFastPayment]:
+    """
+    The oldest charge the daily task recorded from /fetch whose real ITN hasn't arrived yet. Only
+    until a day before the caught-up period ends: from then on, an ITN is the next renewal's.
+    """
+    if subscription.current_period_end and timezone.now() >= subscription.current_period_end - RENEWAL_ITN_GRACE:
+        return None
+    return (
+        subscription.payments.filter(caught_up=True, pf_payment_id__startswith=CAUGHT_UP_ID_PREFIX)
+        .order_by("created_at")
+        .first()
+    )
+
+
+def _complete_caught_up_payment(payment: PayFastPayment, data: dict):
+    """
+    The late ITN of a charge the daily task already caught up on: fill in PayFast's details. The period
+    was already moved forward, so it isn't moved again.
+    """
+    _check_amount(payment.amount_gross, data)
+
+    def decimal_field(name):
+        try:
+            return Decimal(data.get(name) or "0")
+        except InvalidOperation:
+            return Decimal("0")
+
+    payment.pf_payment_id = data.get("pf_payment_id") or payment.pf_payment_id
+    payment.m_payment_id = data.get("m_payment_id") or ""
+    payment.amount_fee = decimal_field("amount_fee")
+    payment.amount_net = decimal_field("amount_net")
+    payment.item_name = (data.get("item_name") or payment.item_name)[:100]
+    payment.raw = dict(data)
+    payment.save()
+
+
 # --- Cancellation --------------------------------------------------------------------------------
 
 
@@ -442,20 +569,26 @@ def cancel_subscription(*, tenant) -> PayFastSubscription:
     """
     Cancel a paid subscription. PayFast stops charging straight away; the plan lasts until the end
     of the current period, then the tenant is on the free plan (Stripe parity).
+
+    PayFast is called before the row is locked: it sends its CANCELLED ITN before answering the
+    cancel call, and that ITN needs the same row lock (process_itn).
     """
+    subscription = get_subscription(tenant)
+    if subscription.effective_plan() == FREE_PLAN or not subscription.token:
+        raise PayFastError("There is no paid plan to cancel.")
+    if not subscription.cancel_at_period_end:
+        _call_api("cancel", subscription.token)
+
     with transaction.atomic():
-        subscription = PayFastSubscription.objects.select_for_update().get(pk=get_subscription(tenant).pk)
-        if subscription.effective_plan() == FREE_PLAN or not subscription.token:
-            raise PayFastError("There is no paid plan to cancel.")
-        if not subscription.cancel_at_period_end:
-            _call_api("cancel", subscription.token)
-            subscription.cancel_at_period_end = True
-        if subscription.superseded_token:
-            _cancel_superseded(subscription, subscription.superseded_token)
+        subscription = PayFastSubscription.objects.select_for_update().get(pk=subscription.pk)
+        subscription.cancel_at_period_end = True
         subscription.pending_plan = ""
         subscription.pending_amount = None
         subscription.save()
-        return subscription
+
+    if subscription.superseded_token:
+        _cancel_superseded(subscription, subscription.superseded_token)
+    return subscription
 
 
 def cancel_tenant_subscription_immediately(tenant):
@@ -632,15 +765,29 @@ def _check_overdue_renewal(subscription: PayFastSubscription):
 
     if remote.get("status_text") == "ACTIVE" and run_date and run_date > period_end.date():
         logger.warning("PayFast renewal ITN missing for subscription %s; catching up", subscription.pk)
-        subscription.current_period_start = period_end
-        subscription.current_period_end = datetime.datetime.combine(run_date, period_end.timetz())
-        subscription.status = PayFastSubscription.Status.ACTIVE
-        subscription.save()
+        amount = _next_charge_amount(subscription)
+        _start_next_period(subscription, period_end=datetime.datetime.combine(run_date, period_end.timetz()))
+        # The charge happened, so it belongs in the history. Its ITN may still arrive; then
+        # _complete_caught_up_payment fills in PayFast's id, fee and net amount.
+        PayFastPayment.objects.create(
+            tenant=subscription.tenant,
+            kind=PayFastPayment.Kind.SUBSCRIPTION,
+            subscription=subscription,
+            plan=subscription.plan,
+            pf_payment_id=f"{CAUGHT_UP_ID_PREFIX}{uuid.uuid4().hex}",
+            amount_gross=amount,
+            payment_status="COMPLETE",
+            item_name=ITEM_NAMES.get(subscription.plan, ""),
+            caught_up=True,
+        )
         return
 
     if subscription.payment_failed_notified_at is None:
         notifications.SubscriptionErrorEmail(customer=subscription).send()
+        # Saved before the cancel call below, so if that fails and the next run retries it, the
+        # customer doesn't get the email again.
         subscription.payment_failed_notified_at = timezone.now()
+        subscription.save(update_fields=["payment_failed_notified_at", "updated_at"])
 
     if subscription.is_trialing:
         PayFastApiClient().cancel(subscription.token)

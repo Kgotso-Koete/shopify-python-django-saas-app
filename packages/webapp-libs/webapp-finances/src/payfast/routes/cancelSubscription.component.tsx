@@ -36,6 +36,7 @@ export const PayfastCancelSubscription = () => {
   const generateTenantPath = useGenerateTenantPath();
   const { subscription, isPaid, tenantId } = usePayfastSubscription();
   const planName = useSubscriptionPlanDisplayName(subscription?.effectivePlan as SubscriptionPlanName);
+  const pendingPlanName = useSubscriptionPlanDisplayName(subscription?.pendingPlan as SubscriptionPlanName);
 
   // The same message as the Stripe page (routes/cancelSubscription/cancelSubscription.hook.ts).
   const successMessage = intl.formatMessage({
@@ -64,6 +65,11 @@ export const PayfastCancelSubscription = () => {
 
   const hasActiveSubscription = isPaid && subscription && !subscription.cancelAtPeriodEnd;
   const isYearly = subscription?.effectivePlan === SubscriptionPlanName.YEARLY;
+  // As on the current subscription page: a trial charges nothing yet, and a plan switch shows what
+  // PayFast will charge from the next billing period.
+  const isTrialing = subscription?.status === 'trialing';
+  const hasPendingPrice = Boolean(subscription?.pendingPlan && subscription?.pendingAmount);
+  const isPendingYearly = subscription?.pendingPlan === SubscriptionPlanName.YEARLY;
 
   return (
     <PageLayout>
@@ -154,10 +160,43 @@ export const PayfastCancelSubscription = () => {
                     <FormattedMessage defaultMessage="Active plan price:" id="Cancel subscription / Active plan price" />
                   </div>
                   <Paragraph className="text-base font-semibold">
-                    {formatZar(subscription.amount)}
-                    <span className="text-sm font-normal text-muted-foreground">{isYearly ? ' / year' : ' / month'}</span>
+                    {isTrialing ? (
+                      <FormattedMessage defaultMessage="Free trial" id="PayFast / Cancel subscription / Free trial" />
+                    ) : (
+                      <>
+                        {formatZar(subscription.amount)}
+                        <span className="text-sm font-normal text-muted-foreground">
+                          {isYearly ? ' / year' : ' / month'}
+                        </span>
+                      </>
+                    )}
                   </Paragraph>
                 </div>
+                {hasPendingPrice && (
+                  <>
+                    <Separator />
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium text-muted-foreground">
+                        <FormattedMessage defaultMessage="Next billing plan:" id="PayFast / My subscription / Next plan" />
+                      </div>
+                      <Paragraph className="text-base font-semibold">
+                        <FormattedMessage
+                          defaultMessage="{plan}, {price} / {interval}"
+                          id="PayFast / My subscription / Next plan with price"
+                          values={{
+                            plan: pendingPlanName,
+                            price: formatZar(subscription.pendingAmount),
+                            interval: isPendingYearly ? (
+                              <FormattedMessage defaultMessage="year" id="PayFast / My subscription / Year" />
+                            ) : (
+                              <FormattedMessage defaultMessage="month" id="PayFast / My subscription / Month" />
+                            ),
+                          }}
+                        />
+                      </Paragraph>
+                    </div>
+                  </>
+                )}
                 {subscription.currentPeriodEnd && (
                   <>
                     <Separator />

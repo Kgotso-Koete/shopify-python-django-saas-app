@@ -53,9 +53,9 @@ class PublicCloudflareR2Storage(S3Boto3Storage):
         # R2 requires SigV4 - SigV2 is not supported
         kwargs.setdefault("signature_version", "s3v4")
 
-        custom_domain = getattr(settings, "R2_CUSTOM_DOMAIN", None)
-        if custom_domain:
-            kwargs.setdefault("custom_domain", custom_domain)
+        # Only R2's own domain (or none, for links on the R2 endpoint). Never inherit AWS_S3_CUSTOM_DOMAIN,
+        # which docker-compose.local.yml sets to LocalStack's address.
+        kwargs.setdefault("custom_domain", getattr(settings, "R2_CUSTOM_DOMAIN", None) or None)
 
         super().__init__(**kwargs)
 
@@ -94,10 +94,9 @@ class CloudflareR2Storage(S3Boto3Storage):
         # R2 requires SigV4 - SigV2 is not supported
         kwargs.setdefault("signature_version", "s3v4")
 
-        # Use custom domain if provided (for public bucket access)
-        custom_domain = getattr(settings, "R2_CUSTOM_DOMAIN", None)
-        if custom_domain:
-            kwargs.setdefault("custom_domain", custom_domain)
+        # Use custom domain if provided (for public bucket access). Only R2's own: never inherit
+        # AWS_S3_CUSTOM_DOMAIN, which docker-compose.local.yml sets to LocalStack's address.
+        kwargs.setdefault("custom_domain", getattr(settings, "R2_CUSTOM_DOMAIN", None) or None)
 
         super().__init__(**kwargs)
 

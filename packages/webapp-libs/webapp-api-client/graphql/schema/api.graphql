@@ -3147,6 +3147,8 @@ type PayFastSubscriptionType {
   effectivePlan: String!
   """A plan change that takes effect at the next renewal"""
   pendingPlan: String
+  """What the pending plan charges, from the next renewal"""
+  pendingAmount: Decimal
   status: String!
   amount: Decimal!
   currentPeriodStart: DateTime
