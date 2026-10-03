@@ -1,6 +1,6 @@
 {
   "name": "sb",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "license": "MIT",
   "private": true,
   "packageManager": "pnpm@10.26.2",
