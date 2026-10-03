@@ -626,6 +626,9 @@ AWS_EXPORTS_STORAGE_BUCKET_NAME = env("AWS_EXPORTS_STORAGE_BUCKET_NAME", default
 AWS_S3_ENDPOINT_URL = AWS_ENDPOINT_URL
 AWS_S3_CUSTOM_DOMAIN = env("AWS_S3_CUSTOM_DOMAIN", default=None)
 AWS_S3_URL_PROTOCOL = env("AWS_S3_URL_PROTOCOL", default="https:")
+# Region the S3-compatible storages send. Unset, boto3 falls back to AWS_DEFAULT_REGION, which
+# docker-compose.yml sets to eu-west-1 for LocalStack; Cloudflare R2 rejects that, so set "auto" for R2.
+AWS_S3_REGION_NAME = env("AWS_S3_REGION_NAME", default=None)
 AWS_QUERYSTRING_EXPIRE = env("AWS_QUERYSTRING_EXPIRE", default=60 * 60 * 24)
 AWS_CLOUDFRONT_KEY = os.environ.get("AWS_CLOUDFRONT_KEY", "").encode("ascii")
 AWS_CLOUDFRONT_KEY_ID = os.environ.get("AWS_CLOUDFRONT_KEY_ID", None)

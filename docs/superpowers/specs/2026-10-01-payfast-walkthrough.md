@@ -241,7 +241,7 @@ sequenceDiagram
   Note over B,P: If no renewal ITN arrives within 1 day of current_period_end
   B->>P: Daily job calls GET /subscriptions/token/fetch
   alt PayFast run_date moved past our period end and status ACTIVE
-    B->>B: ITN was lost, move the period to run_date
+    B->>B: ITN was lost: apply any pending plan, move the period to run_date, record the charge as caught up
   else Charge did not happen
     B->>U: SubscriptionErrorEmail, once
     alt Subscription was trialing
@@ -252,12 +252,18 @@ sequenceDiagram
     end
   end
   P->>B: A later COMPLETE ITN clears past_due
+  P->>B: The lost ITN, if it still arrives, completes the caught-up record without renewing again
   Note over B: Past due beyond 7 days, daily job cancels at PayFast and resets to free
 ```
 
 PayFast sends no ITN when a charge fails. It retries the charge itself and eventually locks the
 subscription. So the daily job asks PayFast with `/fetch` whenever an expected renewal is late.
 `effective_plan()` already applies the 7-day grace on read, so the job does not have to run on time.
+
+When `/fetch` shows the charge did happen, the job records it as a `PayFastPayment` with `caught_up=True` and a
+placeholder id (`caught-up-…`), so it still shows in the transaction history. PayFast keeps re-sending an ITN, so
+the lost one may turn up later: until a day before the caught-up period ends, it fills in that record (PayFast's
+real id, fee and net) instead of moving the period a second time. After that, an ITN counts as the next renewal.
 
 ### 3d. Plan change (monthly to yearly)
 
@@ -279,7 +285,8 @@ sequenceDiagram
   alt Cancel fails
     B->>B: Keep old token in superseded_token, daily job retries
   end
-  P->>B: CANCELLED ITN for old token, matches nothing, ignored
+  P->>B: CANCELLED ITN for old token: clears any cancel retry, never touches the new subscription
+  P->>B: If PayFast still charged the old token: payment recorded, error logged for a refund
   F->>U: Subscription page shows Next billing plan Yearly
   P->>B: First charge of new subscription at period end, 1990.00
   B->>B: _renew applies pending plan, plan yearly, period one year on
@@ -306,6 +313,7 @@ sequenceDiagram
   B-->>F: Updated subscription
   F->>U: Toast moved to free plan with the next billing period
   P->>B: CANCELLED ITN for the token
+  B->>P: Only if validate won't confirm it: GET /fetch, must say CANCELLED
   B->>B: Sets cancel_at_period_end again, harmless
   Note over B: effective_plan returns free once current_period_end passes
   Note over B: Daily job then calls reset_to_free_plan
@@ -455,11 +463,17 @@ Security checks run on an ITN before anything acts on it.
 - `verify_itn(request)`: runs the checks in this order: signature, `merchant_id`, source IP (if
   `PAYFAST_VERIFY_SOURCE_IP`), then server confirmation. It returns ordered pairs or raises
   `ItnRejected`. The amount check comes later, in [`services`](../../../packages/backend/apps/payfast/services.py).
+  One exception: PayFast's validate endpoint was seen refusing a `CANCELLED` ITN in the sandbox, so a
+  cancellation that validate won't confirm is accepted only if `cancellation_confirmed_by_api` agrees. A
+  payment (`COMPLETE`) always needs validate's `VALID`.
 - `client_ip(request)`: uses the last `X-Forwarded-For` entry (the one the proxy appended), otherwise
   `REMOTE_ADDR`.
 - `source_is_payfast(ip)`: published ranges, or the resolved PayFast hosts.
 - `confirm_with_payfast(param_string)`: POSTs to `/eng/query/validate` and expects `VALID`. Any error
   counts as no.
+- `cancellation_confirmed_by_api(token)`: asks the Subscriptions API (`GET /fetch`) and expects
+  `status_text` `CANCELLED`. Any error counts as no. What `/fetch` returns for a cancelled subscription isn't
+  documented, so the plan's section 11 (check 14) confirms it in the sandbox.
 
 ### [`apps/payfast/models.py`](../../../packages/backend/apps/payfast/models.py) and [`migrations/`](../../../packages/backend/apps/payfast/migrations/)
 
@@ -479,7 +493,7 @@ Our own billing state. PayFast has no object API to mirror, so there is no equiv
 - `PayFastPayment`: one per ITN we accepted. `pf_payment_id` is unique, which makes a repeated ITN a
   no-op. It holds the amounts, `refunded_amount` and the raw payload.
 - [`0001_initial.py`](../../../packages/backend/apps/payfast/migrations/0001_initial.py) creates the three tables. [`0002_plan_change_by_checkout.py`](../../../packages/backend/apps/payfast/migrations/0002_plan_change_by_checkout.py) adds `replaces_token`
-  and `superseded_token`.
+  and `superseded_token`. [`0003_payment_caught_up.py`](../../../packages/backend/apps/payfast/migrations/0003_payment_caught_up.py) adds `PayFastPayment.caught_up`.
 
 ### [`apps/payfast/services.py`](../../../packages/backend/apps/payfast/services.py), checkouts
 
@@ -508,29 +522,45 @@ Our own billing state. PayFast has no object API to mirror, so there is no equiv
 
 ### [`apps/payfast/services.py`](../../../packages/backend/apps/payfast/services.py), ITN processing
 
-- `process_itn(data)`: runs inside one transaction with row locks. It returns `DUPLICATE` if the
-  `pf_payment_id` was already stored. Then: a CANCELLED ITN for a known token goes to
+- `process_itn(data)`: applies the ITN in `_apply_itn`, inside one transaction with row locks. PayFast API calls it
+  leads to (cancelling a replaced subscription) wait in `after_commit` and run once that transaction commits,
+  because PayFast sends its CANCELLED ITN before answering a cancel call and that ITN needs the same lock. It returns `DUPLICATE` if a payment with the
+  same `pf_payment_id` and `payment_status` was already stored. (A `CANCELLED` ITN carries the id of the
+  subscription's sign-up ITN, so the id alone isn't enough; `_record_payment` keeps one row per id.) Then: a CANCELLED ITN for a known token goes to
   `_apply_cancelled_itn`. A COMPLETE ITN for a pending checkout goes to `_complete_donation` or
-  `_complete_subscription_checkout`. A COMPLETE ITN for a known token goes to `_renew`. Anything else
-  is `IGNORED`.
+  `_complete_subscription_checkout`. A COMPLETE ITN for a known token goes to `_complete_caught_up_payment`
+  if the daily job already caught up on that charge, otherwise to `_renew`. A token that a plan change
+  replaced goes to `_apply_replaced_cancelled_itn` (CANCELLED) or `_record_replaced_charge` (COMPLETE).
+  Anything else is `IGNORED`.
 - `_check_amount(expected, data)`: PayFast's check 3. `amount_gross` must be within 0.01 of what we
   expected, or it raises `ItnRejected`.
 - `_complete_subscription_checkout`: first subscription. It sets plan, token, amount and frequency,
   then either trialing with `trial_end` or active with a one-period end. For a checkout with
   `replaces_token` it hands over to `_complete_plan_change`.
 - `_complete_plan_change`: stores the new token and sets `pending_plan` and `pending_amount`. The
-  period is not touched. Then it calls `_cancel_superseded(old_token)`.
+  period is not touched. It queues `_cancel_superseded(old_token)` to run after the commit.
 - `_cancel_superseded(subscription, old_token)`: `PUT cancel` on the old token. On failure it keeps
   the token in `superseded_token` for the daily retry.
 - `_renew(subscription, data)`: a recurring charge. It expects `pending_amount` if a change is
-  pending, applies the pending plan, moves the period forward from the old end, and sets status active
-  (which also clears past_due).
+  pending (`_next_charge_amount`), then calls `_start_next_period` and records the payment.
+- `_start_next_period(subscription, period_end=None)`: applies the pending plan, moves the period forward from
+  the old end (to `period_end` when catching up), and sets status active (which also clears past_due). Shared by
+  `_renew` and the daily job's catch-up.
+- `_find_replaced_subscription(token)`: the subscription whose plan change replaced `token`, through
+  `superseded_token` or the completed checkout's `replaces_token`.
+- `_record_replaced_charge`: PayFast billed a replaced subscription before its cancellation took effect. The
+  charge is recorded (the period isn't moved) and logged as an error asking for a refund.
+- `_apply_replaced_cancelled_itn`: PayFast confirms a replaced subscription is cancelled, so the daily cancel
+  retry stops.
+- `_caught_up_payment_awaiting_itn` / `_complete_caught_up_payment`: find and fill in a charge the daily job
+  recorded from `/fetch`, when its late ITN arrives.
 - `_apply_cancelled_itn`: sets `cancel_at_period_end` and clears any pending change.
 - `_record_payment`: writes the `PayFastPayment` row (skipped if there is no `pf_payment_id`).
 
 ### [`apps/payfast/services.py`](../../../packages/backend/apps/payfast/services.py), cancellation, refunds and maintenance
 
-- `cancel_subscription(tenant)`: called by `payfastCancelSubscription`. Calls `PUT cancel` (once), sets
+- `cancel_subscription(tenant)`: called by `payfastCancelSubscription`. Calls `PUT cancel` (once, before locking
+  the row, for the same reason), sets
   `cancel_at_period_end`, also retries any `superseded_token`, and clears the pending plan. API
   failure becomes a user-visible `PayFastError`.
 - `cancel_tenant_subscription_immediately(tenant)`: for tenant deletion. It cancels both the current
@@ -545,12 +575,15 @@ Our own billing state. PayFast has no object API to mirror, so there is no equiv
   `_check_overdue_renewal`. (3) Reset ended cancelled subscriptions to free. (4) Cancel and reset
   subscriptions past due beyond grace. Returns counts.
 - `_check_overdue_renewal(subscription)`: uses `/fetch`. If the status is ACTIVE and the run date
-  moved past our period end, it catches up the period. Otherwise it sends `SubscriptionErrorEmail`
-  once, then cancels a trialing subscription or marks a paid one past_due.
+  moved past our period end, it catches up: `_start_next_period` (so a pending plan is applied) and a
+  caught-up `PayFastPayment`. Otherwise it sends `SubscriptionErrorEmail` once (the "sent" time is saved
+  before the cancel call, so a failed cancel doesn't repeat the email), then cancels a trialing
+  subscription or marks a paid one past_due.
 
 ### [`apps/payfast/schema.py`](../../../packages/backend/apps/payfast/schema.py)
 
-The GraphQL API. It is always in the schema. Mutations call `require_payfast()`. Return and cancel
+The GraphQL API. It is always in the schema. Mutations and the tenant billing reads call `require_payfast()`, so on a
+Stripe deployment they refuse and never create a `PayFastSubscription` row. Return and cancel
 paths must be same-site relative paths (`web_app_url`), so a caller can't redirect buyers off-site.
 `request_tenant` checks the `tenantId` against the request's tenant.
 
@@ -559,7 +592,7 @@ Queries:
 - `paymentConfig { backend currency }`: anyone. This drives the frontend switch.
 - `payfastSubscriptionPlans`, `payfastDonationAmounts`: anyone. ZAR prices from settings.
 - `payfastActiveSubscription(tenantId)`: tenant member with `billing.view`. Includes
-  `effectivePlan`, `pendingPlan`, dates, `canActivateTrial`, `hasCard`, `cardUpdateUrl(returnPath)`.
+  `effectivePlan`, `pendingPlan`, `pendingAmount`, dates, `canActivateTrial`, `hasCard`, `cardUpdateUrl(returnPath)`.
 - `payfastPayments(tenantId)`: `billing.view`. A relay connection of COMPLETE payments with amount
   above 0 (no R0 trial or plan-change starts, no cancel notices).
 - `payfastCheckoutStatus(tenantId, mPaymentId)`: `billing.view`. Returns `pending`, `complete` or
@@ -594,7 +627,7 @@ Mutations (all need tenant membership plus `billing.manage`):
 - `payfast_init_tenants`: gives existing tenants a free-plan record after switching a deployment to
   PayFast. Safe to re-run.
 - `payfast_seed_demo`: adds two example payments (`seed-` ids) to each organisation the user owns, for
-  checking the history page by hand. It never contacts PayFast.
+  checking the history page by hand. It never contacts PayFast, and refuses to run in production.
 
 Run them in the backend container:
 
@@ -688,7 +721,10 @@ export const PaymentConfirm = withPaymentBackend(
 ### [`payfast/routes/currentSubscription.content.tsx`](../../../packages/webapp-libs/webapp-finances/src/payfast/routes/currentSubscription.content.tsx)
 
 - `PayfastCurrentSubscriptionContent`: shows the plan name and ZAR price, next renewal or expiry date
-  (once cancelled), next billing plan (pending change) and trial expiry. Edit and Cancel buttons need
+  (once cancelled), next billing plan with its price (pending change) and trial expiry. During a trial the
+  price line is the first charge after it, e.g. "Free trial, then Yearly at R 10.00 / year": the pending
+  plan's price if there is one, since that's what PayFast will charge. A cancelled trial reads "Free trial. Cancelled, so you won't be
+  charged." instead. Edit and Cancel buttons need
   `billing.manage`, and Cancel only shows on an active paid plan.
 
 ### [`payfast/routes/editSubscription.component.tsx`](../../../packages/webapp-libs/webapp-finances/src/payfast/routes/editSubscription.component.tsx) and [`subscriptionPlanItem.component.tsx`](../../../packages/webapp-libs/webapp-finances/src/payfast/routes/subscriptionPlanItem.component.tsx)
@@ -703,7 +739,8 @@ export const PaymentConfirm = withPaymentBackend(
 
 ### [`payfast/routes/cancelSubscription.component.tsx`](../../../packages/webapp-libs/webapp-finances/src/payfast/routes/cancelSubscription.component.tsx)
 
-- `PayfastCancelSubscription`: plan details and a confirm dialog that calls
+- `PayfastCancelSubscription`: plan details (the same rows as the Stripe page; during a trial the price reads
+  "Free trial", and a pending switch adds **Next billing plan** with its price) and a confirm dialog that calls
   `payfastCancelSubscription`. It refetches the subscription, shows the Stripe success message and
   goes back. Errors show the server's reason.
 
@@ -730,7 +767,7 @@ export const PaymentConfirm = withPaymentBackend(
 - `PayfastReturn`: reads `m` and `kind` from the URL, then polls `payfastCheckoutStatus` every 2
   seconds for up to 60 seconds. On `complete` it shows a "Payment successful" toast and goes home
   (donation) or to the subscription page. On timeout it says PayFast hasn't confirmed yet and that
-  the user should not pay again.
+  the user should not pay again, with a link to Home (donation) or to the subscription page.
 
 ### [`payfast/tests/fixtures.ts`](../../../packages/webapp-libs/webapp-finances/src/payfast/tests/fixtures.ts) and [`payfast/__tests__/`](../../../packages/webapp-libs/webapp-finances/src/payfast/__tests__/)
 
@@ -754,14 +791,17 @@ Unit tests (no network; the PayFast API is the `payfast_api` mock):
 - [`test_signature.py`](../../../packages/backend/apps/payfast/tests/test_signature.py): the three signatures, checked against a Python port of PayFast's PHP reference.
 - [`test_client.py`](../../../packages/backend/apps/payfast/tests/test_client.py): exact method, URL, headers, body and sandbox flag of each API call, plus error
   handling.
-- [`test_itn.py`](../../../packages/backend/apps/payfast/tests/test_itn.py): each ITN check, `client_ip`, source checks, the validate call.
+- [`test_itn.py`](../../../packages/backend/apps/payfast/tests/test_itn.py): each ITN check, `client_ip`, source checks, the validate call, and the
+  Subscriptions API confirmation for cancellations.
 - [`test_checks.py`](../../../packages/backend/apps/payfast/tests/test_checks.py): each `payfast.E00x` system check.
 - [`test_settings.py`](../../../packages/backend/apps/payfast/tests/test_settings.py): env vars are wired up, and `ENVIRONMENT_NAME` picks the credential set
   (subprocess-based).
 - [`test_models.py`](../../../packages/backend/apps/payfast/tests/test_models.py): defaults, `effective_plan()` in every state, trial eligibility.
 - [`test_services.py`](../../../packages/backend/apps/payfast/tests/test_services.py): checkouts, every ITN path (first payment, renewal, pending plan, past due,
-  cancel, donation, duplicates), plan-change checkout and completion, cancellation, tenant deletion,
-  daily maintenance, `next_period_end`.
+  cancel, donation, duplicates), plan-change checkout and completion, charges and cancellations on a replaced
+  subscription, cancellation, tenant deletion, daily maintenance (including the caught-up charge and its late
+  ITN), `next_period_end`.
+- [`test_commands.py`](../../../packages/backend/apps/payfast/tests/test_commands.py): `payfast_seed_demo` seeds in development and refuses production.
 - [`test_tasks.py`](../../../packages/backend/apps/payfast/tests/test_tasks.py): the Celery task, its beat entry, and the two maintenance commands.
 
 Integration tests (real URLs, schema, database; only PayFast's servers and DNS are faked):
@@ -786,7 +826,8 @@ Elsewhere:
 - [`apps/finances/tests/test_payment_backend_settings.py`](../../../packages/backend/apps/finances/tests/test_payment_backend_settings.py): the `PAYMENT_BACKEND` env var, and that
   `STRIPE_ENABLED` is off under PayFast.
 - [`packages/backend/.test.env`](../../../packages/backend/.test.env) pins `PAYMENT_BACKEND=stripe`, because the boilerplate's Stripe tests expect it
-  (the app's own default is PayFast), and so a developer's `.env` can't leak into tests. PayFast tests opt in with the `payfast_backend` fixture.
+  (the app's own default is PayFast), and so a developer's `.env` can't leak into tests. PayFast tests opt in with the `payfast_backend` fixture. The file must not contain comments:
+  [`run_tests.sh`](../../../packages/backend/scripts/runtime/run_tests.sh) loads it with `env $(cat .test.env | xargs)`, which breaks on `#` lines.
 
 Run (from the repo root):
 

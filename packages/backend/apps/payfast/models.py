@@ -6,7 +6,8 @@ payments only from ITNs and the Subscriptions API. So these models hold what we 
 
 - PayFastSubscription: one per tenant; the tenant's plan, PayFast token and billing period.
 - PayFastCheckout:     a checkout we started; the source of truth for who pays what when the ITN arrives.
-- PayFastPayment:      one confirmed transaction (subscription charge or donation), from an ITN.
+- PayFastPayment:      one confirmed transaction (subscription charge or donation), from an ITN
+                       (or from GET /fetch when a renewal's ITN was lost).
 
 See docs/superpowers/plans/2026-09-30-payfast-payment-backend-plan.md section 3.2.
 """
@@ -173,6 +174,9 @@ class PayFastPayment(TimestampedMixin, models.Model):
     payment_status = models.CharField(max_length=16)  # COMPLETE or CANCELLED, as PayFast sent it
     item_name = models.CharField(max_length=100, blank=True, default="")
     refunded_amount = models.DecimalField(default=Decimal("0.00"), **AMOUNT_FIELD)
+    # Recorded by the daily task from GET /fetch because the renewal's ITN never arrived. Until that ITN
+    # turns up, pf_payment_id is a placeholder (services.CAUGHT_UP_ID_PREFIX) and the fee and net are unknown.
+    caught_up = models.BooleanField(default=False)
     # The full ITN payload, for support and audits.
     raw = models.JSONField(default=dict, blank=True)
 

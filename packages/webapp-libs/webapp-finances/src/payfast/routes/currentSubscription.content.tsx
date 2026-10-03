@@ -22,9 +22,20 @@ const DetailRow = ({ icon, label, children }: { icon: ReactNode; label: ReactNod
   </div>
 );
 
+const Interval = ({ yearly }: { yearly: boolean }) =>
+  yearly ? (
+    <FormattedMessage defaultMessage="year" id="PayFast / My subscription / Year" />
+  ) : (
+    <FormattedMessage defaultMessage="month" id="PayFast / My subscription / Month" />
+  );
+
 /**
  * PayFast counterpart of routes/subscriptions/subscriptions.content.tsx: the tenant's plan, price,
  * renewal or expiry date, trial end and any plan change waiting for the next renewal.
+ *
+ * During a trial nothing has been charged, so instead of the plan's price the page shows the first
+ * charge after the trial: after a switch during the trial, that's the new plan's price.
+ * A cancelled trial is never charged, so it says so instead.
  */
 export const PayfastCurrentSubscriptionContent = () => {
   const generateTenantPath = useGenerateTenantPath();
@@ -41,6 +52,8 @@ export const PayfastCurrentSubscriptionContent = () => {
 
   const isYearly = subscription.effectivePlan === SubscriptionPlanName.YEARLY;
   const isTrialing = subscription.status === 'trialing';
+  const isPendingYearly = subscription.pendingPlan === SubscriptionPlanName.YEARLY;
+  const hasPendingPrice = Boolean(subscription.pendingPlan && subscription.pendingAmount);
 
   return (
     <div className="space-y-6">
@@ -64,14 +77,28 @@ export const PayfastCurrentSubscriptionContent = () => {
             <CardContent className="space-y-4">
               <div>
                 <p className="text-2xl font-semibold">{planName}</p>
-                {isPaid ? (
+                {isPaid && isTrialing && subscription.cancelAtPeriodEnd ? (
                   <p className="text-sm text-muted-foreground mt-1">
-                    {formatZar(subscription.amount)} /{' '}
-                    {isYearly ? (
-                      <FormattedMessage defaultMessage="year" id="PayFast / My subscription / Year" />
-                    ) : (
-                      <FormattedMessage defaultMessage="month" id="PayFast / My subscription / Month" />
-                    )}
+                    <FormattedMessage
+                      defaultMessage="Free trial. Cancelled, so you won't be charged."
+                      id="PayFast / My subscription / Cancelled trial"
+                    />
+                  </p>
+                ) : isPaid && isTrialing ? (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    <FormattedMessage
+                      defaultMessage="Free trial, then {plan} at {price} / {interval}"
+                      id="PayFast / My subscription / Trial then price"
+                      values={{
+                        plan: hasPendingPrice ? pendingPlanName : planName,
+                        price: formatZar(hasPendingPrice ? subscription.pendingAmount : subscription.amount),
+                        interval: <Interval yearly={hasPendingPrice ? isPendingYearly : isYearly} />,
+                      }}
+                    />
+                  </p>
+                ) : isPaid ? (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {formatZar(subscription.amount)} / <Interval yearly={isYearly} />
                   </p>
                 ) : (
                   <p className="text-sm text-muted-foreground mt-1">
@@ -85,14 +112,21 @@ export const PayfastCurrentSubscriptionContent = () => {
                   {subscription.cancelAtPeriodEnd ? (
                     <DetailRow
                       icon={<CalendarClock className="h-5 w-5 text-muted-foreground flex-shrink-0" />}
-                      label={<FormattedMessage defaultMessage="Expiry date:" id="PayFast / My subscription / Expiry date" />}
+                      label={
+                        <FormattedMessage defaultMessage="Expiry date:" id="PayFast / My subscription / Expiry date" />
+                      }
                     >
                       <FormattedDate value={subscription.currentPeriodEnd} />
                     </DetailRow>
                   ) : (
                     <DetailRow
                       icon={<ArrowRightToLine className="h-5 w-5 text-muted-foreground flex-shrink-0" />}
-                      label={<FormattedMessage defaultMessage="Next renewal:" id="PayFast / My subscription / Next renewal" />}
+                      label={
+                        <FormattedMessage
+                          defaultMessage="Next renewal:"
+                          id="PayFast / My subscription / Next renewal"
+                        />
+                      }
                     >
                       <FormattedDate value={subscription.currentPeriodEnd} />
                     </DetailRow>
@@ -102,10 +136,25 @@ export const PayfastCurrentSubscriptionContent = () => {
                     <DetailRow
                       icon={<StepForward className="h-5 w-5 text-muted-foreground flex-shrink-0" />}
                       label={
-                        <FormattedMessage defaultMessage="Next billing plan:" id="PayFast / My subscription / Next plan" />
+                        <FormattedMessage
+                          defaultMessage="Next billing plan:"
+                          id="PayFast / My subscription / Next plan"
+                        />
                       }
                     >
-                      {pendingPlanName}
+                      {hasPendingPrice ? (
+                        <FormattedMessage
+                          defaultMessage="{plan}, {price} / {interval}"
+                          id="PayFast / My subscription / Next plan with price"
+                          values={{
+                            plan: pendingPlanName,
+                            price: formatZar(subscription.pendingAmount),
+                            interval: <Interval yearly={isPendingYearly} />,
+                          }}
+                        />
+                      ) : (
+                        pendingPlanName
+                      )}
                     </DetailRow>
                   )}
 
@@ -133,7 +182,10 @@ export const PayfastCurrentSubscriptionContent = () => {
                 to={generateTenantPath(RoutesConfig.subscriptions.currentSubscription.edit)}
                 variant={ButtonVariant.PRIMARY}
               >
-                <FormattedMessage defaultMessage="Edit subscription" id="PayFast / My subscription / Edit subscription" />
+                <FormattedMessage
+                  defaultMessage="Edit subscription"
+                  id="PayFast / My subscription / Edit subscription"
+                />
               </Link>
               {isPaid && !subscription.cancelAtPeriodEnd && (
                 <Link

@@ -78,9 +78,9 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 class UserAvatar(ImageWithThumbnailMixin, models.Model):
-    original = models.ImageField(storage=get_public_storage(), upload_to=UniqueFilePathGenerator("avatars"), null=True)
+    original = models.ImageField(storage=get_public_storage, upload_to=UniqueFilePathGenerator("avatars"), null=True)
     thumbnail = models.ImageField(
-        storage=get_public_storage(), upload_to=UniqueFilePathGenerator("avatars/thumbnails"), null=True
+        storage=get_public_storage, upload_to=UniqueFilePathGenerator("avatars/thumbnails"), null=True
     )
 
     THUMBNAIL_SIZE = (128, 128)

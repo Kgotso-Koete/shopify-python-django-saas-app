@@ -105,6 +105,13 @@ Cloudflare R2 gives you 10GB of free storage with zero egress fees.
    - `R2_BUCKET_NAME`: The name of the bucket you created (`saas-media`)
    - `R2_ENDPOINT_URL`: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` (replace `<ACCOUNT_ID>` with your Account ID from the dashboard)
    - `STORAGE_BACKEND`: `r2`
+   - `AWS_S3_REGION_NAME`: `auto` (R2's only region name; required for local development, where `docker-compose.yml` sets `AWS_DEFAULT_REGION=eu-west-1`, which R2 rejects; optional on Render, which sets no region)
+5. **Turn on a public address for avatars and other public files.** The app builds unsigned links for public files (`PublicCloudflareR2Storage` in [`packages/backend/common/storages.py`](./packages/backend/common/storages.py)), and R2 serves unsigned links only through a bucket's public address, not through the `r2.cloudflarestorage.com` endpoint.
+   - In the bucket, open **Settings** → **Public Development URL** → **Enable**. You get a free address such as `pub-xxxxxxxx.r2.dev` (rate-limited by Cloudflare, so fine for testing and small apps). Or connect your own domain under **Custom Domains**.
+   - Save it as `R2_CUSTOM_DOMAIN`, **without** `https://`, for example `R2_CUSTOM_DOMAIN=pub-xxxxxxxx.r2.dev`. The storage adds the protocol itself; with `https://` included the links break.
+   - Set it in both [`packages/backend/.env`](./packages/backend/.env) and the Render Dashboard (Step 5), then restart (`pnpm saas down` then `pnpm saas up` locally).
+
+   > **Security note:** public access applies to the whole bucket, and this app keeps documents and exports in the same bucket as avatars. With `R2_CUSTOM_DOMAIN` set, documents also get public, non-expiring links instead of signed ones. Anyone with a file's link can open it. Don't store sensitive files until this is addressed; see item 2 in [`docs/superpowers/plans/2026-10-02-security-fixes-plan.md`](./docs/superpowers/plans/2026-10-02-security-fixes-plan.md) for the two-bucket fix.
 
 ---
 
@@ -133,34 +140,36 @@ We will host the Django API on Render's free tier.
    - **Plan:** Free
 5. **Environment Variables:**
 
-| Variable                             | Value                                                                | Notes                           |
-| ------------------------------------ | -------------------------------------------------------------------- | ------------------------------- |
-| `DJANGO_SECRET_KEY`                  | _(from Pre-Deployment)_                                              |                                 |
-| `HASHID_FIELD_SALT`                  | _(from Pre-Deployment)_                                              |                                 |
-| `DATABASE_URL`                       | _(from Step 1: Neon)_                                                | MUST include `?sslmode=require` |
-| `REDIS_CONNECTION`                   | _(from Step 2: Upstash)_                                             |                                 |
-| `STORAGE_BACKEND`                    | `r2`                                                                 |                                 |
-| `R2_ENDPOINT_URL`                    | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`                      |                                 |
-| `R2_ACCESS_KEY_ID`                   | _(from Step 3)_                                                      |                                 |
-| `R2_SECRET_ACCESS_KEY`               | _(from Step 3)_                                                      |                                 |
-| `R2_BUCKET_NAME`                     | _(from Step 3)_                                                      |                                 |
-| `EMAIL_BACKEND`                      | `django.core.mail.backends.smtp.EmailBackend`                        |                                 |
-| `EMAIL_HOST`                         | _(from Step 4)_                                                      | e.g. `smtp-relay.brevo.com`     |
-| `EMAIL_PORT`                         | `587`                                                                |                                 |
-| `EMAIL_HOST_USER`                    | _(from Step 4)_                                                      |                                 |
-| `EMAIL_HOST_PASSWORD`                | _(from Step 4)_                                                      |                                 |
-| `EMAIL_USE_TLS`                      | `True`                                                               |                                 |
-| `EMAIL_FROM_ADDRESS`                 | _(Verified email from Step 4)_                                       |                                 |
-| `DJANGO_ALLOWED_HOSTS`               | `saas-backend.onrender.com`                                          | No `https://`                   |
-| `WEB_APP_URL`                        | `https://saas-frontend.vercel.app`                                   | Your frontend URL               |
-| `API_URL`                            | `https://saas-backend.onrender.com`                                  | Your backend URL                |
-| `CORS_ALLOWED_ORIGINS`               | `https://saas-frontend.vercel.app`                                   | We will set this up next        |
-| `CSRF_TRUSTED_ORIGINS`               | `https://saas-frontend.vercel.app,https://saas-backend.onrender.com` |                                 |
-| `SOCIAL_AUTH_ALLOWED_REDIRECT_HOSTS` | `saas-frontend.vercel.app`                                           | No `https://`                   |
-| `ENVIRONMENT_NAME`                   | `production`                                                         |                                 |
-| `DJANGO_DEBUG`                       | `False`                                                              |                                 |
-| `AWS_XRAY_SDK_ENABLED`               | `False`                                                              | Disables AWS tracing            |
-| `CELERY_TASK_ALWAYS_EAGER`           | `True`                                                               | Runs tasks synchronously        |
+| Variable                             | Value                                                                | Notes                                                     |
+| ------------------------------------ | -------------------------------------------------------------------- | --------------------------------------------------------- |
+| `DJANGO_SECRET_KEY`                  | _(from Pre-Deployment)_                                              |                                                           |
+| `HASHID_FIELD_SALT`                  | _(from Pre-Deployment)_                                              |                                                           |
+| `DATABASE_URL`                       | _(from Step 1: Neon)_                                                | MUST include `?sslmode=require`                           |
+| `REDIS_CONNECTION`                   | _(from Step 2: Upstash)_                                             |                                                           |
+| `STORAGE_BACKEND`                    | `r2`                                                                 |                                                           |
+| `R2_ENDPOINT_URL`                    | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`                      |                                                           |
+| `R2_ACCESS_KEY_ID`                   | _(from Step 3)_                                                      |                                                           |
+| `R2_SECRET_ACCESS_KEY`               | _(from Step 3)_                                                      |                                                           |
+| `R2_BUCKET_NAME`                     | _(from Step 3)_                                                      |                                                           |
+| `R2_CUSTOM_DOMAIN`                   | _(from Step 3)_                                                      | Public address, e.g. `pub-xxxxxxxx.r2.dev`. No `https://` |
+| `AWS_S3_REGION_NAME`                 | `auto`                                                               | Optional on Render; required locally                      |
+| `EMAIL_BACKEND`                      | `django.core.mail.backends.smtp.EmailBackend`                        |                                                           |
+| `EMAIL_HOST`                         | _(from Step 4)_                                                      | e.g. `smtp-relay.brevo.com`                               |
+| `EMAIL_PORT`                         | `587`                                                                |                                                           |
+| `EMAIL_HOST_USER`                    | _(from Step 4)_                                                      |                                                           |
+| `EMAIL_HOST_PASSWORD`                | _(from Step 4)_                                                      |                                                           |
+| `EMAIL_USE_TLS`                      | `True`                                                               |                                                           |
+| `EMAIL_FROM_ADDRESS`                 | _(Verified email from Step 4)_                                       |                                                           |
+| `DJANGO_ALLOWED_HOSTS`               | `saas-backend.onrender.com`                                          | No `https://`                                             |
+| `WEB_APP_URL`                        | `https://saas-frontend.vercel.app`                                   | Your frontend URL                                         |
+| `API_URL`                            | `https://saas-backend.onrender.com`                                  | Your backend URL                                          |
+| `CORS_ALLOWED_ORIGINS`               | `https://saas-frontend.vercel.app`                                   | We will set this up next                                  |
+| `CSRF_TRUSTED_ORIGINS`               | `https://saas-frontend.vercel.app,https://saas-backend.onrender.com` |                                                           |
+| `SOCIAL_AUTH_ALLOWED_REDIRECT_HOSTS` | `saas-frontend.vercel.app`                                           | No `https://`                                             |
+| `ENVIRONMENT_NAME`                   | `production`                                                         |                                                           |
+| `DJANGO_DEBUG`                       | `False`                                                              |                                                           |
+| `AWS_XRAY_SDK_ENABLED`               | `False`                                                              | Disables AWS tracing                                      |
+| `CELERY_TASK_ALWAYS_EAGER`           | `True`                                                               | Runs tasks synchronously                                  |
 
 **Handling Background Tasks (Celery) on Free Tier:**
 Since Render doesn't offer free worker services, background tasks will fail to process if you don't have a worker.

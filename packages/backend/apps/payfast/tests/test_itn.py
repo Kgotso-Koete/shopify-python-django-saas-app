@@ -17,6 +17,8 @@ import pytest
 from django.test import RequestFactory
 
 from .. import itn, signature
+from ..client import PayFastApiError
+from .utils import itn_pairs, signed_itn_body
 
 pytestmark = pytest.mark.django_db
 
@@ -120,6 +122,91 @@ class TestVerifyItn:
         itn_settings.PAYFAST_VERIFY_SOURCE_IP = False
         # Behind ngrok the source IP is the tunnel's; signature and server confirmation still apply.
         assert itn.verify_itn(itn_request(remote_addr="10.0.0.1"))
+
+
+@pytest.mark.usefixtures("no_dns", "itn_settings")
+class TestCancellationItn:
+    """
+    Plan section 12, issue 4. In the sandbox, PayFast's /eng/query/validate didn't answer VALID for the
+    CANCELLED ITN of a subscription, so a cancellation made on PayFast's side never reached the app.
+    The signature, merchant and source checks still apply; only for a cancellation that validate
+    won't confirm, PayFast's Subscriptions API (GET /fetch) must confirm it instead.
+    """
+
+    TOKEN = "2afa4575-5628-051a-d0ed-4e071b56a7b0"
+
+    def cancelled_request(self):
+        pairs = itn_pairs(
+            payment_status="CANCELLED",
+            pf_payment_id="",
+            amount_gross="0.00",
+            amount_fee="0.00",
+            amount_net="0.00",
+            token=self.TOKEN,
+        )
+        return itn_request(signed_itn_body(pairs))
+
+    def test_cancellation_confirmed_by_the_subscriptions_api_is_accepted(self):
+        with mock.patch.object(itn, "confirm_with_payfast", return_value=False), mock.patch.object(
+            itn, "cancellation_confirmed_by_api", return_value=True
+        ) as api_confirms:
+            data = dict(itn.verify_itn(self.cancelled_request()))
+
+        assert data["payment_status"] == "CANCELLED"
+        api_confirms.assert_called_once_with(self.TOKEN)
+
+    def test_cancellation_the_api_does_not_confirm_is_rejected(self):
+        with mock.patch.object(itn, "confirm_with_payfast", return_value=False), mock.patch.object(
+            itn, "cancellation_confirmed_by_api", return_value=False
+        ):
+            with pytest.raises(itn.ItnRejected, match="confirm"):
+                itn.verify_itn(self.cancelled_request())
+
+    def test_a_payment_validate_does_not_confirm_never_falls_back_to_the_api(self):
+        # Only cancellations move no money; a COMPLETE ITN still needs validate's VALID.
+        with mock.patch.object(itn, "confirm_with_payfast", return_value=False), mock.patch.object(
+            itn, "cancellation_confirmed_by_api", return_value=True
+        ) as api_confirms:
+            with pytest.raises(itn.ItnRejected, match="confirm"):
+                itn.verify_itn(itn_request())
+
+        api_confirms.assert_not_called()
+
+    def test_a_bad_signature_is_rejected_before_any_confirmation(self):
+        pairs = itn_pairs(payment_status="CANCELLED", token=self.TOKEN)
+        with mock.patch.object(itn, "cancellation_confirmed_by_api", return_value=True) as api_confirms:
+            with pytest.raises(itn.ItnRejected, match="signature"):
+                itn.verify_itn(itn_request(signed_itn_body(pairs, passphrase="wrong")))
+
+        api_confirms.assert_not_called()
+
+
+class TestCancellationConfirmedByApi:
+    @pytest.fixture
+    def api(self):
+        client = mock.Mock(name="PayFastApiClient()")
+        with mock.patch.object(itn, "PayFastApiClient", return_value=client):
+            yield client
+
+    def test_cancelled_subscription_is_confirmed(self, api):
+        api.fetch.return_value = {"status_text": "CANCELLED", "token": "tok"}
+
+        assert itn.cancellation_confirmed_by_api("tok")
+        api.fetch.assert_called_once_with("tok")
+
+    def test_active_subscription_is_not_confirmed(self, api):
+        api.fetch.return_value = {"status_text": "ACTIVE"}
+
+        assert not itn.cancellation_confirmed_by_api("tok")
+
+    def test_api_error_is_not_confirmed(self, api):
+        api.fetch.side_effect = PayFastApiError("boom")
+
+        assert not itn.cancellation_confirmed_by_api("tok")
+
+    def test_no_token_is_not_confirmed(self, api):
+        assert not itn.cancellation_confirmed_by_api("")
+        api.fetch.assert_not_called()
 
 
 class TestClientIp:

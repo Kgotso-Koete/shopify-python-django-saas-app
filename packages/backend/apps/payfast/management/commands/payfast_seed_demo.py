@@ -9,6 +9,7 @@ checkouts still go through the PayFast sandbox.
 
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
@@ -36,6 +37,8 @@ class Command(BaseCommand):
         parser.add_argument("--email", required=True, help="Email of an existing user whose organisations get the data")
 
     def handle(self, *args, email, **options):
+        if settings.PAYFAST_ENVIRONMENT == "production":
+            raise CommandError("Refusing to seed example payments in production (ENVIRONMENT_NAME=production).")
         user = get_user_model().objects.filter(email=email).first()
         if user is None:
             raise CommandError(f"No user with email {email!r}; sign up in the web app first.")

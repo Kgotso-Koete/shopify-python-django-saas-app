@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.0.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/5.0.0...6.0.0) (2026-10-03)
+
+### ⚠ BREAKING CHANGES
+
+- `PAYMENT_BACKEND` now defaults to `payfast`. Set `PAYMENT_BACKEND=stripe` to keep using Stripe.
+
+### Features
+
+- PayFast as a second payment backend beside Stripe, selected with `PAYMENT_BACKEND=payfast|stripe`: subscriptions with a free trial (once per organisation), plan changes at the end of the period, cancellation, once-off donations, ITN handling with PayFast's security checks, refunds from the Django admin, a daily maintenance task (trial reminders, late renewals, ended subscriptions) and the matching web app pages
+- `AWS_S3_REGION_NAME` setting for S3-compatible storages (set `auto` for Cloudflare R2)
+
+### Bug Fixes
+
+- PayFast: record a renewal whose ITN was lost (caught up from the Subscriptions API), and apply a pending plan change on it
+- PayFast: record a charge on a subscription replaced by a plan change, and log it for a refund
+- PayFast: apply cancellation ITNs, which reuse the sign-up's payment id and which PayFast's validate endpoint can refuse (now confirmed through the Subscriptions API)
+- PayFast: cancelling no longer times out; PayFast is never called while a database row lock is held
+- PayFast: send the payment-failed email only once when cancelling a failed trial fails
+- PayFast: show the first charge after a trial, a cancelled trial as not charged, and the next plan's price on the subscription and cancel pages
+- PayFast: billing queries refuse on Stripe deployments, and `payfast_seed_demo` refuses to run in production
+- Cloudflare R2 uploads failed locally with `InvalidRegionName`, and R2 file links pointed at LocalStack's address
+- Avatar migrations no longer depend on `STORAGE_BACKEND`, so the migrations check passes in every environment
+- Tests pin `PAYMENT_BACKEND=stripe` and `STORAGE_BACKEND=s3`, so a developer's `.env` can't change their results
+
+### Documentation
+
+- AI agent working rules (`docs/superpowers/agents.md`), the PayFast plan and code walkthrough, and a security fixes plan
+- `R2_CUSTOM_DOMAIN` and `AWS_S3_REGION_NAME` in the production setup guide, and how to sync this fork with upstream
+
 ## [5.0.0](https://github.com/apptension/saas-boilerplate/compare/4.1.1...5.0.0) (2026-03-05)
 
 ### Features

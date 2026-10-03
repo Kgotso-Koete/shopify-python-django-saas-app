@@ -12,6 +12,11 @@ only trusted after the checks PayFast's docs require
 4. server      - PayFast's /eng/query/validate endpoint answers "VALID" for the same data.
 
 We also require the ITN's merchant_id to be ours.
+
+One exception to check 4: in the sandbox, /eng/query/validate didn't answer VALID for a subscription's
+CANCELLED ITN (plan section 12, issue 4), so cancellations made on PayFast's side never reached us. A
+cancellation moves no money, so when validate won't confirm one, PayFast's Subscriptions API is asked
+instead (GET /fetch must say the subscription is CANCELLED). Every other check still applies.
 """
 
 import logging
@@ -21,6 +26,7 @@ import requests
 from django.conf import settings
 
 from . import constants, signature
+from .client import PayFastApiClient, PayFastApiError
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +60,12 @@ def verify_itn(request) -> list:
 
     # 4. Server confirmation, posted with the same parameter string the signature was computed over.
     if not confirm_with_payfast(signature.itn_param_string(pairs)):
-        raise ItnRejected("PayFast did not confirm the notification")
+        is_cancellation = (data.get("payment_status") or "").upper() == "CANCELLED"
+        if not (is_cancellation and cancellation_confirmed_by_api(data.get("token") or "")):
+            raise ItnRejected(
+                f"PayFast did not confirm the notification (payment_status {data.get('payment_status')!r})"
+            )
+        logger.info("PayFast cancellation ITN for %s confirmed by the Subscriptions API", data.get("token"))
 
     return pairs
 
@@ -102,3 +113,18 @@ def confirm_with_payfast(param_string: str) -> bool:
         logger.warning("PayFast ITN validation request failed: %s", error)
         return False
     return response.text.strip() == "VALID"
+
+
+def cancellation_confirmed_by_api(token: str) -> bool:
+    """
+    True if PayFast's Subscriptions API says subscription `token` is cancelled
+    (https://developers.payfast.co.za/api#subscription-object-fetch). Any error counts as "no".
+    """
+    if not token:
+        return False
+    try:
+        remote = PayFastApiClient().fetch(token) or {}
+    except PayFastApiError as error:
+        logger.warning("Could not confirm PayFast cancellation of %s: %s", token, error)
+        return False
+    return str(remote.get("status_text") or "").upper() == "CANCELLED"

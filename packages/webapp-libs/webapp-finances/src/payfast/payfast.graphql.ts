@@ -20,6 +20,7 @@ export const payfastActiveSubscriptionQuery = gql(/* GraphQL */ `
       plan
       effectivePlan
       pendingPlan
+      pendingAmount
       status
       amount
       currentPeriodEnd

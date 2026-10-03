@@ -13,7 +13,7 @@ import pytest
 from graphql_relay import to_global_id
 
 from apps.multitenancy.constants import TenantUserRole
-from ..models import PayFastCheckout
+from ..models import PayFastCheckout, PayFastSubscription
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("payfast_backend")]
 
@@ -86,7 +86,7 @@ class TestActiveSubscriptionQuery:
     QUERY = """
         query($tenantId: ID!) {
           payfastActiveSubscription(tenantId: $tenantId) {
-            plan effectivePlan pendingPlan status amount currentPeriodEnd trialEnd
+            plan effectivePlan pendingPlan pendingAmount status amount currentPeriodEnd trialEnd
             cancelAtPeriodEnd canActivateTrial hasCard cardUpdateUrl
           }
         }
@@ -125,6 +125,48 @@ class TestActiveSubscriptionQuery:
         executed = graphene_client.query(self.QUERY, variable_values={"tenantId": tenant_id(tenant)})
 
         assert executed["errors"][0]["message"] == "permission_denied"
+
+    def test_pending_plan_change_includes_the_price_it_will_charge(
+        self, owner_client, tenant, pay_fast_subscription_factory
+    ):
+        # Plan section 12, issue 5: the page must show what the next charge will be, not only the
+        # current plan's price.
+        pay_fast_subscription_factory(
+            tenant=tenant, monthly=True, pending_plan="yearly_plan", pending_amount=Decimal("10.00")
+        )
+
+        executed = owner_client.query(self.QUERY, variable_values={"tenantId": tenant_id(tenant)})
+
+        data = executed["data"]["payfastActiveSubscription"]
+        assert data["pendingPlan"] == "yearly_plan"
+        assert data["pendingAmount"] == "10.00"
+
+
+class TestReadQueriesOnStripe:
+    """
+    Plan section 12, issue 6: like the mutations, the billing reads refuse when Stripe is the backend,
+    and they never create a PayFastSubscription row there.
+    """
+
+    QUERIES = {
+        "payfastActiveSubscription": "query($tenantId: ID!) { payfastActiveSubscription(tenantId: $tenantId) { plan } }",
+        "payfastPayments": (
+            "query($tenantId: ID!) { payfastPayments(tenantId: $tenantId) { edges { node { pfPaymentId } } } }"
+        ),
+        "payfastCheckoutStatus": (
+            'query($tenantId: ID!) { payfastCheckoutStatus(tenantId: $tenantId, mPaymentId: "00000000-0000-4000-8000-000000000000") }'
+        ),
+    }
+
+    @pytest.mark.parametrize("name", QUERIES)
+    def test_refused_when_stripe_is_the_backend(self, owner_client, tenant, settings, name):
+        PayFastSubscription.objects.filter(tenant=tenant).delete()
+        settings.PAYMENT_BACKEND = "stripe"
+
+        executed = owner_client.query(self.QUERIES[name], variable_values={"tenantId": tenant_id(tenant)})
+
+        assert "PayFast is not the active payment backend" in error_message(executed)
+        assert not PayFastSubscription.objects.filter(tenant=tenant).exists()
 
 
 class TestPaymentsQuery:
