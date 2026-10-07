@@ -233,7 +233,7 @@ class SAMLACSView(View):
             except Exception:
                 session_id = None
 
-            tokens = create_jwt_tokens(user, auth_method='sso')
+            tokens = create_jwt_tokens(user, auth_method="sso")
 
             # Build redirect URL with open redirect protection
             web_app_url = getattr(settings, "WEB_APP_URL", "http://localhost:3000")
@@ -426,7 +426,7 @@ class OIDCCallbackView(View):
             except Exception:
                 session_id = None
 
-            tokens = create_jwt_tokens(user, auth_method='sso')
+            tokens = create_jwt_tokens(user, auth_method="sso")
 
             # Build redirect URL with open redirect protection
             web_app_url = getattr(settings, "WEB_APP_URL", "http://localhost:3000")
@@ -776,14 +776,14 @@ class PasskeyAuthenticationVerifyView(APIView):
             except Exception:
                 session_id = None
 
-            tokens = create_jwt_tokens(user, auth_method='passkey')
+            tokens = create_jwt_tokens(user, auth_method="passkey")
 
             # Return tokens in body for localStorage (Safari/mobile fallback when cookies blocked)
             response = Response(
                 {
-                    'success': True,
-                    'access': tokens['access'],
-                    'refresh': tokens['refresh'],
+                    "success": True,
+                    "access": tokens["access"],
+                    "refresh": tokens["refresh"],
                 }
             )
             auth_cookies = {
@@ -1045,12 +1045,12 @@ class AuditLogListView(APIView):
             # Return as array of {value, label} objects to avoid axios-case-converter
             # mangling the dict keys (it converts snake_case keys to camelCase)
             event_types = list(
-                SSOAuditLog.objects.filter(tenant=tenant).values_list('event_type', flat=True).distinct()
+                SSOAuditLog.objects.filter(tenant=tenant).values_list("event_type", flat=True).distinct()
             )
             labels_map = dict(SSOAuditEventType.choices)
             unique_event_types = list(dict.fromkeys(event_types))
-            filter_options['eventTypeOptions'] = [
-                {'value': et, 'label': labels_map.get(et, et)} for et in unique_event_types
+            filter_options["eventTypeOptions"] = [
+                {"value": et, "label": labels_map.get(et, et)} for et in unique_event_types
             ]
 
             # Get unique user emails

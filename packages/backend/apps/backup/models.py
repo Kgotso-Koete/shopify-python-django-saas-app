@@ -60,7 +60,7 @@ class BackupConfig(TimestampedMixin, TenantDependentModelMixin):
     class Meta:
         verbose_name = "Backup Configuration"
         verbose_name_plural = "Backup Configurations"
-        constraints = [models.UniqueConstraint(fields=['tenant'], name='unique_backup_config_per_tenant')]
+        constraints = [models.UniqueConstraint(fields=["tenant"], name="unique_backup_config_per_tenant")]
 
     def __str__(self):
         status = "enabled" if self.enabled else "disabled"
@@ -83,7 +83,7 @@ class BackupRecord(TimestampedMixin, TenantDependentModelMixin):
     backup_config = models.ForeignKey(
         BackupConfig,
         on_delete=models.CASCADE,
-        related_name='backup_records',
+        related_name="backup_records",
         null=True,
         blank=True,
         help_text="The backup configuration that triggered this backup",
@@ -124,7 +124,7 @@ class BackupRecord(TimestampedMixin, TenantDependentModelMixin):
     )
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
         verbose_name = "Backup Record"
         verbose_name_plural = "Backup Records"
 
@@ -181,7 +181,7 @@ class RestoreRecord(TimestampedMixin, TenantDependentModelMixin):
     backup_record = models.ForeignKey(
         BackupRecord,
         on_delete=models.CASCADE,
-        related_name='restore_records',
+        related_name="restore_records",
         help_text="The backup record that was restored",
     )
 
@@ -221,7 +221,7 @@ class RestoreRecord(TimestampedMixin, TenantDependentModelMixin):
     )
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
         verbose_name = "Restore Record"
         verbose_name_plural = "Restore Records"
 
@@ -231,22 +231,22 @@ class RestoreRecord(TimestampedMixin, TenantDependentModelMixin):
     @property
     def total_created(self):
         """Total number of records created across all models."""
-        return sum(counts.get('created', 0) for counts in self.model_counts.values())
+        return sum(counts.get("created", 0) for counts in self.model_counts.values())
 
     @property
     def total_updated(self):
         """Total number of records updated across all models."""
-        return sum(counts.get('updated', 0) for counts in self.model_counts.values())
+        return sum(counts.get("updated", 0) for counts in self.model_counts.values())
 
     @property
     def total_skipped(self):
         """Total number of records skipped across all models."""
-        return sum(counts.get('skipped', 0) for counts in self.model_counts.values())
+        return sum(counts.get("skipped", 0) for counts in self.model_counts.values())
 
     @property
     def total_failed(self):
         """Total number of records that failed across all models."""
-        return sum(counts.get('failed', 0) for counts in self.model_counts.values())
+        return sum(counts.get("failed", 0) for counts in self.model_counts.values())
 
 
 class BackupTenantEncryptionKey(models.Model):
@@ -257,9 +257,9 @@ class BackupTenantEncryptionKey(models.Model):
     """
 
     tenant = models.OneToOneField(
-        'multitenancy.Tenant',
+        "multitenancy.Tenant",
         on_delete=models.CASCADE,
-        related_name='backup_encryption_key',
+        related_name="backup_encryption_key",
         primary_key=True,
         help_text="Tenant this encryption key belongs to",
     )

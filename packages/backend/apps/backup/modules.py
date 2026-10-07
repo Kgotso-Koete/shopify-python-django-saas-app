@@ -45,7 +45,7 @@ class BackupModule:
                 app_config = apps.get_app_config(app_label)
                 for model in app_config.get_models():
                     # Skip if model explicitly opts out
-                    if getattr(model, '_backup_excluded', False):
+                    if getattr(model, "_backup_excluded", False):
                         continue
 
                     # Only include models that inherit from TenantDependentModelMixin
@@ -70,14 +70,14 @@ def _format_app_name(app_label: str, app_config) -> str:
     Example: 'management_dashboard' -> 'Management Dashboard'
     """
     # Use verbose_name if available
-    if hasattr(app_config, 'verbose_name') and app_config.verbose_name:
+    if hasattr(app_config, "verbose_name") and app_config.verbose_name:
         return app_config.verbose_name
 
     # Convert app label to readable format
     # Replace underscores with spaces and capitalize words
-    name = app_label.replace('_', ' ').replace('.', ' / ')
+    name = app_label.replace("_", " ").replace(".", " / ")
     # Capitalize each word
-    name = ' '.join(word.capitalize() for word in name.split())
+    name = " ".join(word.capitalize() for word in name.split())
     return name
 
 
@@ -96,20 +96,20 @@ def _auto_discover_modules() -> Dict[str, BackupModule]:
 
     # Apps to exclude from auto-discovery
     excluded_app_prefixes = [
-        'django.',
-        'rest_framework',
-        'corsheaders',
-        'django_extensions',
-        'django_celery',
-        'djstripe',
-        'django_hosts',
-        'drf_yasg',
-        'social_django',
-        'whitenoise',
-        'graphene_django',
-        'channels',
-        'aws_xray_sdk',
-        'apps.backup',  # Exclude the backup app itself
+        "django.",
+        "rest_framework",
+        "corsheaders",
+        "django_extensions",
+        "django_celery",
+        "djstripe",
+        "django_hosts",
+        "drf_yasg",
+        "social_django",
+        "whitenoise",
+        "graphene_django",
+        "channels",
+        "aws_xray_sdk",
+        "apps.backup",  # Exclude the backup app itself
     ]
 
     for app_config in apps.get_app_configs():
@@ -128,7 +128,7 @@ def _auto_discover_modules() -> Dict[str, BackupModule]:
         backupable_models = []
         for model in app_config.get_models():
             # Skip if model explicitly opts out
-            if getattr(model, '_backup_excluded', False):
+            if getattr(model, "_backup_excluded", False):
                 continue
 
             # Only include models that inherit from TenantDependentModelMixin
@@ -137,12 +137,12 @@ def _auto_discover_modules() -> Dict[str, BackupModule]:
 
         # Only create module if app has backupable models
         if backupable_models:
-            module_id = app_label.replace('.', '_').replace('-', '_')
+            module_id = app_label.replace(".", "_").replace("-", "_")
             module_name = _format_app_name(app_label, app_config)
 
             # Generate description
             model_count = len(backupable_models)
-            description = f'{module_name} data ({model_count} {("model" if model_count == 1 else "models")})'
+            description = f"{module_name} data ({model_count} {('model' if model_count == 1 else 'models')})"
 
             modules[module_id] = BackupModule(
                 id=module_id,

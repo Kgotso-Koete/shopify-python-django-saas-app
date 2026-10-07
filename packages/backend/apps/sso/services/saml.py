@@ -64,7 +64,7 @@ class SAMLService:
         """
         self.connection = sso_connection
         self.tenant = sso_connection.tenant
-        self.secrets_service = get_secrets_service('sso')
+        self.secrets_service = get_secrets_service("sso")
 
     def get_sp_entity_id(self) -> str:
         """Get the Service Provider Entity ID.

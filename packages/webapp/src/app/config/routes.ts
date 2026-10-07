@@ -4,6 +4,7 @@ import { getLocalePath } from '@sb/webapp-core/utils/path';
 import { RoutesConfig as CrudDemoRoutesConfig } from '@sb/webapp-crud-demo/config/routes';
 import { RoutesConfig as FinancesRoutesConfig } from '@sb/webapp-finances/config/routes';
 import { RoutesConfig as GenerativeAIRoutesConfig } from '@sb/webapp-generative-ai/config/routes';
+import { RoutesConfig as ShopifyRoutesConfig } from '@sb/webapp-shopify/config/routes';
 import { RoutesConfig as TenantsRoutesConfig } from '@sb/webapp-tenants/config/routes';
 
 export const LANG_PREFIX = `/:lang?/*`;
@@ -17,6 +18,7 @@ export const RoutesConfig = {
   ...ContentfulRoutesConfig,
   ...CrudDemoRoutesConfig,
   ...FinancesRoutesConfig,
+  ...ShopifyRoutesConfig,
   //<-- INJECT ROUTE DEFINITION -->
 };
 

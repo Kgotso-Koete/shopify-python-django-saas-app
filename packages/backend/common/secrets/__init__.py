@@ -7,4 +7,4 @@ This module provides a generic SecretsService that can be used by any module
 
 from .service import SecretsService, get_secrets_service
 
-__all__ = ['SecretsService', 'get_secrets_service']
+__all__ = ["SecretsService", "get_secrets_service"]

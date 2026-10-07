@@ -8,6 +8,7 @@ This implementation follows a pattern similar to graphql-python/graphene PR 1594
 where we patch the existing Decimal scalar's parse_value method to normalize
 floating-point precision issues at the GraphQL parsing level.
 """
+
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 import graphene
 
@@ -40,24 +41,24 @@ def _normalize_decimal_value(value):
         str_value = str(decimal_value)
 
         # Count total digits (excluding decimal point and sign)
-        digits_only = str_value.replace('-', '').replace('.', '').replace('+', '')
+        digits_only = str_value.replace("-", "").replace(".", "").replace("+", "")
 
         # If it has more than 15 digits, we need to round it
         # This handles the case where floating-point conversion created excessive precision
         if len(digits_only) > 15:
             # Find the decimal point position
-            if '.' in str_value:
+            if "." in str_value:
                 # Has decimal part - round to ensure max 15 total digits
                 # Calculate how many decimal places we can have
-                integer_part = str_value.split('.')[0].replace('-', '')
-                integer_digits = len(integer_part) if integer_part != '0' else 0
+                integer_part = str_value.split(".")[0].replace("-", "")
+                integer_digits = len(integer_part) if integer_part != "0" else 0
                 max_decimal_places = max(0, 15 - integer_digits)
 
                 # Quantize to the calculated decimal places
                 if max_decimal_places > 0:
-                    quantize_value = Decimal('0.' + '0' * (max_decimal_places - 1) + '1')
+                    quantize_value = Decimal("0." + "0" * (max_decimal_places - 1) + "1")
                 else:
-                    quantize_value = Decimal('1')
+                    quantize_value = Decimal("1")
                 normalized = decimal_value.quantize(quantize_value, rounding=ROUND_HALF_UP)
             else:
                 # No decimal part - if it has more than 15 digits, round to 15 digits

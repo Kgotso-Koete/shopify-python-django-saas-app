@@ -69,6 +69,9 @@ class ActionEntityType(models.TextChoices):
     SUBSCRIPTION = "subscription", "Subscription"
     PAYMENT_METHOD = "payment_method", "Payment Method"
 
+    # Shopify
+    SHOPIFY_SHOP = "shopify_shop", "Shopify Shop"
+
 
 class ActionActorType(models.TextChoices):
     """Types of actors that can perform actions."""

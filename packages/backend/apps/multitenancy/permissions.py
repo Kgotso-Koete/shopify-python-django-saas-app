@@ -63,29 +63,29 @@ def _ensure_permission_modules_loaded() -> None:
         _perm_modules_loaded = True
 
 
-def register_permission_category(value: str, label: str, description: str = '') -> None:
+def register_permission_category(value: str, label: str, description: str = "") -> None:
     """Register an app-defined permission category with optional description."""
     if not any(v == value for v, _, _ in PERMISSION_CATEGORY_REGISTRY):
-        PERMISSION_CATEGORY_REGISTRY.append((value, label, description or ''))
+        PERMISSION_CATEGORY_REGISTRY.append((value, label, description or ""))
 
 
 def get_category_display(value: str) -> Tuple[str, str]:
     """Return (label, description) for a category value. Used by GraphQL resolvers."""
     if not value:
-        return ('', '')
+        return ("", "")
     # Ensure app permission modules are loaded so they can register categories
     _ensure_permission_modules_loaded()
     value_upper = value.upper()
     for v, label, desc in PERMISSION_CATEGORY_REGISTRY:
         if v.upper() == value_upper:
-            return (label, desc or '')
+            return (label, desc or "")
     from .constants import PermissionCategory
 
     value_lower = value.lower()
     for v, label in PermissionCategory.choices:
         if v in (value_lower, value):
-            return (label, '')
-    return (value, '')
+            return (label, "")
+    return (value, "")
 
 
 def _category_value(category: Union[PermissionCategory, str]) -> str:
@@ -373,7 +373,7 @@ def seed_permissions(apps=None, schema_editor=None):
             defaults={
                 "name": perm_def.name,
                 "description": perm_def.description,
-                'category': _category_value(perm_def.category),
+                "category": _category_value(perm_def.category),
                 "sort_order": perm_def.sort_order,
                 "is_system": True,
             },
@@ -440,7 +440,7 @@ def create_system_roles_for_tenant(tenant, apps=None):
         created_roles.append(role)
 
         # Assign permissions based on template (base + app-registered extras)
-        permission_codes = get_effective_role_template_permissions(config['system_role_type'])
+        permission_codes = get_effective_role_template_permissions(config["system_role_type"])
         if permission_codes is None:
             # OWNER gets all permissions
             permissions = Permission.objects.all()

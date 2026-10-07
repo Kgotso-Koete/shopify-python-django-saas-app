@@ -26,14 +26,14 @@ def get_sso_enforced_tenant_ids(user) -> set:
     if not user or not user.is_authenticated:
         return set()
 
-    email = getattr(user, 'email', '') or ''
-    domain = email.rsplit('@', 1)[-1].lower() if '@' in email else ''
+    email = getattr(user, "email", "") or ""
+    domain = email.rsplit("@", 1)[-1].lower() if "@" in email else ""
     if not domain:
         return set()
 
     connections = TenantSSOConnection.objects.filter(
         enforce_sso=True,
-        status='active',
+        status="active",
         tenant__user_memberships__user=user,
     )
 
@@ -47,7 +47,7 @@ def get_sso_enforced_tenant_ids(user) -> set:
 
 def is_password_session(request) -> bool:
     """Check if the current session was authenticated via password."""
-    return get_auth_method_from_token(request) == 'password'
+    return get_auth_method_from_token(request) == "password"
 
 
 def filter_tenants_for_password_session(request, queryset: QuerySet) -> QuerySet:
@@ -72,7 +72,7 @@ def filter_tenants_for_password_session(request, queryset: QuerySet) -> QuerySet
         except Tenant.DoesNotExist:
             continue
         permissions = get_user_permissions_for_tenant(request.user, tenant)
-        if 'security.sso.manage' not in permissions:
+        if "security.sso.manage" not in permissions:
             ids_to_exclude.add(tenant_id)
 
     if ids_to_exclude:
@@ -99,7 +99,7 @@ def check_tenant_sso_enforcement(request, tenant, user) -> Optional[str]:
     from apps.multitenancy.models import get_user_permissions_for_tenant
 
     permissions = get_user_permissions_for_tenant(user, tenant)
-    if 'security.sso.manage' in permissions:
+    if "security.sso.manage" in permissions:
         jti = _get_token_jti(request)
         if jti:
             _log_bypass_once(tenant, user, jti, _get_ip(request))
@@ -109,7 +109,7 @@ def check_tenant_sso_enforcement(request, tenant, user) -> Optional[str]:
                 event_type=SSOAuditEventType.SSO_ENFORCE_BYPASS,
                 tenant=tenant,
                 user=user,
-                description=f'Break-glass bypass: {user.email} accessed SSO-enforced tenant via password',
+                description=f"Break-glass bypass: {user.email} accessed SSO-enforced tenant via password",
                 ip_address=_get_ip(request),
             )
         return None
@@ -136,17 +136,17 @@ def _log_bypass_once(tenant, user, jti: str, ip_address: str):
                 event_type=SSOAuditEventType.SSO_ENFORCE_BYPASS,
                 tenant=tenant,
                 user=user,
-                description=f'Break-glass bypass: {user.email} accessed SSO-enforced tenant via password',
+                description=f"Break-glass bypass: {user.email} accessed SSO-enforced tenant via password",
                 ip_address=ip_address,
-                metadata={'jti': jti},
+                metadata={"jti": jti},
             )
 
 
 def _get_token_jti(request) -> Optional[str]:
     """Extract the JWT token ID (jti) from the request. Unique per login session."""
     try:
-        if hasattr(request, 'auth') and request.auth:
-            return request.auth.get('jti')
+        if hasattr(request, "auth") and request.auth:
+            return request.auth.get("jti")
     except (AttributeError, TypeError):
         pass
     return None
@@ -154,7 +154,7 @@ def _get_token_jti(request) -> Optional[str]:
 
 def _get_ip(request) -> str:
     """Extract client IP from request."""
-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
     if xff:
-        return xff.split(',')[0].strip()
-    return request.META.get('REMOTE_ADDR', '')
+        return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")

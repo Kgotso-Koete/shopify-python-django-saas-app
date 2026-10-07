@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.1.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.0.0...6.1.0) (2026-10-07)
+
+### Features
+
+- Shopify app installation: merchants install the app from Shopify or connect a store from the web app, link it to an organisation, and see and disconnect connected stores on the new Shopify page. Admin API tokens (expiring, refreshed automatically) are stored encrypted; uninstall and the three mandatory privacy compliance webhooks are handled; install and callback endpoints are rate-limited. Enabled by setting `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET`
+- `shopify.view` and `shopify.manage` permissions, granted to existing organisations' Owner, Admin (both) and Member (`shopify.view`) roles by a data migration
+
+### Bug Fixes
+
+- Web app: a link without a locale (for example `/shopify/link?claim=…` or `/<organisation>/shopify`) redirected to the wrong page or lost its query string; it now gets the default locale in front of the full path
+- PayFast admin tests no longer depend on `collectstatic` having been run locally
+
+### Documentation
+
+- README: commit protocol
+- Shopify plan: bugs found during the live install, and the next step (a products page)
+
 ## [6.0.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/5.0.0...6.0.0) (2026-10-03)
 
 ### ⚠ BREAKING CHANGES

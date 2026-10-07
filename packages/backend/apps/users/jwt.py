@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 
 
-def create_jwt_tokens(user, session_id: Optional[str] = None, auth_method: str = 'password') -> dict:
+def create_jwt_tokens(user, session_id: Optional[str] = None, auth_method: str = "password") -> dict:
     """
     Create JWT access and refresh tokens for a user.
 
@@ -22,8 +22,8 @@ def create_jwt_tokens(user, session_id: Optional[str] = None, auth_method: str =
     """
     refresh = RefreshToken.for_user(user)
 
-    refresh['auth_method'] = auth_method
-    refresh.access_token['auth_method'] = auth_method
+    refresh["auth_method"] = auth_method
+    refresh.access_token["auth_method"] = auth_method
 
     if session_id:
         refresh["session_id"] = session_id
@@ -47,11 +47,11 @@ def get_auth_method_from_token(request) -> str:
     Returns 'password' if the claim is missing (backward compatibility).
     """
     try:
-        if hasattr(request, 'auth') and request.auth:
-            return request.auth.get('auth_method', 'password')
+        if hasattr(request, "auth") and request.auth:
+            return request.auth.get("auth_method", "password")
     except (AttributeError, TypeError):
         pass
-    return 'password'
+    return "password"
 
 
 def get_session_id_from_token(request) -> Optional[str]:

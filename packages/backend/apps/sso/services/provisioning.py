@@ -165,7 +165,7 @@ class JITProvisioningService:
                 event_type=event_type,
                 user=user,
                 description=f"User {email} {'provisioned' if is_new else 'linked'} via JIT",
-                metadata={'groups': groups, 'old_role': old_role, 'new_role': role},
+                metadata={"groups": groups, "old_role": old_role, "new_role": role},
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
@@ -323,7 +323,7 @@ class JITProvisioningService:
             TenantMembershipRole.objects.get_or_create(
                 membership=membership,
                 role=org_role,
-                defaults={'assigned_by': user},
+                defaults={"assigned_by": user},
             )
 
     def _is_domain_allowed(self, email: str) -> bool:

@@ -35,18 +35,18 @@ class BackupEncryptionService:
     """
 
     def __init__(self):
-        self.secrets_service = get_secrets_service('backup')
+        self.secrets_service = get_secrets_service("backup")
         self._fernet: Optional[Fernet] = None
 
     def _get_fernet(self) -> Optional[Fernet]:
         """Return Fernet instance from BACKUP_MASTER_KEY if set."""
         if self._fernet is not None:
             return self._fernet
-        master_key = getattr(settings, 'BACKUP_MASTER_KEY', None)
+        master_key = getattr(settings, "BACKUP_MASTER_KEY", None)
         if not master_key or not isinstance(master_key, str):
             return None
         try:
-            key_bytes = master_key.encode('utf-8') if isinstance(master_key, str) else master_key
+            key_bytes = master_key.encode("utf-8") if isinstance(master_key, str) else master_key
             self._fernet = Fernet(key_bytes)
             return self._fernet
         except Exception as e:
@@ -83,7 +83,7 @@ class BackupEncryptionService:
 
         try:
             record = BackupTenantEncryptionKey.objects.get(tenant=tenant)
-            decrypted = fernet.decrypt(record.encrypted_key.encode('utf-8'))
+            decrypted = fernet.decrypt(record.encrypted_key.encode("utf-8"))
             if len(decrypted) != KEY_SIZE:
                 logger.warning(f"Stored key for tenant {tenant_id} has wrong size")
                 return None
@@ -96,7 +96,7 @@ class BackupEncryptionService:
         # Create new key
         new_key = self._generate_key()
         try:
-            encrypted_b64 = fernet.encrypt(new_key).decode('utf-8')
+            encrypted_b64 = fernet.encrypt(new_key).decode("utf-8")
             BackupTenantEncryptionKey.objects.create(tenant=tenant, encrypted_key=encrypted_b64)
             logger.info(f"Created DB-stored encryption key for tenant {tenant_id}")
             return new_key
@@ -120,7 +120,7 @@ class BackupEncryptionService:
             return None
 
         # No BACKUP_MASTER_KEY: try AWS first, then DB fallback
-        secret_type = 'encryption_key'
+        secret_type = "encryption_key"
         if self.secrets_service.client:
             existing_key = self.secrets_service.get_secret_by_name(tenant_id, secret_type)
             if existing_key:
@@ -131,7 +131,7 @@ class BackupEncryptionService:
                     return None
             else:
                 new_key = self._generate_key()
-                key_base64 = base64.b64encode(new_key).decode('utf-8')
+                key_base64 = base64.b64encode(new_key).decode("utf-8")
                 arn = self.secrets_service.store_secret(
                     tenant_id=tenant_id,
                     secret_type=secret_type,

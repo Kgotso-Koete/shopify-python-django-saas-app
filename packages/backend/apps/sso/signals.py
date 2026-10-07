@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 @receiver(post_save, sender=TenantSSOConnection)
 def on_sso_connection_saved(sender, instance, created, **kwargs):
     """Handle SSO connection creation/updates."""
-    update_fields = kwargs.get('update_fields') or set()
+    update_fields = kwargs.get("update_fields") or set()
 
     if created:
         SSOAuditLog.log_event(
@@ -37,7 +37,7 @@ def on_sso_connection_saved(sender, instance, created, **kwargs):
             )
             _notify_sso_status_change(instance, activated=True)
     # Only log/notify on status change (skip when only updating last_login_at, login_count, etc.)
-    elif 'status' in update_fields:
+    elif "status" in update_fields:
         if instance.status == SSOConnectionStatus.ACTIVE:
             SSOAuditLog.log_event(
                 event_type=SSOAuditEventType.IDP_CONFIG_ACTIVATED,

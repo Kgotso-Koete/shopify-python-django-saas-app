@@ -38,6 +38,15 @@
         "{workspaceRoot}/eslint.config.js"
       ],
       "cache": true
+    },
+    "@nx/vite:test": {
+      "cache": true,
+      "inputs": ["default", "^production"]
+    },
+    "@nx/vite:build": {
+      "cache": true,
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"]
     }
   },
   "namedInputs": {
@@ -61,7 +70,13 @@
     "appsDir": "packages",
     "libsDir": "packages"
   },
-  "generators": {},
+  "generators": {
+    "@nx/react": {
+      "library": {
+        "unitTestRunner": "jest"
+      }
+    }
+  },
   "defaultProject": "core",
   "useInferencePlugins": false
 }

@@ -1,0 +1,21 @@
+client_id = "12cd734be7e3146002ee6db61037952c"
+name = "python-django-saas-app"
+application_url = "https://subsynovial-prelatic-maris.ngrok-free.app/api/shopify/install/"
+embedded = false
+
+[access_scopes]
+scopes = "read_products"
+
+[auth]
+redirect_urls = ["https://subsynovial-prelatic-maris.ngrok-free.app/api/shopify/auth/callback/"]
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "https://subsynovial-prelatic-maris.ngrok-free.app/api/shopify/webhooks/"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "https://subsynovial-prelatic-maris.ngrok-free.app/api/shopify/webhooks/"

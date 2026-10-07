@@ -91,15 +91,15 @@ class SecretsService:
 
         # Build tags
         default_tags = [
-            {'Key': 'tenant_id', 'Value': str(tenant_id)},
-            {'Key': 'module', 'Value': self.prefix.split('/')[-1]},  # Extract module name from prefix
-            {'Key': 'secret_type', 'Value': secret_type},
+            {"Key": "tenant_id", "Value": str(tenant_id)},
+            {"Key": "module", "Value": self.prefix.split("/")[-1]},  # Extract module name from prefix
+            {"Key": "secret_type", "Value": secret_type},
         ]
         if tags:
             # Merge additional tags, avoiding duplicates
-            tag_keys = {tag['Key'] for tag in default_tags}
+            tag_keys = {tag["Key"] for tag in default_tags}
             for tag in tags:
-                if tag['Key'] not in tag_keys:
+                if tag["Key"] not in tag_keys:
                     default_tags.append(tag)
 
         try:

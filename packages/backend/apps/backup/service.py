@@ -84,24 +84,24 @@ class BackupService:
             XML string containing all backup data
         """
         # Create root element
-        root = ET.Element('tenant_backup')
-        root.set('tenant_id', str(self.tenant_id))
-        root.set('backup_timestamp', timezone.now().isoformat())
-        root.set('version', '1.0')
+        root = ET.Element("tenant_backup")
+        root.set("tenant_id", str(self.tenant_id))
+        root.set("backup_timestamp", timezone.now().isoformat())
+        root.set("version", "1.0")
 
         # Add metadata
-        metadata = ET.SubElement(root, 'metadata')
-        ET.SubElement(metadata, 'backup_date').text = timezone.now().isoformat()
+        metadata = ET.SubElement(root, "metadata")
+        ET.SubElement(metadata, "backup_date").text = timezone.now().isoformat()
         if self.selected_modules:
-            modules_elem = ET.SubElement(metadata, 'selected_modules')
+            modules_elem = ET.SubElement(metadata, "selected_modules")
             for module_id in self.selected_modules:
-                ET.SubElement(modules_elem, 'module').text = module_id
+                ET.SubElement(modules_elem, "module").text = module_id
 
         # Get filtered models
         models_to_backup = self._get_filtered_models()
 
         # Create data section
-        data_section = ET.SubElement(root, 'data')
+        data_section = ET.SubElement(root, "data")
 
         # Backup each model
         for model in models_to_backup:
@@ -112,15 +112,15 @@ class BackupService:
                 # Continue with other models even if one fails
 
         # Add summary
-        summary = ET.SubElement(root, 'summary')
+        summary = ET.SubElement(root, "summary")
         for model_name, count in self.model_counts.items():
-            model_summary = ET.SubElement(summary, 'model')
-            model_summary.set('name', model_name)
-            model_summary.set('count', str(count))
+            model_summary = ET.SubElement(summary, "model")
+            model_summary.set("name", model_name)
+            model_summary.set("count", str(count))
 
         # Convert to string with proper formatting
-        ET.indent(root, space='  ')
-        return ET.tostring(root, encoding='unicode', xml_declaration=True)
+        ET.indent(root, space="  ")
+        return ET.tostring(root, encoding="unicode", xml_declaration=True)
 
     def _backup_model(self, model: type[models.Model], parent: ET.Element) -> None:
         """
@@ -145,9 +145,9 @@ class BackupService:
                 return
 
             # Create model section (use full name so restore resolves uniquely when multiple apps have same class name)
-            model_section = ET.SubElement(parent, 'model')
-            model_section.set('name', full_name)
-            model_section.set('count', str(count))
+            model_section = ET.SubElement(parent, "model")
+            model_section.set("name", full_name)
+            model_section.set("count", str(count))
 
             # Backup each instance
             for instance in queryset.iterator(chunk_size=100):
@@ -169,12 +169,12 @@ class BackupService:
             instance: Django model instance to backup
             parent: XML parent element to add instance data to
         """
-        item = ET.SubElement(parent, 'item')
+        item = ET.SubElement(parent, "item")
 
         # Get all fields from the model
         for field in instance._meta.get_fields():
             # Skip reverse relations and many-to-many (we'll handle those separately)
-            if field.many_to_many or (hasattr(field, 'related_model') and field.related_model):
+            if field.many_to_many or (hasattr(field, "related_model") and field.related_model):
                 continue
 
             field_name = field.name
@@ -200,8 +200,8 @@ class BackupService:
                 if related_objects.exists():
                     m2m_elem = ET.SubElement(item, field_name)
                     for related_obj in related_objects:
-                        related_elem = ET.SubElement(m2m_elem, 'item')
-                        related_elem.set('id', str(related_obj.pk))
+                        related_elem = ET.SubElement(m2m_elem, "item")
+                        related_elem.set("id", str(related_obj.pk))
                         related_elem.text = str(related_obj)
 
     def _serialize_value(self, value: Any, field: models.Field) -> str:

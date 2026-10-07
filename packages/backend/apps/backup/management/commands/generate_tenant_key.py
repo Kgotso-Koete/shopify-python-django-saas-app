@@ -10,24 +10,24 @@ from apps.multitenancy.models import Tenant
 
 
 class Command(BaseCommand):
-    help = 'Generate or ensure a backup encryption key exists for a tenant (AWS or DB fallback)'
+    help = "Generate or ensure a backup encryption key exists for a tenant (AWS or DB fallback)"
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--tenant-id',
+            "--tenant-id",
             type=str,
             required=True,
-            help='Tenant ID to generate/ensure encryption key for',
+            help="Tenant ID to generate/ensure encryption key for",
         )
         parser.add_argument(
-            '--force',
-            action='store_true',
-            help='Force regeneration (DB: delete and recreate; AWS: overwrite existing secret)',
+            "--force",
+            action="store_true",
+            help="Force regeneration (DB: delete and recreate; AWS: overwrite existing secret)",
         )
 
     def handle(self, *args, **options):
-        tenant_id = options['tenant_id']
-        force = options['force']
+        tenant_id = options["tenant_id"]
+        force = options["force"]
 
         try:
             tenant = Tenant.objects.get(pk=tenant_id)
@@ -47,10 +47,10 @@ class Command(BaseCommand):
                 import base64
 
                 new_key = encryption_service._generate_key()
-                key_base64 = base64.b64encode(new_key).decode('utf-8')
+                key_base64 = base64.b64encode(new_key).decode("utf-8")
                 encryption_service.secrets_service.store_secret(
                     tenant_id=tenant_id,
-                    secret_type='encryption_key',  # noqa: S106
+                    secret_type="encryption_key",  # noqa: S106
                     secret_value=key_base64,
                     description=f"Backup encryption key for tenant {tenant_id}",
                 )

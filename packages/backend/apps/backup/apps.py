@@ -8,8 +8,8 @@ from django.apps import AppConfig
 class BackupConfig(AppConfig):
     """App configuration for the backup system."""
 
-    name = 'apps.backup'
-    verbose_name = 'Backup System'
+    name = "apps.backup"
+    verbose_name = "Backup System"
 
     def ready(self):
         """Initialize the backup system when Django is ready."""

@@ -40,6 +40,7 @@ urlpatterns = [
                 path("demo/", include("apps.demo.urls")),
                 path("finances/", include("apps.finances.urls")),
                 path("payfast/", include("apps.payfast.urls")),
+                path("shopify/", include("apps.shopify.urls")),
                 path("sso/", include("apps.sso.urls")),
                 path("translations/", include("apps.translations.urls")),
                 path("ai-assistant/", include("apps.integrations.ai_assistant.urls")),

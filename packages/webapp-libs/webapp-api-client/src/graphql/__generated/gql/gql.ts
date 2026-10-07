@@ -91,6 +91,12 @@ type Documents = {
     "\n  fragment notificationsListContentFragment on Query {\n    hasUnreadNotifications\n    allNotifications(first: $count, after: $cursor) {\n      edges {\n        node {\n          id\n          ...notificationsListItemFragment\n        }\n      }\n      pageInfo {\n        endCursor\n        hasNextPage\n      }\n    }\n  }\n": typeof types.NotificationsListContentFragmentFragmentDoc,
     "\n  fragment notificationsListItemFragment on NotificationType {\n    id\n    data\n    createdAt\n    readAt\n    type\n    issuer {\n      id\n      avatar\n      email\n    }\n  }\n": typeof types.NotificationsListItemFragmentFragmentDoc,
     "\n  mutation notificationsListMarkAsReadMutation($input: MarkReadAllNotificationsMutationInput!) {\n    markReadAllNotifications(input: $input) {\n      ok\n      hasUnreadNotifications\n      unreadNotificationsCount\n    }\n  }\n": typeof types.NotificationsListMarkAsReadMutationDocument,
+    "\n  query shopifyConfigQuery {\n    shopifyConfig {\n      enabled\n    }\n  }\n": typeof types.ShopifyConfigQueryDocument,
+    "\n  query shopifyShopsQuery($tenantId: ID!) {\n    shopifyShops(tenantId: $tenantId) {\n      shopDomain\n      scopes\n      installedAt\n      uninstalledAt\n      needsReinstall\n    }\n  }\n": typeof types.ShopifyShopsQueryDocument,
+    "\n  query shopifyClaimQuery($claim: String!) {\n    shopifyClaim(claim: $claim) {\n      shopDomain\n    }\n  }\n": typeof types.ShopifyClaimQueryDocument,
+    "\n  mutation shopifyStartInstallMutation($input: ShopifyStartInstallInput!) {\n    shopifyStartInstall(input: $input) {\n      authorizeUrl\n    }\n  }\n": typeof types.ShopifyStartInstallMutationDocument,
+    "\n  mutation shopifyLinkShopMutation($input: ShopifyLinkShopInput!) {\n    shopifyLinkShop(input: $input) {\n      shop {\n        shopDomain\n        scopes\n        installedAt\n      }\n    }\n  }\n": typeof types.ShopifyLinkShopMutationDocument,
+    "\n  mutation shopifyDisconnectShopMutation($input: ShopifyDisconnectShopInput!) {\n    shopifyDisconnectShop(input: $input) {\n      ok\n    }\n  }\n": typeof types.ShopifyDisconnectShopMutationDocument,
     "\n  query PasskeysQuery {\n    myPasskeys(first: 20) {\n      edges {\n        node {\n          id\n          name\n          authenticatorType\n          transports\n          isActive\n          lastUsedAt\n          useCount\n          createdAt\n        }\n      }\n    }\n  }\n": typeof types.PasskeysQueryDocument,
     "\n  mutation RenameUserPasskey($id: ID!, $name: String!) {\n    renamePasskey(id: $id, name: $name) {\n      passkey {\n        id\n        name\n      }\n    }\n  }\n": typeof types.RenameUserPasskeyDocument,
     "\n  mutation DeletePasskey($input: DeletePasskeyMutationInput!) {\n    deletePasskey(input: $input) {\n      deletedIds\n    }\n  }\n": typeof types.DeletePasskeyDocument,
@@ -242,6 +248,12 @@ const documents: Documents = {
     "\n  fragment notificationsListContentFragment on Query {\n    hasUnreadNotifications\n    allNotifications(first: $count, after: $cursor) {\n      edges {\n        node {\n          id\n          ...notificationsListItemFragment\n        }\n      }\n      pageInfo {\n        endCursor\n        hasNextPage\n      }\n    }\n  }\n": types.NotificationsListContentFragmentFragmentDoc,
     "\n  fragment notificationsListItemFragment on NotificationType {\n    id\n    data\n    createdAt\n    readAt\n    type\n    issuer {\n      id\n      avatar\n      email\n    }\n  }\n": types.NotificationsListItemFragmentFragmentDoc,
     "\n  mutation notificationsListMarkAsReadMutation($input: MarkReadAllNotificationsMutationInput!) {\n    markReadAllNotifications(input: $input) {\n      ok\n      hasUnreadNotifications\n      unreadNotificationsCount\n    }\n  }\n": types.NotificationsListMarkAsReadMutationDocument,
+    "\n  query shopifyConfigQuery {\n    shopifyConfig {\n      enabled\n    }\n  }\n": types.ShopifyConfigQueryDocument,
+    "\n  query shopifyShopsQuery($tenantId: ID!) {\n    shopifyShops(tenantId: $tenantId) {\n      shopDomain\n      scopes\n      installedAt\n      uninstalledAt\n      needsReinstall\n    }\n  }\n": types.ShopifyShopsQueryDocument,
+    "\n  query shopifyClaimQuery($claim: String!) {\n    shopifyClaim(claim: $claim) {\n      shopDomain\n    }\n  }\n": types.ShopifyClaimQueryDocument,
+    "\n  mutation shopifyStartInstallMutation($input: ShopifyStartInstallInput!) {\n    shopifyStartInstall(input: $input) {\n      authorizeUrl\n    }\n  }\n": types.ShopifyStartInstallMutationDocument,
+    "\n  mutation shopifyLinkShopMutation($input: ShopifyLinkShopInput!) {\n    shopifyLinkShop(input: $input) {\n      shop {\n        shopDomain\n        scopes\n        installedAt\n      }\n    }\n  }\n": types.ShopifyLinkShopMutationDocument,
+    "\n  mutation shopifyDisconnectShopMutation($input: ShopifyDisconnectShopInput!) {\n    shopifyDisconnectShop(input: $input) {\n      ok\n    }\n  }\n": types.ShopifyDisconnectShopMutationDocument,
     "\n  query PasskeysQuery {\n    myPasskeys(first: 20) {\n      edges {\n        node {\n          id\n          name\n          authenticatorType\n          transports\n          isActive\n          lastUsedAt\n          useCount\n          createdAt\n        }\n      }\n    }\n  }\n": types.PasskeysQueryDocument,
     "\n  mutation RenameUserPasskey($id: ID!, $name: String!) {\n    renamePasskey(id: $id, name: $name) {\n      passkey {\n        id\n        name\n      }\n    }\n  }\n": types.RenameUserPasskeyDocument,
     "\n  mutation DeletePasskey($input: DeletePasskeyMutationInput!) {\n    deletePasskey(input: $input) {\n      deletedIds\n    }\n  }\n": types.DeletePasskeyDocument,
@@ -638,6 +650,30 @@ export function gql(source: "\n  fragment notificationsListItemFragment on Notif
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  mutation notificationsListMarkAsReadMutation($input: MarkReadAllNotificationsMutationInput!) {\n    markReadAllNotifications(input: $input) {\n      ok\n      hasUnreadNotifications\n      unreadNotificationsCount\n    }\n  }\n"): (typeof documents)["\n  mutation notificationsListMarkAsReadMutation($input: MarkReadAllNotificationsMutationInput!) {\n    markReadAllNotifications(input: $input) {\n      ok\n      hasUnreadNotifications\n      unreadNotificationsCount\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query shopifyConfigQuery {\n    shopifyConfig {\n      enabled\n    }\n  }\n"): (typeof documents)["\n  query shopifyConfigQuery {\n    shopifyConfig {\n      enabled\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query shopifyShopsQuery($tenantId: ID!) {\n    shopifyShops(tenantId: $tenantId) {\n      shopDomain\n      scopes\n      installedAt\n      uninstalledAt\n      needsReinstall\n    }\n  }\n"): (typeof documents)["\n  query shopifyShopsQuery($tenantId: ID!) {\n    shopifyShops(tenantId: $tenantId) {\n      shopDomain\n      scopes\n      installedAt\n      uninstalledAt\n      needsReinstall\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query shopifyClaimQuery($claim: String!) {\n    shopifyClaim(claim: $claim) {\n      shopDomain\n    }\n  }\n"): (typeof documents)["\n  query shopifyClaimQuery($claim: String!) {\n    shopifyClaim(claim: $claim) {\n      shopDomain\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation shopifyStartInstallMutation($input: ShopifyStartInstallInput!) {\n    shopifyStartInstall(input: $input) {\n      authorizeUrl\n    }\n  }\n"): (typeof documents)["\n  mutation shopifyStartInstallMutation($input: ShopifyStartInstallInput!) {\n    shopifyStartInstall(input: $input) {\n      authorizeUrl\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation shopifyLinkShopMutation($input: ShopifyLinkShopInput!) {\n    shopifyLinkShop(input: $input) {\n      shop {\n        shopDomain\n        scopes\n        installedAt\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation shopifyLinkShopMutation($input: ShopifyLinkShopInput!) {\n    shopifyLinkShop(input: $input) {\n      shop {\n        shopDomain\n        scopes\n        installedAt\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation shopifyDisconnectShopMutation($input: ShopifyDisconnectShopInput!) {\n    shopifyDisconnectShop(input: $input) {\n      ok\n    }\n  }\n"): (typeof documents)["\n  mutation shopifyDisconnectShopMutation($input: ShopifyDisconnectShopInput!) {\n    shopifyDisconnectShop(input: $input) {\n      ok\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

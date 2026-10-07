@@ -92,7 +92,7 @@ def create_backup(self, tenant_id: str, config_id: str = None, scheduled_at: str
             excluded_models=excluded_models,
         )
         xml_content = backup_service.generate_xml()
-        xml_bytes = xml_content.encode('utf-8')
+        xml_bytes = xml_content.encode("utf-8")
 
         # Encrypt backup content
         encryption_service = get_backup_encryption_service()
@@ -105,7 +105,7 @@ def create_backup(self, tenant_id: str, config_id: str = None, scheduled_at: str
         is_encrypted = True
 
         # Generate filename with timestamp and hash
-        timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
         content_hash = hashlib.sha256(encrypted_bytes).hexdigest()[:12]
         filename = f"tenant_backups/{tenant_id}/{timestamp}_{content_hash}.xml"
 
@@ -129,7 +129,7 @@ def create_backup(self, tenant_id: str, config_id: str = None, scheduled_at: str
         # Build link to the backup settings page in the web app (where the user can decrypt & download)
         import os
 
-        web_app_url = os.environ.get('VITE_WEB_APP_URL', 'http://localhost:3000')
+        web_app_url = os.environ.get("VITE_WEB_APP_URL", "http://localhost:3000")
         backup_settings_url = f"{web_app_url}/en/tenant/{tenant_id}/settings/backup"
 
         # Send email notifications if config exists and has recipients
@@ -154,11 +154,11 @@ def create_backup(self, tenant_id: str, config_id: str = None, scheduled_at: str
                     email = BackupReadyEmail(
                         to=recipient.email,
                         data={
-                            'tenant_name': tenant.name,
-                            'backup_date': timezone.now().isoformat(),
-                            'file_size': file_size,
-                            'backup_settings_url': backup_settings_url,
-                            'model_counts': backup_service.model_counts,
+                            "tenant_name": tenant.name,
+                            "backup_date": timezone.now().isoformat(),
+                            "file_size": file_size,
+                            "backup_settings_url": backup_settings_url,
+                            "model_counts": backup_service.model_counts,
                         },
                     )
                     email.send()
@@ -186,14 +186,14 @@ def create_backup(self, tenant_id: str, config_id: str = None, scheduled_at: str
             if admin_membership:
                 Notification.objects.create(
                     user=admin_membership.user,
-                    type='BACKUP_READY',
+                    type="BACKUP_READY",
                     data={
-                        'backup_id': str(backup_record.id),
-                        'tenant_name': tenant.name,
-                        'backup_date': timezone.now().isoformat(),
-                        'file_size': file_size,
-                        'backup_settings_url': backup_settings_url,
-                        'model_counts': backup_service.model_counts,
+                        "backup_id": str(backup_record.id),
+                        "tenant_name": tenant.name,
+                        "backup_date": timezone.now().isoformat(),
+                        "file_size": file_size,
+                        "backup_settings_url": backup_settings_url,
+                        "model_counts": backup_service.model_counts,
                     },
                 )
         except Exception as e:
@@ -223,10 +223,10 @@ def create_backup(self, tenant_id: str, config_id: str = None, scheduled_at: str
                 for recipient in recipients:
                     Notification.objects.create(
                         user=recipient,
-                        type='BACKUP_FAILED',
+                        type="BACKUP_FAILED",
                         data={
-                            'tenant_name': tenant.name,
-                            'error': str(exc),
+                            "tenant_name": tenant.name,
+                            "error": str(exc),
                         },
                     )
         except Exception as e:
@@ -343,7 +343,7 @@ def restore_backup(self, backup_record_id: str, restore_record_id: str, conflict
         if not storage.exists(backup_record.file_path):
             raise Exception(f"Backup file not found at {backup_record.file_path}")
 
-        with storage.open(backup_record.file_path, 'rb') as f:
+        with storage.open(backup_record.file_path, "rb") as f:
             file_content = f.read()
 
         # Decrypt if encrypted
@@ -357,7 +357,7 @@ def restore_backup(self, backup_record_id: str, restore_record_id: str, conflict
             xml_bytes = file_content
 
         # Decode to string
-        xml_content = xml_bytes.decode('utf-8')
+        xml_content = xml_bytes.decode("utf-8")
 
         # Run restore
         restore_service = RestoreService(
@@ -367,14 +367,14 @@ def restore_backup(self, backup_record_id: str, restore_record_id: str, conflict
         model_counts = restore_service.restore_from_xml(xml_content)
 
         # Check if there were any failures
-        total_failed = sum(counts.get('failed', 0) for counts in model_counts.values())
+        total_failed = sum(counts.get("failed", 0) for counts in model_counts.values())
         has_errors = total_failed > 0 or len(restore_service.errors) > 0
 
         # Update restore record
         restore_record.model_counts = model_counts
         if has_errors:
             restore_record.status = RestoreRecord.Status.PARTIALLY_COMPLETED
-            restore_record.error_message = '; '.join(restore_service.errors[:10])  # Limit error messages
+            restore_record.error_message = "; ".join(restore_service.errors[:10])  # Limit error messages
         else:
             restore_record.status = RestoreRecord.Status.COMPLETED
         restore_record.completed_at = timezone.now()
@@ -390,22 +390,22 @@ def restore_backup(self, backup_record_id: str, restore_record_id: str, conflict
             ).first()
 
             if admin_membership:
-                total_created = sum(c.get('created', 0) for c in model_counts.values())
-                total_updated = sum(c.get('updated', 0) for c in model_counts.values())
-                total_skipped = sum(c.get('skipped', 0) for c in model_counts.values())
+                total_created = sum(c.get("created", 0) for c in model_counts.values())
+                total_updated = sum(c.get("updated", 0) for c in model_counts.values())
+                total_skipped = sum(c.get("skipped", 0) for c in model_counts.values())
 
                 Notification.objects.create(
                     user=admin_membership.user,
-                    type='RESTORE_COMPLETED',
+                    type="RESTORE_COMPLETED",
                     data={
-                        'restore_id': str(restore_record.id),
-                        'backup_id': str(backup_record.id),
-                        'tenant_name': tenant.name,
-                        'status': restore_record.status,
-                        'total_created': total_created,
-                        'total_updated': total_updated,
-                        'total_skipped': total_skipped,
-                        'total_failed': total_failed,
+                        "restore_id": str(restore_record.id),
+                        "backup_id": str(backup_record.id),
+                        "tenant_name": tenant.name,
+                        "status": restore_record.status,
+                        "total_created": total_created,
+                        "total_updated": total_updated,
+                        "total_skipped": total_skipped,
+                        "total_failed": total_failed,
                     },
                 )
         except Exception as e:
@@ -453,12 +453,12 @@ def restore_backup(self, backup_record_id: str, restore_record_id: str, conflict
             if admin_membership:
                 Notification.objects.create(
                     user=admin_membership.user,
-                    type='RESTORE_FAILED',
+                    type="RESTORE_FAILED",
                     data={
-                        'restore_id': str(restore_record.id),
-                        'backup_id': str(backup_record.id),
-                        'tenant_name': tenant.name,
-                        'error': str(exc),
+                        "restore_id": str(restore_record.id),
+                        "backup_id": str(backup_record.id),
+                        "tenant_name": tenant.name,
+                        "error": str(exc),
                     },
                 )
         except Exception as e:
