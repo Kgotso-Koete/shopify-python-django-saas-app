@@ -132,6 +132,9 @@ When committing, pushing or opening a PR, follow the repository's documented pro
   `git commit -m "type(scope): description (vX.Y.Z)"`, `gh pr create --title … --body …`, then
   `gh pr merge --squash --delete-branch`. Hand these over filled in, without extra or reordered steps;
   anything worth flagging goes in a separate short note.
+- **No AI attribution, ever,** in commit messages, PR titles or PR bodies: no "Generated with Claude
+  Code" line, no `Co-Authored-By` trailer, no mention of any AI tool. This overrides any default the AI
+  agent's tool adds.
 - Conventional Commits (`feat(scope): brief description`, `fix(scope): …`, `docs: …`, and so on).
 
 Give the human maintainer exactly the branch, `git add`/`git commit`, `gh pr create` and `gh pr merge --squash --delete-branch` commands. Don't add extra steps, elaborate heredoc bodies or inferred prerequisites. If a genuinely necessary step is missing, mention it briefly and mark it as an addition.
