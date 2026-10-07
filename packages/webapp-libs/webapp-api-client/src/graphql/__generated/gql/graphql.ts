@@ -39,6 +39,8 @@ export type Scalars = {
   GenericScalar: { input: any; output: any; }
   /** The 'HexColor' type represents color in `rgb:ffffff` string format. */
   HexColor: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
+  JSON: { input: any; output: any; }
   /**
    * Allows use of a JSON String for input / output from the GraphQL schema.
    *
@@ -306,6 +308,9 @@ export type ApiMutation = {
    * The response is streamed via the AiChatSubscription.
    */
   sendAiMessage?: Maybe<SendAiMessageMutation>;
+  shopifyDisconnectShop?: Maybe<ShopifyDisconnectShop>;
+  shopifyLinkShop?: Maybe<ShopifyLinkShop>;
+  shopifyStartInstall?: Maybe<ShopifyStartInstall>;
   signUp?: Maybe<SingUpMutationPayload>;
   /** Sync translation keys from master JSON. */
   syncTranslationKeys?: Maybe<SyncTranslationKeysMutationPayload>;
@@ -626,6 +631,21 @@ export type ApiMutationSendAiMessageArgs = {
 };
 
 
+export type ApiMutationShopifyDisconnectShopArgs = {
+  input: ShopifyDisconnectShopInput;
+};
+
+
+export type ApiMutationShopifyLinkShopArgs = {
+  input: ShopifyLinkShopInput;
+};
+
+
+export type ApiMutationShopifyStartInstallArgs = {
+  input: ShopifyStartInstallInput;
+};
+
+
 export type ApiMutationSignUpArgs = {
   input: SingUpMutationInput;
 };
@@ -743,9 +763,10 @@ export type ApiSubscriptionAiChatArgs = {
   conversationId: Scalars['String']['input'];
 };
 
-/** [See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/appConfig) */
-export type AppConfig = Entry & {
+/** [See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/appConfig) */
+export type AppConfig = Entry & _Node & {
   __typename?: 'AppConfig';
+  _id: Scalars['ID']['output'];
   contentfulMetadata: ContentfulMetadata;
   linkedFrom?: Maybe<AppConfigLinkingCollections>;
   name?: Maybe<Scalars['String']['output']>;
@@ -755,27 +776,30 @@ export type AppConfig = Entry & {
 };
 
 
-/** [See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/appConfig) */
+/** [See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/appConfig) */
 export type AppConfigLinkedFromArgs = {
   allowedLocales?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
 };
 
 
-/** [See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/appConfig) */
+/** [See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/appConfig) */
 export type AppConfigNameArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
-/** [See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/appConfig) */
+/** [See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/appConfig) */
 export type AppConfigPrivacyPolicyArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
-/** [See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/appConfig) */
+/** [See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/appConfig) */
 export type AppConfigTermsAndConditionsArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type AppConfigCollection = {
@@ -784,6 +808,13 @@ export type AppConfigCollection = {
   limit: Scalars['Int']['output'];
   skip: Scalars['Int']['output'];
   total: Scalars['Int']['output'];
+};
+
+export type AppConfigCursorCollection = {
+  __typename?: 'AppConfigCursorCollection';
+  items: Array<Maybe<AppConfig>>;
+  limit: Scalars['Int']['output'];
+  pages: CursorPages;
 };
 
 export type AppConfigFilter = {
@@ -817,6 +848,7 @@ export type AppConfigFilter = {
 export type AppConfigLinkingCollections = {
   __typename?: 'AppConfigLinkingCollections';
   entryCollection?: Maybe<EntryCollection>;
+  entryCursorCollection?: Maybe<EntryCursorCollection>;
 };
 
 
@@ -825,6 +857,17 @@ export type AppConfigLinkingCollectionsEntryCollectionArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
   skip?: InputMaybe<Scalars['Int']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type AppConfigLinkingCollectionsEntryCursorCollectionArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  pageNext?: InputMaybe<Scalars['String']['input']>;
+  pagePrev?: InputMaybe<Scalars['String']['input']>;
+  preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export enum AppConfigOrder {
@@ -841,8 +884,9 @@ export enum AppConfigOrder {
 }
 
 /** Represents a binary file in a space. An asset can be any file type. */
-export type Asset = {
+export type Asset = _Node & {
   __typename?: 'Asset';
+  _id: Scalars['ID']['output'];
   contentType?: Maybe<Scalars['String']['output']>;
   contentfulMetadata: ContentfulMetadata;
   description?: Maybe<Scalars['String']['output']>;
@@ -860,24 +904,28 @@ export type Asset = {
 /** Represents a binary file in a space. An asset can be any file type. */
 export type AssetContentTypeArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
 /** Represents a binary file in a space. An asset can be any file type. */
 export type AssetDescriptionArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
 /** Represents a binary file in a space. An asset can be any file type. */
 export type AssetFileNameArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
 /** Represents a binary file in a space. An asset can be any file type. */
 export type AssetHeightArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
@@ -890,12 +938,14 @@ export type AssetLinkedFromArgs = {
 /** Represents a binary file in a space. An asset can be any file type. */
 export type AssetSizeArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
 /** Represents a binary file in a space. An asset can be any file type. */
 export type AssetTitleArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
@@ -903,12 +953,14 @@ export type AssetTitleArgs = {
 export type AssetUrlArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
   transform?: InputMaybe<ImageTransformOptions>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
 /** Represents a binary file in a space. An asset can be any file type. */
 export type AssetWidthArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type AssetCollection = {
@@ -917,6 +969,13 @@ export type AssetCollection = {
   limit: Scalars['Int']['output'];
   skip: Scalars['Int']['output'];
   total: Scalars['Int']['output'];
+};
+
+export type AssetCursorCollection = {
+  __typename?: 'AssetCursorCollection';
+  items: Array<Maybe<Asset>>;
+  limit: Scalars['Int']['output'];
+  pages: CursorPages;
 };
 
 export type AssetFilter = {
@@ -991,7 +1050,9 @@ export type AssetFilter = {
 export type AssetLinkingCollections = {
   __typename?: 'AssetLinkingCollections';
   demoItemCollection?: Maybe<DemoItemCollection>;
+  demoItemCursorCollection?: Maybe<DemoItemCursorCollection>;
   entryCollection?: Maybe<EntryCollection>;
+  entryCursorCollection?: Maybe<EntryCursorCollection>;
 };
 
 
@@ -1000,6 +1061,17 @@ export type AssetLinkingCollectionsDemoItemCollectionArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
   skip?: InputMaybe<Scalars['Int']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type AssetLinkingCollectionsDemoItemCursorCollectionArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  pageNext?: InputMaybe<Scalars['String']['input']>;
+  pagePrev?: InputMaybe<Scalars['String']['input']>;
+  preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
@@ -1008,6 +1080,17 @@ export type AssetLinkingCollectionsEntryCollectionArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
   skip?: InputMaybe<Scalars['Int']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type AssetLinkingCollectionsEntryCursorCollectionArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  pageNext?: InputMaybe<Scalars['String']['input']>;
+  pagePrev?: InputMaybe<Scalars['String']['input']>;
+  preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export enum AssetOrder {
@@ -1354,10 +1437,26 @@ export type ContentfulDemoItemTypeContentfuldemoitemfavoriteSetArgs = {
 
 export type ContentfulMetadata = {
   __typename?: 'ContentfulMetadata';
+  concepts: Array<Maybe<TaxonomyConcept>>;
   tags: Array<Maybe<ContentfulTag>>;
 };
 
+export type ContentfulMetadataConceptsDescendantsFilter = {
+  id_contains_all?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  id_contains_none?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  id_contains_some?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+};
+
+export type ContentfulMetadataConceptsFilter = {
+  descendants?: InputMaybe<ContentfulMetadataConceptsDescendantsFilter>;
+  id_contains_all?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  id_contains_none?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  id_contains_some?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+};
+
 export type ContentfulMetadataFilter = {
+  concepts?: InputMaybe<ContentfulMetadataConceptsFilter>;
+  concepts_exists?: InputMaybe<Scalars['Boolean']['input']>;
   tags?: InputMaybe<ContentfulMetadataTagsFilter>;
   tags_exists?: InputMaybe<Scalars['Boolean']['input']>;
 };
@@ -1370,7 +1469,7 @@ export type ContentfulMetadataTagsFilter = {
 
 /**
  * Represents a tag entity for finding and organizing content easily.
- *     Find out more here: https://www.contentful.com/developers/docs/references/content-delivery-api/#/reference/content-tags
+ *       Find out more here: https://www.contentful.com/developers/docs/references/content-delivery-api/#/reference/content-tags
  */
 export type ContentfulTag = {
   __typename?: 'ContentfulTag';
@@ -1636,6 +1735,12 @@ export type CurrentUserType = {
   tenants?: Maybe<Array<Maybe<TenantType>>>;
 };
 
+export type CursorPages = {
+  __typename?: 'CursorPages';
+  next?: Maybe<Scalars['String']['output']>;
+  prev?: Maybe<Scalars['String']['output']>;
+};
+
 /** Deactivate an SSO connection. Requires tenantId for tenant context. */
 export type DeactivateSsoConnectionMutation = {
   __typename?: 'DeactivateSSOConnectionMutation';
@@ -1788,9 +1893,10 @@ export type DeleteTenantPasskeyMutation = {
   ok?: Maybe<Scalars['Boolean']['output']>;
 };
 
-/** [See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/demoItem) */
-export type DemoItem = Entry & {
+/** [See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/demoItem) */
+export type DemoItem = Entry & _Node & {
   __typename?: 'DemoItem';
+  _id: Scalars['ID']['output'];
   contentfulMetadata: ContentfulMetadata;
   description?: Maybe<Scalars['String']['output']>;
   image?: Maybe<Asset>;
@@ -1800,28 +1906,31 @@ export type DemoItem = Entry & {
 };
 
 
-/** [See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/demoItem) */
+/** [See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/demoItem) */
 export type DemoItemDescriptionArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
-/** [See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/demoItem) */
+/** [See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/demoItem) */
 export type DemoItemImageArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
-/** [See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/demoItem) */
+/** [See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/demoItem) */
 export type DemoItemLinkedFromArgs = {
   allowedLocales?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
 };
 
 
-/** [See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/demoItem) */
+/** [See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/demoItem) */
 export type DemoItemTitleArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type DemoItemCollection = {
@@ -1830,6 +1939,13 @@ export type DemoItemCollection = {
   limit: Scalars['Int']['output'];
   skip: Scalars['Int']['output'];
   total: Scalars['Int']['output'];
+};
+
+export type DemoItemCursorCollection = {
+  __typename?: 'DemoItemCursorCollection';
+  items: Array<Maybe<DemoItem>>;
+  limit: Scalars['Int']['output'];
+  pages: CursorPages;
 };
 
 export type DemoItemFilter = {
@@ -1857,6 +1973,7 @@ export type DemoItemFilter = {
 export type DemoItemLinkingCollections = {
   __typename?: 'DemoItemLinkingCollections';
   entryCollection?: Maybe<EntryCollection>;
+  entryCursorCollection?: Maybe<EntryCursorCollection>;
 };
 
 
@@ -1865,6 +1982,17 @@ export type DemoItemLinkingCollectionsEntryCollectionArgs = {
   locale?: InputMaybe<Scalars['String']['input']>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
   skip?: InputMaybe<Scalars['Int']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type DemoItemLinkingCollectionsEntryCursorCollectionArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  pageNext?: InputMaybe<Scalars['String']['input']>;
+  pagePrev?: InputMaybe<Scalars['String']['input']>;
+  preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export enum DemoItemOrder {
@@ -2396,6 +2524,13 @@ export type EntryCollection = {
   total: Scalars['Int']['output'];
 };
 
+export type EntryCursorCollection = {
+  __typename?: 'EntryCursorCollection';
+  items: Array<Maybe<Entry>>;
+  limit: Scalars['Int']['output'];
+  pages: CursorPages;
+};
+
 export type EntryFilter = {
   AND?: InputMaybe<Array<InputMaybe<EntryFilter>>>;
   OR?: InputMaybe<Array<InputMaybe<EntryFilter>>>;
@@ -2455,6 +2590,7 @@ export type GenerateSaasIdeasMutationPayload = {
 };
 
 export enum ImageFormat {
+  /** AVIF image format. */
   AVIF = 'AVIF',
   /** JPG image format. */
   JPG = 'JPG',
@@ -3037,6 +3173,7 @@ export type PublishTranslationsMutationPayload = {
 export type Query = {
   __typename?: 'Query';
   _node?: Maybe<_Node>;
+  _nodes: Array<Maybe<_Node>>;
   activeSubscription?: Maybe<SubscriptionScheduleType>;
   allActionLogs?: Maybe<ActionLogConnection>;
   allCharges?: Maybe<ChargeConnection>;
@@ -3051,8 +3188,10 @@ export type Query = {
   allTenants?: Maybe<TenantConnection>;
   appConfig?: Maybe<AppConfig>;
   appConfigCollection?: Maybe<AppConfigCollection>;
+  appConfigCursorCollection?: Maybe<AppConfigCursorCollection>;
   asset?: Maybe<Asset>;
   assetCollection?: Maybe<AssetCollection>;
+  assetCursorCollection?: Maybe<AssetCursorCollection>;
   /** Get all available models for a specific module */
   availableBackupModels?: Maybe<Array<Maybe<BackupModelType>>>;
   /** Get all available backup modules */
@@ -3076,7 +3215,9 @@ export type Query = {
   defaultLocale?: Maybe<LocaleType>;
   demoItem?: Maybe<DemoItem>;
   demoItemCollection?: Maybe<DemoItemCollection>;
+  demoItemCursorCollection?: Maybe<DemoItemCursorCollection>;
   entryCollection?: Maybe<EntryCollection>;
+  entryCursorCollection?: Maybe<EntryCursorCollection>;
   hasUnreadNotifications?: Maybe<Scalars['Boolean']['output']>;
   /** Get translation progress for all locales */
   localeProgress?: Maybe<Array<Maybe<LocaleProgressType>>>;
@@ -3095,6 +3236,9 @@ export type Query = {
   /** Get restore records for a tenant */
   restoreRecords?: Maybe<RestoreRecordConnection>;
   scimTokens?: Maybe<ScimTokenConnection>;
+  shopifyClaim?: Maybe<ShopifyClaimType>;
+  shopifyConfig: ShopifyConfigType;
+  shopifyShops: Array<ShopifyShopType>;
   ssoAuditLogs?: Maybe<SsoAuditLogConnection>;
   ssoConnection?: Maybe<SsoConnectionType>;
   ssoConnections?: Maybe<SsoConnectionConnection>;
@@ -3111,6 +3255,15 @@ export type Query_NodeArgs = {
   id: Scalars['ID']['input'];
   locale?: InputMaybe<Scalars['String']['input']>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type Query_NodesArgs = {
+  ids: Array<Scalars['ID']['input']>;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
@@ -3223,6 +3376,7 @@ export type QueryAppConfigArgs = {
   id: Scalars['String']['input'];
   locale?: InputMaybe<Scalars['String']['input']>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
@@ -3232,6 +3386,19 @@ export type QueryAppConfigCollectionArgs = {
   order?: InputMaybe<Array<InputMaybe<AppConfigOrder>>>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
   skip?: InputMaybe<Scalars['Int']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
+  where?: InputMaybe<AppConfigFilter>;
+};
+
+
+export type QueryAppConfigCursorCollectionArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  order?: InputMaybe<Array<InputMaybe<AppConfigOrder>>>;
+  pageNext?: InputMaybe<Scalars['String']['input']>;
+  pagePrev?: InputMaybe<Scalars['String']['input']>;
+  preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
   where?: InputMaybe<AppConfigFilter>;
 };
 
@@ -3240,6 +3407,7 @@ export type QueryAssetArgs = {
   id: Scalars['String']['input'];
   locale?: InputMaybe<Scalars['String']['input']>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
@@ -3249,6 +3417,19 @@ export type QueryAssetCollectionArgs = {
   order?: InputMaybe<Array<InputMaybe<AssetOrder>>>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
   skip?: InputMaybe<Scalars['Int']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
+  where?: InputMaybe<AssetFilter>;
+};
+
+
+export type QueryAssetCursorCollectionArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  order?: InputMaybe<Array<InputMaybe<AssetOrder>>>;
+  pageNext?: InputMaybe<Scalars['String']['input']>;
+  pagePrev?: InputMaybe<Scalars['String']['input']>;
+  preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
   where?: InputMaybe<AssetFilter>;
 };
 
@@ -3309,6 +3490,7 @@ export type QueryDemoItemArgs = {
   id: Scalars['String']['input'];
   locale?: InputMaybe<Scalars['String']['input']>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
@@ -3318,6 +3500,19 @@ export type QueryDemoItemCollectionArgs = {
   order?: InputMaybe<Array<InputMaybe<DemoItemOrder>>>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
   skip?: InputMaybe<Scalars['Int']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
+  where?: InputMaybe<DemoItemFilter>;
+};
+
+
+export type QueryDemoItemCursorCollectionArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  order?: InputMaybe<Array<InputMaybe<DemoItemOrder>>>;
+  pageNext?: InputMaybe<Scalars['String']['input']>;
+  pagePrev?: InputMaybe<Scalars['String']['input']>;
+  preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
   where?: InputMaybe<DemoItemFilter>;
 };
 
@@ -3328,6 +3523,19 @@ export type QueryEntryCollectionArgs = {
   order?: InputMaybe<Array<InputMaybe<EntryOrder>>>;
   preview?: InputMaybe<Scalars['Boolean']['input']>;
   skip?: InputMaybe<Scalars['Int']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
+  where?: InputMaybe<EntryFilter>;
+};
+
+
+export type QueryEntryCursorCollectionArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  order?: InputMaybe<Array<InputMaybe<EntryOrder>>>;
+  pageNext?: InputMaybe<Scalars['String']['input']>;
+  pagePrev?: InputMaybe<Scalars['String']['input']>;
+  preview?: InputMaybe<Scalars['Boolean']['input']>;
+  useFallbackLocale?: InputMaybe<Scalars['Boolean']['input']>;
   where?: InputMaybe<EntryFilter>;
 };
 
@@ -3406,6 +3614,16 @@ export type QueryScimTokensArgs = {
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
   last?: InputMaybe<Scalars['Int']['input']>;
+  tenantId: Scalars['ID']['input'];
+};
+
+
+export type QueryShopifyClaimArgs = {
+  claim: Scalars['String']['input'];
+};
+
+
+export type QueryShopifyShopsArgs = {
   tenantId: Scalars['ID']['input'];
 };
 
@@ -3804,6 +4022,55 @@ export type SendAiMessageMutation = {
   __typename?: 'SendAiMessageMutation';
   error?: Maybe<Scalars['String']['output']>;
   ok?: Maybe<Scalars['Boolean']['output']>;
+};
+
+export type ShopifyClaimType = {
+  __typename?: 'ShopifyClaimType';
+  shopDomain: Scalars['String']['output'];
+};
+
+export type ShopifyConfigType = {
+  __typename?: 'ShopifyConfigType';
+  enabled: Scalars['Boolean']['output'];
+};
+
+export type ShopifyDisconnectShop = {
+  __typename?: 'ShopifyDisconnectShop';
+  ok: Scalars['Boolean']['output'];
+};
+
+export type ShopifyDisconnectShopInput = {
+  shopDomain: Scalars['String']['input'];
+  tenantId: Scalars['ID']['input'];
+};
+
+export type ShopifyLinkShop = {
+  __typename?: 'ShopifyLinkShop';
+  shop?: Maybe<ShopifyShopType>;
+};
+
+export type ShopifyLinkShopInput = {
+  claim: Scalars['String']['input'];
+  tenantId: Scalars['ID']['input'];
+};
+
+export type ShopifyShopType = {
+  __typename?: 'ShopifyShopType';
+  installedAt?: Maybe<Scalars['DateTime']['output']>;
+  needsReinstall: Scalars['Boolean']['output'];
+  scopes: Array<Scalars['String']['output']>;
+  shopDomain: Scalars['String']['output'];
+  uninstalledAt?: Maybe<Scalars['DateTime']['output']>;
+};
+
+export type ShopifyStartInstall = {
+  __typename?: 'ShopifyStartInstall';
+  authorizeUrl: Scalars['String']['output'];
+};
+
+export type ShopifyStartInstallInput = {
+  shopDomain: Scalars['String']['input'];
+  tenantId: Scalars['ID']['input'];
 };
 
 export type SingUpMutationInput = {
@@ -4568,6 +4835,8 @@ export type Sys = {
   environmentId: Scalars['String']['output'];
   firstPublishedAt?: Maybe<Scalars['DateTime']['output']>;
   id: Scalars['String']['output'];
+  /** The locale that was requested. */
+  locale?: Maybe<Scalars['String']['output']>;
   publishedAt?: Maybe<Scalars['DateTime']['output']>;
   publishedVersion?: Maybe<Scalars['Int']['output']>;
   spaceId: Scalars['String']['output'];
@@ -4616,6 +4885,15 @@ export enum SystemRoleType {
   MEMBER = 'MEMBER',
   OWNER = 'OWNER'
 }
+
+/**
+ * Represents a taxonomy concept entity for finding and organizing content easily.
+ *         Find out more here: https://www.contentful.com/developers/docs/references/content-delivery-api/#/reference/content-concepts
+ */
+export type TaxonomyConcept = {
+  __typename?: 'TaxonomyConcept';
+  id?: Maybe<Scalars['String']['output']>;
+};
 
 export type TenantConnection = {
   __typename?: 'TenantConnection';
@@ -4711,6 +4989,13 @@ export type TestSsoConnectionPayload = {
   connectionType?: Maybe<Scalars['String']['output']>;
   overallStatus?: Maybe<Scalars['String']['output']>;
   testedAt?: Maybe<Scalars['String']['output']>;
+};
+
+export type TimelineFilterInput = {
+  /** Preview content starting from a given release date */
+  release_lte?: InputMaybe<Scalars['String']['input']>;
+  /** Preview content starting from a given timestamp */
+  timestamp_lte?: InputMaybe<Scalars['DateTime']['input']>;
 };
 
 /** Type for translation sync status. */
@@ -5637,6 +5922,46 @@ export type NotificationsListMarkAsReadMutationMutationVariables = Exact<{
 
 export type NotificationsListMarkAsReadMutationMutation = { __typename?: 'ApiMutation', markReadAllNotifications?: { __typename?: 'MarkReadAllNotificationsMutationPayload', ok?: boolean | null, hasUnreadNotifications?: boolean | null, unreadNotificationsCount?: number | null } | null };
 
+export type ShopifyConfigQueryQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ShopifyConfigQueryQuery = { __typename?: 'Query', shopifyConfig: { __typename?: 'ShopifyConfigType', enabled: boolean } };
+
+export type ShopifyShopsQueryQueryVariables = Exact<{
+  tenantId: Scalars['ID']['input'];
+}>;
+
+
+export type ShopifyShopsQueryQuery = { __typename?: 'Query', shopifyShops: Array<{ __typename?: 'ShopifyShopType', shopDomain: string, scopes: Array<string>, installedAt?: any | null, uninstalledAt?: any | null, needsReinstall: boolean }> };
+
+export type ShopifyClaimQueryQueryVariables = Exact<{
+  claim: Scalars['String']['input'];
+}>;
+
+
+export type ShopifyClaimQueryQuery = { __typename?: 'Query', shopifyClaim?: { __typename?: 'ShopifyClaimType', shopDomain: string } | null };
+
+export type ShopifyStartInstallMutationMutationVariables = Exact<{
+  input: ShopifyStartInstallInput;
+}>;
+
+
+export type ShopifyStartInstallMutationMutation = { __typename?: 'ApiMutation', shopifyStartInstall?: { __typename?: 'ShopifyStartInstall', authorizeUrl: string } | null };
+
+export type ShopifyLinkShopMutationMutationVariables = Exact<{
+  input: ShopifyLinkShopInput;
+}>;
+
+
+export type ShopifyLinkShopMutationMutation = { __typename?: 'ApiMutation', shopifyLinkShop?: { __typename?: 'ShopifyLinkShop', shop?: { __typename?: 'ShopifyShopType', shopDomain: string, scopes: Array<string>, installedAt?: any | null } | null } | null };
+
+export type ShopifyDisconnectShopMutationMutationVariables = Exact<{
+  input: ShopifyDisconnectShopInput;
+}>;
+
+
+export type ShopifyDisconnectShopMutationMutation = { __typename?: 'ApiMutation', shopifyDisconnectShop?: { __typename?: 'ShopifyDisconnectShop', ok: boolean } | null };
+
 export type PasskeysQueryQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -6257,6 +6582,12 @@ export const NotificationMutationDocument = {"kind":"Document","definitions":[{"
 export const NotificationsListQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"notificationsListQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"count"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}},"defaultValue":{"kind":"IntValue","value":"20"}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"cursor"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"notificationsListContentFragment"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"notificationsButtonContent"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"notificationsListItemFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"NotificationType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"data"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"readAt"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"issuer"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"avatar"}},{"kind":"Field","name":{"kind":"Name","value":"email"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"notificationsListContentFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Query"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasUnreadNotifications"}},{"kind":"Field","name":{"kind":"Name","value":"allNotifications"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"first"},"value":{"kind":"Variable","name":{"kind":"Name","value":"count"}}},{"kind":"Argument","name":{"kind":"Name","value":"after"},"value":{"kind":"Variable","name":{"kind":"Name","value":"cursor"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"notificationsListItemFragment"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"pageInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"endCursor"}},{"kind":"Field","name":{"kind":"Name","value":"hasNextPage"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"notificationsButtonContent"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Query"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasUnreadNotifications"}},{"kind":"Field","name":{"kind":"Name","value":"unreadNotificationsCount"}}]}}]} as unknown as DocumentNode<NotificationsListQueryQuery, NotificationsListQueryQueryVariables>;
 export const NotificationCreatedSubscriptionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"subscription","name":{"kind":"Name","value":"NotificationCreatedSubscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"notificationCreated"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"notification"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"notificationsListItemFragment"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"notificationsListItemFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"NotificationType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"data"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"readAt"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"issuer"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"avatar"}},{"kind":"Field","name":{"kind":"Name","value":"email"}}]}}]}}]} as unknown as DocumentNode<NotificationCreatedSubscriptionSubscription, NotificationCreatedSubscriptionSubscriptionVariables>;
 export const NotificationsListMarkAsReadMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"notificationsListMarkAsReadMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"MarkReadAllNotificationsMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"markReadAllNotifications"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}},{"kind":"Field","name":{"kind":"Name","value":"hasUnreadNotifications"}},{"kind":"Field","name":{"kind":"Name","value":"unreadNotificationsCount"}}]}}]}}]} as unknown as DocumentNode<NotificationsListMarkAsReadMutationMutation, NotificationsListMarkAsReadMutationMutationVariables>;
+export const ShopifyConfigQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"shopifyConfigQuery"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyConfig"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"enabled"}}]}}]}}]} as unknown as DocumentNode<ShopifyConfigQueryQuery, ShopifyConfigQueryQueryVariables>;
+export const ShopifyShopsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"shopifyShopsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyShops"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopDomain"}},{"kind":"Field","name":{"kind":"Name","value":"scopes"}},{"kind":"Field","name":{"kind":"Name","value":"installedAt"}},{"kind":"Field","name":{"kind":"Name","value":"uninstalledAt"}},{"kind":"Field","name":{"kind":"Name","value":"needsReinstall"}}]}}]}}]} as unknown as DocumentNode<ShopifyShopsQueryQuery, ShopifyShopsQueryQueryVariables>;
+export const ShopifyClaimQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"shopifyClaimQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"claim"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyClaim"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"claim"},"value":{"kind":"Variable","name":{"kind":"Name","value":"claim"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopDomain"}}]}}]}}]} as unknown as DocumentNode<ShopifyClaimQueryQuery, ShopifyClaimQueryQueryVariables>;
+export const ShopifyStartInstallMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"shopifyStartInstallMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ShopifyStartInstallInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyStartInstall"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"authorizeUrl"}}]}}]}}]} as unknown as DocumentNode<ShopifyStartInstallMutationMutation, ShopifyStartInstallMutationMutationVariables>;
+export const ShopifyLinkShopMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"shopifyLinkShopMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ShopifyLinkShopInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyLinkShop"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shop"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopDomain"}},{"kind":"Field","name":{"kind":"Name","value":"scopes"}},{"kind":"Field","name":{"kind":"Name","value":"installedAt"}}]}}]}}]}}]} as unknown as DocumentNode<ShopifyLinkShopMutationMutation, ShopifyLinkShopMutationMutationVariables>;
+export const ShopifyDisconnectShopMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"shopifyDisconnectShopMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ShopifyDisconnectShopInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyDisconnectShop"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<ShopifyDisconnectShopMutationMutation, ShopifyDisconnectShopMutationMutationVariables>;
 export const PasskeysQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"PasskeysQuery"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"myPasskeys"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"first"},"value":{"kind":"IntValue","value":"20"}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"authenticatorType"}},{"kind":"Field","name":{"kind":"Name","value":"transports"}},{"kind":"Field","name":{"kind":"Name","value":"isActive"}},{"kind":"Field","name":{"kind":"Name","value":"lastUsedAt"}},{"kind":"Field","name":{"kind":"Name","value":"useCount"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]}}]}}]} as unknown as DocumentNode<PasskeysQueryQuery, PasskeysQueryQueryVariables>;
 export const RenameUserPasskeyDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"RenameUserPasskey"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"renamePasskey"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}},{"kind":"Argument","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"passkey"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}}]}}]}}]} as unknown as DocumentNode<RenameUserPasskeyMutation, RenameUserPasskeyMutationVariables>;
 export const DeletePasskeyDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeletePasskey"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DeletePasskeyMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deletePasskey"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deletedIds"}}]}}]}}]} as unknown as DocumentNode<DeletePasskeyMutation, DeletePasskeyMutationVariables>;

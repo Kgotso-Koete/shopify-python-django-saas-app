@@ -22,7 +22,7 @@ class TenantSSOConnectionSerializer(serializers.ModelSerializer):
             "connection_type",
             "status",
             "allowed_domains",
-            'enforce_sso',
+            "enforce_sso",
             "jit_provisioning_enabled",
             "group_role_mapping",
             # SAML fields
@@ -37,7 +37,7 @@ class TenantSSOConnectionSerializer(serializers.ModelSerializer):
             # OIDC fields
             "oidc_issuer",
             "oidc_client_id",
-            'oidc_client_secret',
+            "oidc_client_secret",
             "oidc_authorization_endpoint",
             "oidc_token_endpoint",
             "oidc_userinfo_endpoint",
@@ -85,10 +85,10 @@ class UpdateTenantSSOConnectionSerializer(TenantSSOConnectionSerializer):
     )
 
     class Meta(TenantSSOConnectionSerializer.Meta):
-        fields = TenantSSOConnectionSerializer.Meta.fields + ['oidc_client_secret']
+        fields = TenantSSOConnectionSerializer.Meta.fields + ["oidc_client_secret"]
         extra_kwargs = {
-            'name': {'required': False},
-            'connection_type': {'required': False},
+            "name": {"required": False},
+            "connection_type": {"required": False},
         }
 
     def validate_group_role_mapping(self, value):
@@ -149,9 +149,9 @@ class UpdateTenantSSOConnectionSerializer(TenantSSOConnectionSerializer):
 
     def update(self, instance, validated_data):
         """Update instance, only setting oidc_client_secret when a non-empty value is provided."""
-        oidc_client_secret = validated_data.pop('oidc_client_secret', None)
+        oidc_client_secret = validated_data.pop("oidc_client_secret", None)
         if oidc_client_secret is not None and oidc_client_secret.strip():
-            validated_data['oidc_client_secret'] = oidc_client_secret
+            validated_data["oidc_client_secret"] = oidc_client_secret
         return super().update(instance, validated_data)
 
     def create(self, validated_data):

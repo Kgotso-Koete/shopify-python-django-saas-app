@@ -73,12 +73,12 @@ class BackupModelRegistry:
         discovered_count = 0
         for app_config in apps.get_app_configs():
             # Skip Django core apps
-            if app_config.name.startswith('django.'):
+            if app_config.name.startswith("django."):
                 continue
 
             for model in app_config.get_models():
                 # Skip if model explicitly opts out
-                if getattr(model, '_backup_excluded', False):
+                if getattr(model, "_backup_excluded", False):
                     logger.debug(f"Skipping model {model.__name__} (explicitly excluded)")
                     continue
 
@@ -136,7 +136,7 @@ class BackupModelRegistry:
         """
         result = []
         for model_name in model_names:
-            app_label, model_name_only = model_name.split('.', 1)
+            app_label, model_name_only = model_name.split(".", 1)
             try:
                 model = apps.get_model(app_label, model_name_only)
                 if model in cls._models:

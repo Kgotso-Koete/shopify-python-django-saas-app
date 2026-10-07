@@ -92,6 +92,7 @@ LOCAL_APPS = [
     "apps.backup",
     # Always installed, whichever PAYMENT_BACKEND is active, so its tables and migrations are stable.
     "apps.payfast",
+    "apps.shopify",
 ]
 
 INSTALLED_APPS = (
@@ -266,7 +267,12 @@ CACHES = {
         "BACKEND": "django_redis.cache.RedisCache",
         "LOCATION": REDIS_CONNECTION,
         "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
-    }
+    },
+    "ratelimit": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_CONNECTION,
+        "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+    },
 }
 
 # Password validation
@@ -725,13 +731,13 @@ CELERY_BEAT_SCHEDULE = {
     #     'task': 'apps.example.tasks.example_sync',
     #     'schedule': 60 * 60 * 4,  # Every 4 hours (in seconds)
     # },
-    'check-backup-schedules-every-hour': {
-        'task': 'apps.backup.tasks.check_and_trigger_backups',
-        'schedule': 60 * 60,  # Every hour (in seconds)
+    "check-backup-schedules-every-hour": {
+        "task": "apps.backup.tasks.check_and_trigger_backups",
+        "schedule": 60 * 60,  # Every hour (in seconds)
     },
-    'cleanup-old-backups-daily': {
-        'task': 'apps.backup.tasks.cleanup_old_backups',
-        'schedule': 60 * 60 * 24,  # Every 24 hours (in seconds)
+    "cleanup-old-backups-daily": {
+        "task": "apps.backup.tasks.cleanup_old_backups",
+        "schedule": 60 * 60 * 24,  # Every 24 hours (in seconds)
     },
 }
 
@@ -782,6 +788,25 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER", default=None)
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default=None)
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+
+# ==============================================================================
+# SHOPIFY CONFIGURATION
+# ==============================================================================
+# Shopify app (https://shopify.dev/docs/apps/build). Always defined so apps.shopify imports safely;
+# the apps.shopify system check reports missing values only when SHOPIFY_ENABLED.
+SHOPIFY_API_KEY = env("SHOPIFY_API_KEY", default="")  # the app's client ID
+SHOPIFY_API_SECRET = env("SHOPIFY_API_SECRET", default="")  # the app's client secret (HMAC key too)
+SHOPIFY_SCOPES = env.list("SHOPIFY_SCOPES", default=["read_products"])
+SHOPIFY_API_VERSION = env("SHOPIFY_API_VERSION", default="2026-10")
+# Fernet key for access/refresh tokens at rest; generate like BACKUP_MASTER_KEY above.
+SHOPIFY_TOKEN_ENCRYPTION_KEY = env("SHOPIFY_TOKEN_ENCRYPTION_KEY", default="")
+# OAuth state nonce lifetime in seconds (how long a merchant has to complete the authorization flow).
+SHOPIFY_AUTH_TIMEOUT = env.int("SHOPIFY_AUTH_TIMEOUT", default=600)  # 10 minutes
+# Webhook processing dispatch: "sync" (handle in the web request) or "celery" (hand off to a Celery task).
+# "sync" is the safe default: it needs no worker and is enough while all handlers are quick DB writes.
+# Switch to "celery" when handlers start doing slow work (API calls, syncing products).
+SHOPIFY_WEBHOOK_DISPATCH = env("SHOPIFY_WEBHOOK_DISPATCH", default="sync")
+SHOPIFY_ENABLED = bool(SHOPIFY_API_KEY and SHOPIFY_API_SECRET)
 
 # Translations settings
 # Translations use the same storage backend as the rest of the app (STORAGE_BACKEND)

@@ -38,7 +38,7 @@ class OIDCService:
         """
         self.connection = sso_connection
         self.tenant = sso_connection.tenant
-        self.secrets_service = get_secrets_service('sso')
+        self.secrets_service = get_secrets_service("sso")
 
     def get_callback_url(self) -> str:
         """Get the OAuth callback URL."""
@@ -247,7 +247,7 @@ class OIDCService:
         """Normalize issuer URL for comparison (strip trailing slash)."""
         if not issuer:
             return issuer
-        return issuer.rstrip('/')
+        return issuer.rstrip("/")
 
     def validate_id_token(
         self,
@@ -287,11 +287,11 @@ class OIDCService:
                 signing_key.key,
                 algorithms=["RS256", "ES256"],
                 audience=self.connection.oidc_client_id,
-                options={'verify_iss': False},
+                options={"verify_iss": False},
             )
 
             # Validate issuer with flexible matching (trailing slash, etc.)
-            token_issuer = claims.get('iss', '')
+            token_issuer = claims.get("iss", "")
             if expected_issuer and self._normalize_issuer(token_issuer) != expected_issuer:
                 logger.error(
                     f"Issuer mismatch: expected {expected_issuer!r}, got {token_issuer!r} "

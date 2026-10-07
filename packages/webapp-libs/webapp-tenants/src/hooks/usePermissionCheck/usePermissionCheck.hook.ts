@@ -163,6 +163,9 @@ export type PermissionCode =
   // Backup
   | 'backup.view'
   | 'backup.manage'
+  // Shopify
+  | 'shopify.view'
+  | 'shopify.manage'
   // Wildcards
   | 'org.*'
   | 'members.*'

@@ -35,7 +35,7 @@ class BackupConfigType(DjangoObjectType):
     class Meta:
         model = models.BackupConfig
         interfaces = (relay.Node,)
-        fields = ('id', 'enabled', 'backup_interval_hours', 'retention_days', 'created_at', 'updated_at')
+        fields = ("id", "enabled", "backup_interval_hours", "retention_days", "created_at", "updated_at")
 
     @staticmethod
     def resolve_email_recipients(parent, info):
@@ -99,16 +99,16 @@ class RestoreRecordType(DjangoObjectType):
         model = models.RestoreRecord
         interfaces = (relay.Node,)
         fields = (
-            'id',
-            'backup_record',
-            'status',
-            'conflict_strategy',
-            'model_counts',
-            'error_message',
-            'started_at',
-            'completed_at',
-            'created_at',
-            'updated_at',
+            "id",
+            "backup_record",
+            "status",
+            "conflict_strategy",
+            "model_counts",
+            "error_message",
+            "started_at",
+            "completed_at",
+            "created_at",
+            "updated_at",
         )
 
     def resolve_conflict_strategy(self, info):
@@ -206,21 +206,21 @@ class UpdateBackupConfigMutation(graphene.Mutation):
         from apps.multitenancy.models import Tenant
 
         try:
-            if not info or not hasattr(info, 'context'):
+            if not info or not hasattr(info, "context"):
                 raise GraphQLError("Invalid request context")
 
-            _, tenant_id = from_global_id(input['tenant_id'])
+            _, tenant_id = from_global_id(input["tenant_id"])
             tenant = Tenant.objects.get(pk=tenant_id)
 
             # Verify user has access to this tenant
-            user = getattr(info.context, 'user', None)
+            user = getattr(info.context, "user", None)
             if not user or not user.is_authenticated:
                 raise GraphQLError("Authentication required")
 
             # Decode email recipient IDs
             email_recipient_ids = []
-            if input.get('email_recipients'):
-                for recipient_id in input['email_recipients']:
+            if input.get("email_recipients"):
+                for recipient_id in input["email_recipients"]:
                     if recipient_id:  # Skip empty strings
                         try:
                             _, decoded_id = from_global_id(recipient_id)
@@ -231,21 +231,21 @@ class UpdateBackupConfigMutation(graphene.Mutation):
                             pass
 
             # Get selected modules, models, and excluded models
-            selected_modules = input.get('selected_modules', []) or []
-            selected_models = input.get('selected_models', []) or []
-            excluded_models = input.get('excluded_models', []) or []
+            selected_modules = input.get("selected_modules", []) or []
+            selected_models = input.get("selected_models", []) or []
+            excluded_models = input.get("excluded_models", []) or []
 
             # Get or create backup config
             backup_config, created = models.BackupConfig.objects.update_or_create(
                 tenant=tenant,
                 defaults={
-                    'enabled': input['enabled'],
-                    'backup_interval_hours': input['backup_interval_hours'],
-                    'retention_days': input['retention_days'],
-                    'email_recipients': email_recipient_ids,
-                    'selected_modules': selected_modules,
-                    'selected_models': selected_models,
-                    'excluded_models': excluded_models,
+                    "enabled": input["enabled"],
+                    "backup_interval_hours": input["backup_interval_hours"],
+                    "retention_days": input["retention_days"],
+                    "email_recipients": email_recipient_ids,
+                    "selected_modules": selected_modules,
+                    "selected_models": selected_models,
+                    "excluded_models": excluded_models,
                 },
             )
 
@@ -271,14 +271,14 @@ class DeleteBackupMutation(graphene.Mutation):
         from common.storages import get_exports_storage
 
         try:
-            if not info or not hasattr(info, 'context'):
+            if not info or not hasattr(info, "context"):
                 raise GraphQLError("Invalid request context")
 
             _, decoded_id = from_global_id(backup_id)
             backup = models.BackupRecord.objects.get(pk=decoded_id)
 
             # Verify user has access to this tenant
-            user = getattr(info.context, 'user', None)
+            user = getattr(info.context, "user", None)
             if not user or not user.is_authenticated:
                 raise GraphQLError("Authentication required")
 
@@ -319,14 +319,14 @@ class TriggerBackupMutation(graphene.Mutation):
         from .tasks import create_backup
 
         try:
-            if not info or not hasattr(info, 'context'):
+            if not info or not hasattr(info, "context"):
                 raise GraphQLError("Invalid request context")
 
             _, decoded_tenant_id = from_global_id(tenant_id)
             tenant = Tenant.objects.get(pk=decoded_tenant_id)
 
             # Verify user has access to this tenant
-            user = getattr(info.context, 'user', None)
+            user = getattr(info.context, "user", None)
             if not user or not user.is_authenticated:
                 raise GraphQLError("Authentication required")
 
@@ -380,14 +380,14 @@ class RestoreBackupMutation(graphene.Mutation):
         from .tasks import restore_backup
 
         try:
-            if not info or not hasattr(info, 'context'):
+            if not info or not hasattr(info, "context"):
                 raise GraphQLError("Invalid request context")
 
             _, decoded_id = from_global_id(backup_id)
             backup_record = models.BackupRecord.objects.get(pk=decoded_id)
 
             # Verify user has access
-            user = getattr(info.context, 'user', None)
+            user = getattr(info.context, "user", None)
             if not user or not user.is_authenticated:
                 raise GraphQLError("Authentication required")
 
@@ -401,13 +401,13 @@ class RestoreBackupMutation(graphene.Mutation):
 
             # Extract string value from Graphene enum
             # Graphene enums can be enum objects, so extract the actual value
-            if hasattr(conflict_strategy, 'value'):
+            if hasattr(conflict_strategy, "value"):
                 conflict_strategy_value = conflict_strategy.value
             elif isinstance(conflict_strategy, str):
                 conflict_strategy_value = conflict_strategy
             else:
                 # Try to get the enum member name
-                conflict_strategy_value = getattr(conflict_strategy, 'name', None)
+                conflict_strategy_value = getattr(conflict_strategy, "name", None)
                 if conflict_strategy_value not in ["SKIP", "UPDATE", "FAIL"]:
                     # Last resort: convert to string and validate
                     conflict_strategy_value = str(conflict_strategy)
@@ -436,7 +436,7 @@ class RestoreBackupMutation(graphene.Mutation):
                 conflict_strategy=conflict_strategy_value,
             )
 
-            restore_global_id = to_global_id('RestoreRecordType', str(restore_record.id))
+            restore_global_id = to_global_id("RestoreRecordType", str(restore_record.id))
             return cls(ok=True, restore_id=restore_global_id)
 
         except models.BackupRecord.DoesNotExist:
@@ -464,14 +464,14 @@ class DownloadBackupDecryptedMutation(graphene.Mutation):
         from .encryption import get_backup_encryption_service
 
         try:
-            if not info or not hasattr(info, 'context'):
+            if not info or not hasattr(info, "context"):
                 raise GraphQLError("Invalid request context")
 
             _, decoded_id = from_global_id(backup_id)
             backup = models.BackupRecord.objects.get(pk=decoded_id)
 
             # Verify user has access to this tenant
-            user = getattr(info.context, 'user', None)
+            user = getattr(info.context, "user", None)
             if not user or not user.is_authenticated:
                 raise GraphQLError("Authentication required")
 
@@ -487,13 +487,12 @@ class DownloadBackupDecryptedMutation(graphene.Mutation):
                 return cls(
                     ok=False,
                     error=(
-                        f"Backup file not found at {backup.file_path}. "
-                        "The file may have been deleted or never saved."
+                        f"Backup file not found at {backup.file_path}. The file may have been deleted or never saved."
                     ),
                 )
 
             try:
-                with storage.open(backup.file_path, 'rb') as f:
+                with storage.open(backup.file_path, "rb") as f:
                     encrypted_content = f.read()
             except Exception as e:
                 logger.error(f"Failed to read backup file {backup.file_path}: {e}", exc_info=True)
@@ -512,7 +511,7 @@ class DownloadBackupDecryptedMutation(graphene.Mutation):
 
             # Decode to string
             try:
-                xml_content = content.decode('utf-8')
+                xml_content = content.decode("utf-8")
             except UnicodeDecodeError as e:
                 logger.error(f"Failed to decode backup content: {e}")
                 return cls(ok=False, error="Failed to decode backup content")
@@ -567,22 +566,22 @@ class BackupQuery(graphene.ObjectType):
     )
 
     @staticmethod
-    @permission_classes(IsTenantMemberAccess, requires('backup.view'))
+    @permission_classes(IsTenantMemberAccess, requires("backup.view"))
     def resolve_backup_config(root, info, tenant_id, **kwargs):
         """Get backup configuration for a tenant."""
         _, pk = from_global_id(tenant_id)
         return models.BackupConfig.objects.filter(tenant_id=pk).first()
 
     @staticmethod
-    @permission_classes(IsTenantMemberAccess, requires('backup.view'))
+    @permission_classes(IsTenantMemberAccess, requires("backup.view"))
     def resolve_backup_records(root, info, tenant_id, **kwargs):
         """Get backup records for a tenant."""
         _, pk = from_global_id(tenant_id)
-        queryset = models.BackupRecord.objects.filter(tenant_id=pk).order_by('-created_at')
+        queryset = models.BackupRecord.objects.filter(tenant_id=pk).order_by("-created_at")
         return queryset
 
     @staticmethod
-    @permission_classes(IsTenantMemberAccess, requires('backup.view'))
+    @permission_classes(IsTenantMemberAccess, requires("backup.view"))
     def resolve_available_backup_modules(root, info, tenant_id, **kwargs):
         """Get all available backup modules."""
         # Verify tenant_id is provided (permission check ensures user has access)
@@ -599,14 +598,14 @@ class BackupQuery(graphene.ObjectType):
         ]
 
     @staticmethod
-    @permission_classes(IsTenantMemberAccess, requires('backup.view'))
+    @permission_classes(IsTenantMemberAccess, requires("backup.view"))
     def resolve_restore_records(root, info, tenant_id, **kwargs):
         """Get restore records for a tenant."""
         _, pk = from_global_id(tenant_id)
-        return models.RestoreRecord.objects.filter(tenant_id=pk).order_by('-created_at')
+        return models.RestoreRecord.objects.filter(tenant_id=pk).order_by("-created_at")
 
     @staticmethod
-    @permission_classes(IsTenantMemberAccess, requires('backup.view'))
+    @permission_classes(IsTenantMemberAccess, requires("backup.view"))
     def resolve_backup_eligible_recipients(root, info, tenant_id, **kwargs):
         """Return tenant members who have backup.manage permission (for email recipients)."""
         _, pk = from_global_id(tenant_id)
@@ -615,12 +614,12 @@ class BackupQuery(graphene.ObjectType):
             return []
         memberships = (
             tenant_models.TenantMembership.objects.filter(tenant=tenant, is_accepted=True)
-            .select_related('user')
+            .select_related("user")
             .exclude(user__isnull=True)
         )
         result = []
         for membership in memberships:
-            if membership.user and 'backup.manage' in tenant_models.get_user_permissions_for_tenant(
+            if membership.user and "backup.manage" in tenant_models.get_user_permissions_for_tenant(
                 membership.user, tenant
             ):
                 result.append(membership)
@@ -647,17 +646,17 @@ class BackupQuery(graphene.ObjectType):
         # If verbose_name is explicitly customized (different from default), use it with capitalization
         if verbose_name and verbose_name != default_verbose_name:
             # Capitalize each word in the verbose_name
-            return ' '.join(word.capitalize() for word in verbose_name.split())
+            return " ".join(word.capitalize() for word in verbose_name.split())
 
         # Otherwise, convert class name to readable format
         # Insert spaces before capital letters (except the first one)
         name = model.__name__
         # Add space before capital letters (but not at the start)
-        name = re.sub(r'(?<!^)(?=[A-Z])', ' ', name)
+        name = re.sub(r"(?<!^)(?=[A-Z])", " ", name)
         return name
 
     @staticmethod
-    @permission_classes(IsTenantMemberAccess, requires('backup.view'))
+    @permission_classes(IsTenantMemberAccess, requires("backup.view"))
     def resolve_available_backup_models(root, info, tenant_id, module_id, **kwargs):
         """Get all available models for a specific module."""
         # Verify tenant_id is provided (permission check ensures user has access)
@@ -684,8 +683,8 @@ class BackupQuery(graphene.ObjectType):
 class BackupMutation(graphene.ObjectType):
     """Mutations for backup functionality."""
 
-    update_backup_config = permission_classes(requires('backup.manage'))(UpdateBackupConfigMutation.Field())
-    delete_backup = permission_classes(requires('backup.manage'))(DeleteBackupMutation.Field())
-    trigger_backup = permission_classes(requires('backup.manage'))(TriggerBackupMutation.Field())
-    download_backup_decrypted = permission_classes(requires('backup.view'))(DownloadBackupDecryptedMutation.Field())
-    restore_backup = permission_classes(requires('backup.manage'))(RestoreBackupMutation.Field())
+    update_backup_config = permission_classes(requires("backup.manage"))(UpdateBackupConfigMutation.Field())
+    delete_backup = permission_classes(requires("backup.manage"))(DeleteBackupMutation.Field())
+    trigger_backup = permission_classes(requires("backup.manage"))(TriggerBackupMutation.Field())
+    download_backup_decrypted = permission_classes(requires("backup.view"))(DownloadBackupDecryptedMutation.Field())
+    restore_backup = permission_classes(requires("backup.manage"))(RestoreBackupMutation.Field())

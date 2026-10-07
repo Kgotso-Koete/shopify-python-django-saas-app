@@ -24,6 +24,7 @@ import {
   Scale,
   Shield,
   Sparkles,
+  Store,
   Wallet,
   X,
 } from 'lucide-react';
@@ -242,6 +243,15 @@ export const Sidebar = (props: HTMLAttributes<HTMLDivElement>) => {
           tenantRoles: [],
           permissions: ['features.crud.view'],
           generatePath: () => generateTenantPath(RoutesConfig.crudDemoItem.list),
+        },
+        {
+          path: RoutesConfig.shopify.list,
+          label: intl.formatMessage({ defaultMessage: 'Shopify', id: 'Home / shopify link' }),
+          icon: Store,
+          roles: [],
+          tenantRoles: [],
+          permissions: ['shopify.view'],
+          generatePath: () => generateTenantPath(RoutesConfig.shopify.list),
         },
       ],
     },

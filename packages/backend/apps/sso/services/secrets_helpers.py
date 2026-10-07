@@ -29,7 +29,7 @@ def store_saml_certificate(
     Returns:
         The ARN of the stored secret, or None if unavailable
     """
-    secrets_service = get_secrets_service('sso')
+    secrets_service = get_secrets_service("sso")
     return secrets_service.store_secret(
         tenant_id=tenant_id,
         secret_type=f"saml_certificate_{connection_id}",
@@ -56,11 +56,11 @@ def store_sp_signing_key(
     Returns:
         The ARN of the stored secret, or None if unavailable
     """
-    secrets_service = get_secrets_service('sso')
+    secrets_service = get_secrets_service("sso")
     key_pair = json.dumps(
         {
-            'private_key': private_key,
-            'certificate': certificate,
+            "private_key": private_key,
+            "certificate": certificate,
         }
     )
     return secrets_service.store_secret(
@@ -81,7 +81,7 @@ def get_sp_signing_key(secret_arn: str) -> Optional[Dict[str, str]]:
     Returns:
         Dictionary with 'private_key' and 'certificate' keys, or None if not found
     """
-    secrets_service = get_secrets_service('sso')
+    secrets_service = get_secrets_service("sso")
     secret = secrets_service.get_secret(secret_arn)
     if secret:
         return json.loads(secret)
@@ -104,7 +104,7 @@ def store_oidc_client_secret(
     Returns:
         The ARN of the stored secret, or None if unavailable
     """
-    secrets_service = get_secrets_service('sso')
+    secrets_service = get_secrets_service("sso")
     return secrets_service.store_secret(
         tenant_id=tenant_id,
         secret_type=f"oidc_client_secret_{connection_id}",

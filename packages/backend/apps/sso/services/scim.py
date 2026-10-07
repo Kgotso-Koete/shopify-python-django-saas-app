@@ -108,7 +108,7 @@ class SCIMService:
             TenantMembershipRole.objects.get_or_create(
                 membership=membership,
                 role=member_role,
-                defaults={'assigned_by': membership.user},
+                defaults={"assigned_by": membership.user},
             )
 
     def _reactivate_user(
@@ -127,15 +127,15 @@ class SCIMService:
 
         # Reactivate user
         user.is_active = True
-        user.save(update_fields=['is_active'])
+        user.save(update_fields=["is_active"])
 
         # Update profile from payload
-        name = scim_user.get('name', {})
-        if name and hasattr(user, 'profile'):
-            if name.get('givenName') is not None:
-                user.profile.first_name = name.get('givenName', '')
-            if name.get('familyName') is not None:
-                user.profile.last_name = name.get('familyName', '')
+        name = scim_user.get("name", {})
+        if name and hasattr(user, "profile"):
+            if name.get("givenName") is not None:
+                user.profile.first_name = name.get("givenName", "")
+            if name.get("familyName") is not None:
+                user.profile.last_name = name.get("familyName", "")
             user.profile.save()
 
         # Ensure tenant membership exists (may have been removed by deactivation)
@@ -143,30 +143,30 @@ class SCIMService:
             user=user,
             tenant=self.tenant,
             defaults={
-                'role': TenantUserRole.MEMBER,
-                'is_accepted': True,
-                'invitation_accepted_at': timezone.now(),
+                "role": TenantUserRole.MEMBER,
+                "is_accepted": True,
+                "invitation_accepted_at": timezone.now(),
             },
         )
         if not created and not membership.is_accepted:
             membership.is_accepted = True
             membership.invitation_accepted_at = timezone.now()
-            membership.save(update_fields=['is_accepted', 'invitation_accepted_at'])
+            membership.save(update_fields=["is_accepted", "invitation_accepted_at"])
         self._ensure_rbac_member_role(membership)
 
         # Update link
         link.provisioned_via_scim = True
         link.idp_email = email
         if name:
-            link.idp_first_name = name.get('givenName', '')
-            link.idp_last_name = name.get('familyName', '')
+            link.idp_first_name = name.get("givenName", "")
+            link.idp_last_name = name.get("familyName", "")
         link.save()
 
         self._log_event(
             event_type=SSOAuditEventType.SCIM_USER_CREATED,
             user=user,
-            description=f'User {email} reactivated via SCIM',
-            metadata={'external_id': external_id},
+            description=f"User {email} reactivated via SCIM",
+            metadata={"external_id": external_id},
             ip_address=ip_address,
         )
 
@@ -269,7 +269,7 @@ class SCIMService:
                 sso_connection__tenant=self.tenant,
                 idp_user_id=external_id,
             )
-            .select_related('user', 'user__profile')
+            .select_related("user", "user__profile")
             .first()
         )
 
@@ -304,7 +304,7 @@ class SCIMService:
         user = existing_user or User.objects.create_user(email=email)
         if not user.is_active:
             user.is_active = True
-            user.save(update_fields=['is_active'])
+            user.save(update_fields=["is_active"])
 
         # Update profile
         if hasattr(user, "profile"):
@@ -319,13 +319,13 @@ class SCIMService:
             defaults={
                 "role": TenantUserRole.MEMBER,
                 "is_accepted": True,
-                'invitation_accepted_at': timezone.now(),
+                "invitation_accepted_at": timezone.now(),
             },
         )
         if not membership_created and not membership.is_accepted:
             membership.is_accepted = True
             membership.invitation_accepted_at = timezone.now()
-            membership.save(update_fields=['is_accepted', 'invitation_accepted_at'])
+            membership.save(update_fields=["is_accepted", "invitation_accepted_at"])
 
         # Assign RBAC Member role so user appears in members list and has proper permissions
         self._ensure_rbac_member_role(membership)
@@ -395,7 +395,7 @@ class SCIMService:
         active = scim_user.get("active")
         if active is not None:
             user.is_active = active
-            user.save(update_fields=['is_active'])
+            user.save(update_fields=["is_active"])
             if not active:
                 # Remove from org when deactivated (user removed from IdP SCIM app)
                 TenantMembership.objects.filter(
@@ -487,7 +487,7 @@ class SCIMService:
                 if path == "active" or path == "" and "active" in value:
                     active_value = value if path == "active" else value.get("active")
                     user.is_active = active_value
-                    user.save(update_fields=['is_active'])
+                    user.save(update_fields=["is_active"])
                     if not active_value:
                         # Remove from org when deactivated (user removed from IdP SCIM app)
                         TenantMembership.objects.filter(

@@ -15,27 +15,27 @@ from apps.multitenancy.permissions import (
 )
 
 # Category (UPPERCASE) and description for the roles UI
-BACKUP_CATEGORY = 'BACKUP'
-BACKUP_CATEGORY_LABEL = 'Backup'
-BACKUP_CATEGORY_DESCRIPTION = 'Tenant backup and restore'
+BACKUP_CATEGORY = "BACKUP"
+BACKUP_CATEGORY_LABEL = "Backup"
+BACKUP_CATEGORY_DESCRIPTION = "Tenant backup and restore"
 
 register_permission_category(BACKUP_CATEGORY, BACKUP_CATEGORY_LABEL, BACKUP_CATEGORY_DESCRIPTION)
 
 # Grant backup permissions to ADMIN (OWNER gets all permissions)
-register_system_role_permissions(SystemRoleType.ADMIN, ['backup.view', 'backup.manage'])
+register_system_role_permissions(SystemRoleType.ADMIN, ["backup.view", "backup.manage"])
 
 BACKUP_PERMISSIONS: List[PermissionDefinition] = [
     PermissionDefinition(
-        code='backup.view',
-        name='View Backup Settings',
-        description='View backup configuration and history',
+        code="backup.view",
+        name="View Backup Settings",
+        description="View backup configuration and history",
         category=BACKUP_CATEGORY,
         sort_order=10,
     ),
     PermissionDefinition(
-        code='backup.manage',
-        name='Manage Backups',
-        description='Configure backups, trigger manual backups, and manage backup settings',
+        code="backup.manage",
+        name="Manage Backups",
+        description="Configure backups, trigger manual backups, and manage backup settings",
         category=BACKUP_CATEGORY,
         sort_order=20,
     ),

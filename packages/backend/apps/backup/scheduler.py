@@ -28,7 +28,7 @@ def check_and_trigger_backups():
     """
     from .tasks import create_backup
 
-    enabled_configs = BackupConfig.objects.filter(enabled=True).select_related('tenant')
+    enabled_configs = BackupConfig.objects.filter(enabled=True).select_related("tenant")
 
     triggered_count = 0
     skipped_count = 0
@@ -47,7 +47,7 @@ def check_and_trigger_backups():
                 )
                 triggered_count += 1
                 logger.info(
-                    f"Triggered backup for tenant {config.tenant_id} " f"(interval: {config.backup_interval_hours}h)"
+                    f"Triggered backup for tenant {config.tenant_id} (interval: {config.backup_interval_hours}h)"
                 )
             else:
                 skipped_count += 1
@@ -55,9 +55,7 @@ def check_and_trigger_backups():
             logger.error(f"Error checking backup config {config.id}: {e}", exc_info=True)
             error_count += 1
 
-    logger.info(
-        f"Backup check completed: {triggered_count} triggered, " f"{skipped_count} skipped, {error_count} errors"
-    )
+    logger.info(f"Backup check completed: {triggered_count} triggered, {skipped_count} skipped, {error_count} errors")
 
     return {
         "triggered": triggered_count,
@@ -98,7 +96,7 @@ def _should_run_backup(config: BackupConfig) -> bool:
         BackupRecord.objects.filter(
             tenant=config.tenant,
         )
-        .order_by('-created_at')
+        .order_by("-created_at")
         .first()
     )
 

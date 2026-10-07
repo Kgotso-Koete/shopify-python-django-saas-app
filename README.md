@@ -33,6 +33,24 @@
 
 ---
 
+> ### 📚 LOCAL HOW-TO GUIDES — START HERE
+>
+> **The comprehensive development guides for this codebase live inside the repository at
+> [`packages/internal/docs/docs/`](packages/internal/docs/docs/).** These cover
+> GraphQL (queries, mutations, schema updates, fragments, error conventions),
+> backend patterns (models, serializers, testing), frontend patterns (components,
+> forms, routing), and much more. **Always check these guides before implementing
+> a new feature or debugging an issue.**
+>
+> Quick links to key guides:
+>
+> - **[GraphQL overview](packages/internal/docs/docs/working-with-sb/graphql/index.mdx)** — how data flows between frontend and backend
+> - **[Update GraphQL schema types](packages/internal/docs/docs/working-with-sb/graphql/web-app/update-schema.mdx)** — regenerate TypeScript types after backend changes
+> - **[Add a backend mutation](packages/internal/docs/docs/working-with-sb/graphql/backend/adding-new-mutation.mdx)** — create new API endpoints
+> - **[Create a backend model](packages/internal/docs/docs/working-with-sb/guides/backend/backend-model.mdx)** — Django model patterns
+
+---
+
 Supercharge your SaaS development with our comprehensive starter kit, designed to accelerate your project and save you
 valuable time and resources. Our battle-tested boilerplate eliminates the need for extensive configuration and
 development work, allowing you to focus on innovation from day one.
@@ -207,6 +225,74 @@ After starting the application, you'll have these services available:
 > 1. Open [http://localhost:3000](http://localhost:3000) and create an account
 > 2. Check [http://localhost:1080](http://localhost:1080) for the verification email
 > 3. Log in to the Admin Panel at [http://admin.localhost:5001](http://admin.localhost:5001) using credentials from your `.env` file
+
+### Testing
+
+You can run tests for the application either using NX directly (recommended when the app container is not running) or through Docker (when the app container is running).
+
+#### Using Docker (When `pnpm saas up` is running)
+
+If you have already started the application using `pnpm saas up`, you can run tests directly inside the running containers using `docker compose exec`:
+
+**Backend:**
+
+- **All backend tests:** `docker compose exec backend uv run pytest`
+- **Specific app tests:** `docker compose exec backend uv run pytest apps/shopify/tests/`
+- **Specific test file:** `docker compose exec backend uv run pytest apps/shopify/tests/test_views.py`
+- **Specific test case:** `docker compose exec backend uv run pytest apps/shopify/tests/test_views.py::test_install_view_disabled`
+
+**Webapp:**
+
+- **All webapp tests:** `docker compose exec webapp pnpm test`
+
+#### Using NX (Standalone)
+
+If you do not have the application running, you can use the NX workspace commands. This will automatically spin up the necessary environments to run the tests.
+
+**Backend:**
+
+- **All backend tests:** `pnpm nx test backend`
+- **Specific test file:** `pnpm nx test backend --testFile=apps/shopify/tests/test_views.py`
+
+**Webapp:**
+
+- **All webapp tests:** `pnpm nx test webapp`
+- **Specific library:** `pnpm nx test webapp-core`
+
+**All Packages:**
+
+- `pnpm nx run-many --target=test`
+
+### Commit Protocol
+
+**1. Create a feature branch**
+
+```shell
+git checkout -b feature/<short-description>
+```
+
+**2. Stage and commit your changes using [Conventional Commits](https://www.conventionalcommits.org/)**
+
+```shell
+git add .
+git commit -m "feat(scope): brief description (vX.Y.Z)"
+```
+
+Common prefixes: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`
+
+**3. Create a Pull Request**
+Use the GitHub CLI to open a PR for review.
+
+```shell
+gh pr create --title "feat(scope): brief description" --body "Detailed explanation of changes."
+```
+
+**4. Merge and Delete Branch**
+Once approved, squash and merge the PR, and automatically delete the feature branch.
+
+```shell
+gh pr merge --squash --delete-branch
+```
 
 ## Features
 

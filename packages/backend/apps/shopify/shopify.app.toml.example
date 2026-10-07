@@ -1,0 +1,21 @@
+client_id = "<SHOPIFY_API_KEY>"
+name = "<app name>"
+application_url = "https://<api-host>/api/shopify/install/"
+embedded = false
+
+[access_scopes]
+scopes = "read_products"
+
+[auth]
+redirect_urls = ["https://<api-host>/api/shopify/auth/callback/"]
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "https://<api-host>/api/shopify/webhooks/"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "https://<api-host>/api/shopify/webhooks/"

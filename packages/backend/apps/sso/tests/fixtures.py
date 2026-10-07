@@ -69,7 +69,7 @@ def webauthn_challenge(web_authn_challenge):
 @pytest.fixture
 def mock_secrets_service():
     """Mock the SecretsService."""
-    with patch('common.secrets.service.SecretsService') as mock:
+    with patch("common.secrets.service.SecretsService") as mock:
         instance = mock.return_value
         instance.get_secret.return_value = "mock_secret"
         instance.store_secret.return_value = "arn:aws:secretsmanager:region:account:secret:name"

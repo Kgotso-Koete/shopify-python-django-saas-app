@@ -18,6 +18,7 @@ import {
   TransactionsHistoryContent,
 } from '@sb/webapp-finances/routes';
 import { SaasIdeas } from '@sb/webapp-generative-ai/routes';
+import { ShopifyShops, ShopifyLink } from '@sb/webapp-shopify/routes';
 import { PermissionAuthRoute } from '@sb/webapp-tenants/components/routes/permissionAuthRoute';
 import { TenantBackupSettings } from '@sb/webapp-backup';
 import {
@@ -128,6 +129,10 @@ export const App = () => {
             <Route element={<PermissionAuthRoute permissions="features.ai.use" />}>
               <Route path={RoutesConfig.saasIdeas} element={<SaasIdeas />} />
             </Route>
+            {/* Shopify - protected by shopify.view */}
+            <Route element={<PermissionAuthRoute permissions="shopify.view" />}>
+              <Route path={RoutesConfig.shopify.index} element={<ShopifyShops />} />
+            </Route>
             <Route path={RoutesConfig.tenant.accessDenied} element={<AccessDenied />} />
             <Route path="*" element={<NotFound />} />
           </Route>
@@ -136,6 +141,7 @@ export const App = () => {
             <Route path={RoutesConfig.profile} element={<Profile />} />
             <Route path={RoutesConfig.addTenant} element={<AddTenantForm />} />
             <Route path={RoutesConfig.tenantInvitation} element={<TenantInvitation />} />
+            <Route path={RoutesConfig.shopify.link} element={<ShopifyLink />} />
             <Route path="*" element={<NotFound />} />
           </Route>
 

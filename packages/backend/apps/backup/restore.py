@@ -83,18 +83,18 @@ class RestoreService:
             raise RestoreValidationError(f"Invalid XML content: {e}")
 
         # Validate root element
-        if root.tag != 'tenant_backup':
+        if root.tag != "tenant_backup":
             raise RestoreValidationError(
                 f"Invalid backup format: expected 'tenant_backup' root element, got '{root.tag}'"
             )
 
         # Find data section
-        data_section = root.find('data')
+        data_section = root.find("data")
         if data_section is None:
             raise RestoreValidationError("No 'data' section found in backup XML")
 
         # Collect all model sections from XML
-        model_sections = data_section.findall('model')
+        model_sections = data_section.findall("model")
         if not model_sections:
             logger.info("No model data found in backup XML, nothing to restore")
             return {}
@@ -129,7 +129,7 @@ class RestoreService:
         model_data: Dict[Type[models.Model], List[Element]] = {}
 
         for model_section in model_sections:
-            model_name = model_section.get('name')
+            model_name = model_section.get("name")
             if not model_name:
                 logger.warning("Skipping model section without name attribute")
                 continue
@@ -141,7 +141,7 @@ class RestoreService:
                 self.errors.append(f"Model '{model_name}' not found, skipped")
                 continue
 
-            items = model_section.findall('item')
+            items = model_section.findall("item")
             if items:
                 model_data[model_class] = items
 
@@ -161,8 +161,8 @@ class RestoreService:
         Returns:
             Model class or None if not found
         """
-        if '.' in model_name:
-            app_label, model_name_only = model_name.split('.', 1)
+        if "." in model_name:
+            app_label, model_name_only = model_name.split(".", 1)
             try:
                 return apps.get_model(app_label, model_name_only)
             except LookupError:
@@ -254,16 +254,16 @@ class RestoreService:
                 continue
 
             model_name = model_class.__name__
-            counts = {'created': 0, 'updated': 0, 'skipped': 0, 'failed': 0}
+            counts = {"created": 0, "updated": 0, "skipped": 0, "failed": 0}
 
             for item_elem in items:
                 try:
                     result, m2m_data = self._import_item(model_class, item_elem)
                     counts[result] += 1
 
-                    if m2m_data and result in ('created', 'updated'):
+                    if m2m_data and result in ("created", "updated"):
                         # Defer M2M assignment
-                        pk_elem = item_elem.find('id')
+                        pk_elem = item_elem.find("id")
                         if pk_elem is not None and pk_elem.text:
                             m2m_deferred.append((model_class, pk_elem.text, m2m_data))
 
@@ -271,7 +271,7 @@ class RestoreService:
                     raise  # Re-raise for FAIL strategy
                 except Exception as e:
                     logger.error(f"Failed to restore {model_name} item: {e}", exc_info=True)
-                    counts['failed'] += 1
+                    counts["failed"] += 1
                     self.errors.append(f"{model_name}: {str(e)}")
 
             self.model_counts[model_name] = counts
@@ -298,7 +298,7 @@ class RestoreService:
         """
         safe = {}
         for attr, value in field_values.items():
-            if attr == 'id':
+            if attr == "id":
                 continue
             try:
                 field = model_class._meta.get_field(attr)
@@ -306,7 +306,7 @@ class RestoreService:
                 safe[attr] = value
                 continue
             if isinstance(field, models.ForeignKey):
-                if value is None or value == '':
+                if value is None or value == "":
                     safe[attr] = None
                     continue
                 if not field.related_model.objects.filter(pk=value).exists():
@@ -327,19 +327,19 @@ class RestoreService:
         """
         result = dict(kwargs)
         for field in model_class._meta.get_fields():
-            if not hasattr(field, 'column') or field.many_to_many:
+            if not hasattr(field, "column") or field.many_to_many:
                 continue
             if isinstance(field, models.ForeignKey):
                 continue
-            if getattr(field, 'primary_key', False):
+            if getattr(field, "primary_key", False):
                 continue
-            if getattr(field, 'null', True):
+            if getattr(field, "null", True):
                 continue
             name = field.name
             if name in result and result[name] is not None:
                 continue
             if isinstance(field, models.DecimalField):
-                result[name] = Decimal('0')
+                result[name] = Decimal("0")
             elif isinstance(
                 field,
                 (
@@ -352,7 +352,7 @@ class RestoreService:
             ):
                 result[name] = 0
             elif isinstance(field, (models.CharField, models.TextField)):
-                result[name] = ''
+                result[name] = ""
             elif isinstance(field, models.BooleanField):
                 result[name] = False
             elif isinstance(field, models.DateTimeField):
@@ -377,7 +377,7 @@ class RestoreService:
             and m2m_data is a dict of field_name -> list of related PKs
         """
         model_name = model_class.__name__
-        field_map = {f.name: f for f in model_class._meta.get_fields() if hasattr(f, 'column') or f.many_to_many}
+        field_map = {f.name: f for f in model_class._meta.get_fields() if hasattr(f, "column") or f.many_to_many}
 
         # Separate regular fields from M2M fields
         field_values = {}
@@ -394,8 +394,8 @@ class RestoreService:
             if field.many_to_many:
                 # Collect M2M related IDs
                 related_ids = []
-                for related_item in child_elem.findall('item'):
-                    related_id = related_item.get('id')
+                for related_item in child_elem.findall("item"):
+                    related_id = related_item.get("id")
                     if related_id:
                         related_ids.append(related_id)
                 if related_ids:
@@ -403,7 +403,7 @@ class RestoreService:
                 continue
 
             # Skip the tenant field - we always use the target tenant
-            if field_name == 'tenant':
+            if field_name == "tenant":
                 continue
 
             # Deserialize the field value
@@ -414,28 +414,28 @@ class RestoreService:
                 logger.warning(f"Failed to deserialize {model_name}.{field_name}: {e}")
                 continue
 
-        field_values['tenant_id'] = self.tenant_id
-        pk_value = field_values.pop('id', None)
+        field_values["tenant_id"] = self.tenant_id
+        pk_value = field_values.pop("id", None)
 
         if pk_value is None:
             try:
                 with transaction.atomic():
                     model_class.objects.create(**self._fill_required_defaults(model_class, field_values))
-                return 'created', m2m_data
+                return "created", m2m_data
             except IntegrityError as e:
                 error_str = str(e).lower()
-                if 'unique' in error_str or 'duplicate' in error_str:
+                if "unique" in error_str or "duplicate" in error_str:
                     if self.conflict_strategy == self.CONFLICT_SKIP:
-                        return 'skipped', {}
+                        return "skipped", {}
                     if self.conflict_strategy == self.CONFLICT_FAIL:
                         raise RestoreConflictError(
                             f"Unique constraint violation: {model_name} conflicts with existing record"
                         )
                     if self.conflict_strategy == self.CONFLICT_UPDATE:
                         existing_by_unique = None
-                        if model_name == 'Invoice' and 'invoice_number' in field_values:
+                        if model_name == "Invoice" and "invoice_number" in field_values:
                             existing_by_unique = model_class.objects.filter(
-                                tenant_id=self.tenant_id, invoice_number=field_values['invoice_number']
+                                tenant_id=self.tenant_id, invoice_number=field_values["invoice_number"]
                             ).first()
                         if existing_by_unique:
                             try:
@@ -444,12 +444,12 @@ class RestoreService:
                                     for attr, value in safe_values.items():
                                         setattr(existing_by_unique, attr, value)
                                     existing_by_unique.save()
-                                return 'updated', m2m_data
+                                return "updated", m2m_data
                             except Exception:
-                                return 'failed', {}
-                return 'failed', {}
+                                return "failed", {}
+                return "failed", {}
             except Exception:
-                return 'failed', {}
+                return "failed", {}
 
         # Check if record already exists
         try:
@@ -460,7 +460,7 @@ class RestoreService:
         if existing:
             # Record exists - apply conflict strategy
             if self.conflict_strategy == self.CONFLICT_SKIP:
-                return 'skipped', {}
+                return "skipped", {}
 
             elif self.conflict_strategy == self.CONFLICT_FAIL:
                 raise RestoreConflictError(f"Conflict: {model_name} with pk={pk_value} already exists")
@@ -472,22 +472,22 @@ class RestoreService:
                         for attr, value in safe_values.items():
                             setattr(existing, attr, value)
                         existing.save()
-                    return 'updated', m2m_data
+                    return "updated", m2m_data
                 except IntegrityError:
-                    return 'failed', {}
+                    return "failed", {}
                 except Exception:
-                    return 'failed', {}
+                    return "failed", {}
         else:
             try:
                 with transaction.atomic():
-                    field_values['id'] = pk_value
+                    field_values["id"] = pk_value
                     model_class.objects.create(**self._fill_required_defaults(model_class, field_values))
-                return 'created', m2m_data
+                return "created", m2m_data
             except IntegrityError as e:
                 error_str = str(e).lower()
-                if 'unique' in error_str or 'duplicate' in error_str:
+                if "unique" in error_str or "duplicate" in error_str:
                     if self.conflict_strategy == self.CONFLICT_SKIP:
-                        return 'skipped', {}
+                        return "skipped", {}
                     if self.conflict_strategy == self.CONFLICT_FAIL:
                         raise RestoreConflictError(
                             f"Unique constraint violation: {model_name} with pk={pk_value} "
@@ -495,10 +495,10 @@ class RestoreService:
                         )
                     if self.conflict_strategy == self.CONFLICT_UPDATE:
                         existing_by_unique = None
-                        if model_name == 'Invoice' and 'invoice_number' in field_values:
+                        if model_name == "Invoice" and "invoice_number" in field_values:
                             existing_by_unique = (
                                 model_class.objects.filter(
-                                    tenant_id=self.tenant_id, invoice_number=field_values['invoice_number']
+                                    tenant_id=self.tenant_id, invoice_number=field_values["invoice_number"]
                                 )
                                 .exclude(pk=pk_value)
                                 .first()
@@ -510,12 +510,12 @@ class RestoreService:
                                     for attr, value in safe_values.items():
                                         setattr(existing_by_unique, attr, value)
                                     existing_by_unique.save()
-                                return 'updated', m2m_data
+                                return "updated", m2m_data
                             except Exception:
-                                return 'failed', {}
-                return 'failed', {}
+                                return "failed", {}
+                return "failed", {}
             except Exception:
-                return 'failed', {}
+                return "failed", {}
 
     def _restore_m2m(self, model_class: Type[models.Model], pk_value: Any, m2m_data: Dict[str, List[str]]) -> None:
         """
@@ -540,8 +540,7 @@ class RestoreService:
                 existing_related = related_model.objects.filter(pk__in=related_pks)
                 m2m_manager.set(existing_related)
                 logger.debug(
-                    f"Set M2M {model_class.__name__}.{field_name}: "
-                    f"{existing_related.count()}/{len(related_pks)} found"
+                    f"Set M2M {model_class.__name__}.{field_name}: {existing_related.count()}/{len(related_pks)} found"
                 )
             except Exception as e:
                 logger.error(f"Failed to restore M2M {model_class.__name__}.{field_name}: {e}")
@@ -558,11 +557,11 @@ class RestoreService:
         Returns:
             Deserialized Python value
         """
-        if text is None or text == '':
+        if text is None or text == "":
             if field.null:
                 return None
             if isinstance(field, (models.CharField, models.TextField)):
-                return ''
+                return ""
             return None
 
         # Handle ForeignKey fields - return the raw PK value
@@ -575,7 +574,7 @@ class RestoreService:
 
         # Handle specific field types
         if isinstance(field, models.BooleanField):
-            return text.lower() in ('true', '1', 'yes')
+            return text.lower() in ("true", "1", "yes")
 
         if isinstance(field, (models.IntegerField, models.BigIntegerField)):
             return int(text)
@@ -591,7 +590,7 @@ class RestoreService:
                 return Decimal(text)
             except InvalidOperation:
                 logger.warning(f"Invalid decimal value: {text}")
-                return Decimal('0')
+                return Decimal("0")
 
         if isinstance(field, models.DateTimeField):
             parsed = parse_datetime(text)

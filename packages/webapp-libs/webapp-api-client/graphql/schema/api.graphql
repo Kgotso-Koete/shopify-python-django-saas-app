@@ -36,6 +36,9 @@ that will be handled by the multipart request spec
 """
 scalar Upload
 type Query {
+  shopifyConfig: ShopifyConfigType!
+  shopifyShops(tenantId: ID!): [ShopifyShopType!]!
+  shopifyClaim(claim: String!): ShopifyClaimType
   "Get backup configuration for a tenant"
   backupConfig(tenantId: ID!): BackupConfigType
   "Get backup records for a tenant"
@@ -89,6 +92,12 @@ type Query {
   currentUserPermissions(tenantId: ID!): [String]
   "Get all organization roles for the current user in a tenant"
   currentUserOrganizationRoles(tenantId: ID!): [OrganizationRoleType]
+  paymentConfig: PaymentConfigType!
+  payfastSubscriptionPlans: [PayFastPlanType!]!
+  payfastDonationAmounts: [Decimal!]!
+  payfastActiveSubscription(tenantId: ID!): PayFastSubscriptionType
+  payfastPayments(tenantId: ID!, before: String, after: String, first: Int, last: Int): PayFastPaymentConnection
+  payfastCheckoutStatus(tenantId: ID!, mPaymentId: ID!): String
   allSubscriptionPlans(before: String, after: String, first: Int, last: Int): StripePriceConnection
   activeSubscription(tenantId: ID): SubscriptionScheduleType
   allPaymentMethods(tenantId: ID, before: String, after: String, first: Int, last: Int): PaymentMethodConnection
@@ -107,12 +116,19 @@ type Query {
     "The ID of the object"
     id: ID!
   ): Node
-  paymentConfig: PaymentConfigType!
-  payfastSubscriptionPlans: [PayFastPlanType!]!
-  payfastDonationAmounts: [Decimal!]!
-  payfastActiveSubscription(tenantId: ID!): PayFastSubscriptionType
-  payfastPayments(tenantId: ID!, before: String, after: String, first: Int, last: Int): PayFastPaymentConnection
-  payfastCheckoutStatus(tenantId: ID!, mPaymentId: ID!): String
+}
+type ShopifyConfigType {
+  enabled: Boolean!
+}
+type ShopifyShopType {
+  shopDomain: String!
+  installedAt: DateTime
+  uninstalledAt: DateTime
+  needsReinstall: Boolean!
+  scopes: [String!]!
+}
+type ShopifyClaimType {
+  shopDomain: String!
 }
 "GraphQL type for BackupConfig."
 type BackupConfigType implements Node {
@@ -671,6 +687,62 @@ type OrganizationRoleEdge {
   node: OrganizationRoleType
   "A cursor for use in pagination"
   cursor: String!
+}
+"Which payment backend the server uses, so the web app can show the matching pages."
+type PaymentConfigType {
+  backend: String!
+  currency: String!
+}
+type PayFastPlanType {
+  name: String!
+  amount: Decimal!
+  currency: String!
+  "month, year, or null for the free plan"
+  interval: String
+}
+type PayFastSubscriptionType {
+  "The plan paid for in the current period"
+  plan: String!
+  "The plan the organisation has right now"
+  effectivePlan: String!
+  "A plan change that takes effect at the next renewal"
+  pendingPlan: String
+  "What the pending plan charges, from the next renewal"
+  pendingAmount: Decimal
+  status: String!
+  amount: Decimal!
+  currentPeriodStart: DateTime
+  currentPeriodEnd: DateTime
+  trialEnd: DateTime
+  cancelAtPeriodEnd: Boolean!
+  canActivateTrial: Boolean!
+  hasCard: Boolean!
+  "PayFast-hosted page to update the card on file"
+  cardUpdateUrl(returnPath: String): String
+}
+type PayFastPaymentConnection {
+  "Pagination data for this connection."
+  pageInfo: PageInfo!
+  "Contains the nodes in this connection."
+  edges: [PayFastPaymentEdge]!
+}
+"A Relay edge containing a `PayFastPayment` and its cursor."
+type PayFastPaymentEdge {
+  "The item at the end of the edge"
+  node: PayFastPaymentType
+  "A cursor for use in pagination"
+  cursor: String!
+}
+type PayFastPaymentType implements Node {
+  "The ID of the object"
+  id: ID!
+  createdAt: DateTime!
+  kind: String!
+  plan: String!
+  pfPaymentId: String!
+  amountGross: Decimal!
+  paymentStatus: String!
+  itemName: String!
 }
 type StripePriceConnection {
   "Pagination data for this connection."
@@ -1318,6 +1390,9 @@ type FileFieldType {
   name: String
 }
 type ApiMutation {
+  shopifyStartInstall(input: ShopifyStartInstallInput!): ShopifyStartInstall
+  shopifyLinkShop(input: ShopifyLinkShopInput!): ShopifyLinkShop
+  shopifyDisconnectShop(input: ShopifyDisconnectShopInput!): ShopifyDisconnectShop
   "Create or update backup configuration for a tenant."
   updateBackupConfig(input: BackupConfigInput!): UpdateBackupConfigMutation
   "Delete a backup record and its file."
@@ -1454,6 +1529,15 @@ type ApiMutation {
   """
   sendAiMessage(conversationId: String!, history: [JSONString], message: String!, tenantId: String!): SendAiMessageMutation
   generateSaasIdeas(input: GenerateSaasIdeasMutationInput!): GenerateSaasIdeasMutationPayload
+  """
+  Start a subscription, or switch a paying organisation to another plan: returns the signed PayFast
+  form for the chosen paid plan (services.create_subscription_checkout).
+  """
+  payfastCreateCheckout(input: PayFastCreateCheckoutMutationInput!): PayFastCreateCheckoutMutationPayload
+  "Start a once-off donation of one of the offered amounts."
+  payfastCreateDonationCheckout(input: PayFastCreateDonationCheckoutMutationInput!): PayFastCreateDonationCheckoutMutationPayload
+  "Cancel the paid plan: billing stops now, the plan lasts until the end of the period."
+  payfastCancelSubscription(input: PayFastCancelSubscriptionMutationInput!): PayFastCancelSubscriptionMutationPayload
   changeActiveSubscription(input: ChangeActiveSubscriptionMutationInput!): ChangeActiveSubscriptionMutationPayload
   cancelActiveSubscription(input: CancelActiveSubscriptionMutationInput!): CancelActiveSubscriptionMutationPayload
   updateDefaultPaymentMethod(input: UpdateDefaultPaymentMethodMutationInput!): UpdateDefaultPaymentMethodMutationPayload
@@ -1481,17 +1565,15 @@ type ApiMutation {
   deleteDocumentDemoItem(input: DeleteDocumentDemoItemMutationInput!): DeleteDocumentDemoItemMutationPayload
   createFavoriteContentfulDemoItem(input: CreateFavoriteContentfulDemoItemMutationInput!): CreateFavoriteContentfulDemoItemMutationPayload
   deleteFavoriteContentfulDemoItem(input: DeleteFavoriteContentfulDemoItemMutationInput!): DeleteFavoriteContentfulDemoItemMutationPayload
-  """
-  Start a subscription, or switch a paying organisation to another plan: returns the signed PayFast
-  form for the chosen paid plan (services.create_subscription_checkout).
-  """
-  payfastCreateCheckout(input: PayFastCreateCheckoutMutationInput!): PayFastCreateCheckoutMutationPayload
-  """Start a once-off donation of one of the offered amounts."""
-  payfastCreateDonationCheckout(input: PayFastCreateDonationCheckoutMutationInput!): PayFastCreateDonationCheckoutMutationPayload
-  """
-  Cancel the paid plan: billing stops now, the plan lasts until the end of the period.
-  """
-  payfastCancelSubscription(input: PayFastCancelSubscriptionMutationInput!): PayFastCancelSubscriptionMutationPayload
+}
+type ShopifyStartInstall {
+  authorizeUrl: String!
+}
+type ShopifyLinkShop {
+  shop: ShopifyShopType
+}
+type ShopifyDisconnectShop {
+  ok: Boolean!
 }
 "Create or update backup configuration for a tenant."
 type UpdateBackupConfigMutation {
@@ -1876,6 +1958,30 @@ type SendAiMessageMutation {
 }
 type GenerateSaasIdeasMutationPayload {
   response: String
+  clientMutationId: String
+}
+"""
+Start a subscription, or switch a paying organisation to another plan: returns the signed PayFast
+form for the chosen paid plan (services.create_subscription_checkout).
+"""
+type PayFastCreateCheckoutMutationPayload {
+  checkout: PayFastCheckoutType
+  clientMutationId: String
+}
+"POST `fields` to `action_url` (an HTML form) to send the buyer to PayFast."
+type PayFastCheckoutType {
+  actionUrl: String!
+  fields: GenericScalar!
+  mPaymentId: ID!
+}
+"Start a once-off donation of one of the offered amounts."
+type PayFastCreateDonationCheckoutMutationPayload {
+  checkout: PayFastCheckoutType
+  clientMutationId: String
+}
+"Cancel the paid plan: billing stops now, the plan lasts until the end of the period."
+type PayFastCancelSubscriptionMutationPayload {
+  activeSubscription: PayFastSubscriptionType
   clientMutationId: String
 }
 type ChangeActiveSubscriptionMutationPayload {
@@ -2805,6 +2911,18 @@ enum UsersUserProfileLanguageChoices {
   "Spanish"
   ES
 }
+input ShopifyStartInstallInput {
+  tenantId: ID!
+  shopDomain: String!
+}
+input ShopifyLinkShopInput {
+  tenantId: ID!
+  claim: String!
+}
+input ShopifyDisconnectShopInput {
+  tenantId: ID!
+  shopDomain: String!
+}
 "Input type for backup configuration."
 input BackupConfigInput {
   tenantId: ID!
@@ -2987,6 +3105,24 @@ input GenerateSaasIdeasMutationInput {
   keywords: [String]
   clientMutationId: String
 }
+input PayFastCreateCheckoutMutationInput {
+  tenantId: String!
+  plan: String!
+  returnPath: String!
+  cancelPath: String!
+  clientMutationId: String
+}
+input PayFastCreateDonationCheckoutMutationInput {
+  tenantId: String!
+  amount: String!
+  returnPath: String!
+  cancelPath: String!
+  clientMutationId: String
+}
+input PayFastCancelSubscriptionMutationInput {
+  tenantId: String!
+  clientMutationId: String
+}
 input ChangeActiveSubscriptionMutationInput {
   id: String
   tenantId: String!
@@ -3126,107 +3262,3 @@ directive @specifiedBy(
     "The URL that specifies the behaviour of this scalar."
     url: String!
   ) on SCALAR
-"""
-Which payment backend the server uses, so the web app can show the matching pages.
-"""
-type PaymentConfigType {
-  backend: String!
-  currency: String!
-}
-type PayFastPlanType {
-  name: String!
-  amount: Decimal!
-  currency: String!
-  """month, year, or null for the free plan"""
-  interval: String
-}
-type PayFastSubscriptionType {
-  """The plan paid for in the current period"""
-  plan: String!
-  """The plan the organisation has right now"""
-  effectivePlan: String!
-  """A plan change that takes effect at the next renewal"""
-  pendingPlan: String
-  """What the pending plan charges, from the next renewal"""
-  pendingAmount: Decimal
-  status: String!
-  amount: Decimal!
-  currentPeriodStart: DateTime
-  currentPeriodEnd: DateTime
-  trialEnd: DateTime
-  cancelAtPeriodEnd: Boolean!
-  canActivateTrial: Boolean!
-  hasCard: Boolean!
-  """PayFast-hosted page to update the card on file"""
-  cardUpdateUrl(returnPath: String): String
-}
-type PayFastPaymentConnection {
-  """Pagination data for this connection."""
-  pageInfo: PageInfo!
-  """Contains the nodes in this connection."""
-  edges: [PayFastPaymentEdge]!
-}
-"""A Relay edge containing a `PayFastPayment` and its cursor."""
-type PayFastPaymentEdge {
-  """The item at the end of the edge"""
-  node: PayFastPaymentType
-  """A cursor for use in pagination"""
-  cursor: String!
-}
-type PayFastPaymentType implements Node {
-  """The ID of the object"""
-  id: ID!
-  createdAt: DateTime!
-  kind: String!
-  plan: String!
-  pfPaymentId: String!
-  amountGross: Decimal!
-  paymentStatus: String!
-  itemName: String!
-}
-"""
-Start a subscription, or switch a paying organisation to another plan: returns the signed PayFast
-form for the chosen paid plan (services.create_subscription_checkout).
-"""
-type PayFastCreateCheckoutMutationPayload {
-  checkout: PayFastCheckoutType
-  clientMutationId: String
-}
-"""
-POST `fields` to `action_url` (an HTML form) to send the buyer to PayFast.
-"""
-type PayFastCheckoutType {
-  actionUrl: String!
-  fields: GenericScalar!
-  mPaymentId: ID!
-}
-input PayFastCreateCheckoutMutationInput {
-  tenantId: String!
-  plan: String!
-  returnPath: String!
-  cancelPath: String!
-  clientMutationId: String
-}
-"""Start a once-off donation of one of the offered amounts."""
-type PayFastCreateDonationCheckoutMutationPayload {
-  checkout: PayFastCheckoutType
-  clientMutationId: String
-}
-input PayFastCreateDonationCheckoutMutationInput {
-  tenantId: String!
-  amount: String!
-  returnPath: String!
-  cancelPath: String!
-  clientMutationId: String
-}
-"""
-Cancel the paid plan: billing stops now, the plan lasts until the end of the period.
-"""
-type PayFastCancelSubscriptionMutationPayload {
-  activeSubscription: PayFastSubscriptionType
-  clientMutationId: String
-}
-input PayFastCancelSubscriptionMutationInput {
-  tenantId: String!
-  clientMutationId: String
-}

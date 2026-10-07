@@ -7,154 +7,219 @@ A date-time string at UTC, such as 2007-12-03T10:15:30Z,
 scalar DateTime
 "The 'Dimension' type represents dimensions as whole numeric values between `1` and `4000`."
 scalar Dimension
-"The 'Quality' type represents quality as whole numeric values between `1` and `100`."
-scalar Quality
 "The 'HexColor' type represents color in `rgb:ffffff` string format."
 scalar HexColor
-type Query {
-  asset(id: String!, preview: Boolean, locale: String): Asset
-  assetCollection(skip: Int = 0, limit: Int = 100, preview: Boolean, locale: String, where: AssetFilter, order: [AssetOrder]): AssetCollection
-  demoItem(id: String!, preview: Boolean, locale: String): DemoItem
-  demoItemCollection(skip: Int = 0, limit: Int = 100, preview: Boolean, locale: String, where: DemoItemFilter, order: [DemoItemOrder]): DemoItemCollection
-  appConfig(id: String!, preview: Boolean, locale: String): AppConfig
-  appConfigCollection(skip: Int = 0, limit: Int = 100, preview: Boolean, locale: String, where: AppConfigFilter, order: [AppConfigOrder]): AppConfigCollection
-  entryCollection(skip: Int = 0, limit: Int = 100, preview: Boolean, locale: String, where: EntryFilter, order: [EntryOrder]): EntryCollection
-  _node(id: ID!, preview: Boolean, locale: String): _Node
+"The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf)."
+scalar JSON
+"The 'Quality' type represents quality as whole numeric values between `1` and `100`."
+scalar Quality
+"[See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/appConfig)"
+type AppConfig implements Entry & _Node {
+  _id: ID!
+  contentfulMetadata: ContentfulMetadata!
+  linkedFrom(allowedLocales: [String]): AppConfigLinkingCollections
+  name(locale: String, useFallbackLocale: Boolean): String
+  privacyPolicy(locale: String, useFallbackLocale: Boolean): String
+  sys: Sys!
+  termsAndConditions(locale: String, useFallbackLocale: Boolean): String
+}
+type AppConfigCollection {
+  items: [AppConfig]!
+  limit: Int!
+  skip: Int!
+  total: Int!
+}
+type AppConfigCursorCollection {
+  items: [AppConfig]!
+  limit: Int!
+  pages: CursorPages!
+}
+type AppConfigLinkingCollections {
+  entryCollection(limit: Int = 100, locale: String, preview: Boolean, skip: Int = 0, useFallbackLocale: Boolean): EntryCollection
+  entryCursorCollection(limit: Int = 100, locale: String, pageNext: String, pagePrev: String, preview: Boolean, useFallbackLocale: Boolean): EntryCursorCollection
 }
 "Represents a binary file in a space. An asset can be any file type."
-type Asset {
-  sys: Sys!
+type Asset implements _Node {
+  _id: ID!
+  contentType(locale: String, useFallbackLocale: Boolean): String
   contentfulMetadata: ContentfulMetadata!
-  title(locale: String): String
-  description(locale: String): String
-  contentType(locale: String): String
-  fileName(locale: String): String
-  size(locale: String): Int
-  url(transform: ImageTransformOptions, locale: String): String
-  width(locale: String): Int
-  height(locale: String): Int
+  description(locale: String, useFallbackLocale: Boolean): String
+  fileName(locale: String, useFallbackLocale: Boolean): String
+  height(locale: String, useFallbackLocale: Boolean): Int
   linkedFrom(allowedLocales: [String]): AssetLinkingCollections
+  size(locale: String, useFallbackLocale: Boolean): Int
+  sys: Sys!
+  title(locale: String, useFallbackLocale: Boolean): String
+  url(locale: String, transform: ImageTransformOptions, useFallbackLocale: Boolean): String
+  width(locale: String, useFallbackLocale: Boolean): Int
 }
-type Sys {
-  id: String!
-  spaceId: String!
-  environmentId: String!
-  publishedAt: DateTime
-  firstPublishedAt: DateTime
-  publishedVersion: Int
+type AssetCollection {
+  items: [Asset]!
+  limit: Int!
+  skip: Int!
+  total: Int!
+}
+type AssetCursorCollection {
+  items: [Asset]!
+  limit: Int!
+  pages: CursorPages!
+}
+type AssetLinkingCollections {
+  demoItemCollection(limit: Int = 100, locale: String, preview: Boolean, skip: Int = 0, useFallbackLocale: Boolean): DemoItemCollection
+  demoItemCursorCollection(limit: Int = 100, locale: String, pageNext: String, pagePrev: String, preview: Boolean, useFallbackLocale: Boolean): DemoItemCursorCollection
+  entryCollection(limit: Int = 100, locale: String, preview: Boolean, skip: Int = 0, useFallbackLocale: Boolean): EntryCollection
+  entryCursorCollection(limit: Int = 100, locale: String, pageNext: String, pagePrev: String, preview: Boolean, useFallbackLocale: Boolean): EntryCursorCollection
 }
 type ContentfulMetadata {
   tags: [ContentfulTag]!
+  concepts: [TaxonomyConcept]!
+}
+"""
+Represents a taxonomy concept entity for finding and organizing content easily.
+        Find out more here: https://www.contentful.com/developers/docs/references/content-delivery-api/#/reference/content-concepts
+"""
+type TaxonomyConcept {
+  id: String
 }
 """
 Represents a tag entity for finding and organizing content easily.
-    Find out more here: https://www.contentful.com/developers/docs/references/content-delivery-api/#/reference/content-tags
+      Find out more here: https://www.contentful.com/developers/docs/references/content-delivery-api/#/reference/content-tags
 """
 type ContentfulTag {
   id: String
   name: String
 }
-type AssetLinkingCollections {
-  entryCollection(skip: Int = 0, limit: Int = 100, preview: Boolean, locale: String): EntryCollection
-  demoItemCollection(skip: Int = 0, limit: Int = 100, preview: Boolean, locale: String): DemoItemCollection
+type CursorPages {
+  next: String
+  prev: String
 }
-type EntryCollection {
-  total: Int!
-  skip: Int!
-  limit: Int!
-  items: [Entry]!
+"[See type definition](https://app.contentful.com/spaces/3a7zxbjizjb6/content_types/demoItem)"
+type DemoItem implements Entry & _Node {
+  _id: ID!
+  contentfulMetadata: ContentfulMetadata!
+  description(locale: String, useFallbackLocale: Boolean): String
+  image(locale: String, preview: Boolean, useFallbackLocale: Boolean): Asset
+  linkedFrom(allowedLocales: [String]): DemoItemLinkingCollections
+  sys: Sys!
+  title(locale: String, useFallbackLocale: Boolean): String
 }
 type DemoItemCollection {
-  total: Int!
-  skip: Int!
-  limit: Int!
   items: [DemoItem]!
+  limit: Int!
+  skip: Int!
+  total: Int!
 }
-"[See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/demoItem)"
-type DemoItem implements Entry {
-  sys: Sys!
-  contentfulMetadata: ContentfulMetadata!
-  linkedFrom(allowedLocales: [String]): DemoItemLinkingCollections
-  title(locale: String): String
-  description(locale: String): String
-  image(preview: Boolean, locale: String): Asset
+type DemoItemCursorCollection {
+  items: [DemoItem]!
+  limit: Int!
+  pages: CursorPages!
 }
 type DemoItemLinkingCollections {
-  entryCollection(skip: Int = 0, limit: Int = 100, preview: Boolean, locale: String): EntryCollection
+  entryCollection(limit: Int = 100, locale: String, preview: Boolean, skip: Int = 0, useFallbackLocale: Boolean): EntryCollection
+  entryCursorCollection(limit: Int = 100, locale: String, pageNext: String, pagePrev: String, preview: Boolean, useFallbackLocale: Boolean): EntryCursorCollection
 }
-type AssetCollection {
-  total: Int!
-  skip: Int!
+type EntryCollection {
+  items: [Entry]!
   limit: Int!
-  items: [Asset]!
-}
-"[See type definition](https://app.contentful.com/spaces/m7e7pnsr61vp/content_types/appConfig)"
-type AppConfig implements Entry {
-  sys: Sys!
-  contentfulMetadata: ContentfulMetadata!
-  linkedFrom(allowedLocales: [String]): AppConfigLinkingCollections
-  name(locale: String): String
-  privacyPolicy(locale: String): String
-  termsAndConditions(locale: String): String
-}
-type AppConfigLinkingCollections {
-  entryCollection(skip: Int = 0, limit: Int = 100, preview: Boolean, locale: String): EntryCollection
-}
-type AppConfigCollection {
-  total: Int!
   skip: Int!
+  total: Int!
+}
+type EntryCursorCollection {
+  items: [Entry]!
   limit: Int!
-  items: [AppConfig]!
+  pages: CursorPages!
+}
+type Query {
+  _node(id: ID!, locale: String, preview: Boolean, useFallbackLocale: Boolean): _Node
+  _nodes(ids: [ID!]!, locale: String, preview: Boolean, useFallbackLocale: Boolean): [_Node]!
+  appConfig(id: String!, locale: String, preview: Boolean, useFallbackLocale: Boolean): AppConfig
+  appConfigCollection(limit: Int = 100, locale: String, order: [AppConfigOrder], preview: Boolean, skip: Int = 0, useFallbackLocale: Boolean, where: AppConfigFilter): AppConfigCollection
+  appConfigCursorCollection(limit: Int = 100, locale: String, order: [AppConfigOrder], pageNext: String, pagePrev: String, preview: Boolean, useFallbackLocale: Boolean, where: AppConfigFilter): AppConfigCursorCollection
+  asset(id: String!, locale: String, preview: Boolean, useFallbackLocale: Boolean): Asset
+  assetCollection(limit: Int = 100, locale: String, order: [AssetOrder], preview: Boolean, skip: Int = 0, useFallbackLocale: Boolean, where: AssetFilter): AssetCollection
+  assetCursorCollection(limit: Int = 100, locale: String, order: [AssetOrder], pageNext: String, pagePrev: String, preview: Boolean, useFallbackLocale: Boolean, where: AssetFilter): AssetCursorCollection
+  demoItem(id: String!, locale: String, preview: Boolean, useFallbackLocale: Boolean): DemoItem
+  demoItemCollection(limit: Int = 100, locale: String, order: [DemoItemOrder], preview: Boolean, skip: Int = 0, useFallbackLocale: Boolean, where: DemoItemFilter): DemoItemCollection
+  demoItemCursorCollection(limit: Int = 100, locale: String, order: [DemoItemOrder], pageNext: String, pagePrev: String, preview: Boolean, useFallbackLocale: Boolean, where: DemoItemFilter): DemoItemCursorCollection
+  entryCollection(limit: Int = 100, locale: String, order: [EntryOrder], preview: Boolean, skip: Int = 0, useFallbackLocale: Boolean, where: EntryFilter): EntryCollection
+  entryCursorCollection(limit: Int = 100, locale: String, order: [EntryOrder], pageNext: String, pagePrev: String, preview: Boolean, useFallbackLocale: Boolean, where: EntryFilter): EntryCursorCollection
+}
+type Sys {
+  environmentId: String!
+  firstPublishedAt: DateTime
+  id: String!
+  "The locale that was requested."
+  locale: String
+  publishedAt: DateTime
+  publishedVersion: Int
+  spaceId: String!
 }
 interface Entry {
-  sys: Sys!
   contentfulMetadata: ContentfulMetadata!
+  sys: Sys!
 }
 interface _Node {
   _id: ID!
 }
-enum ImageResizeStrategy {
-  "Resizes the image to fit into the specified dimensions."
-  FIT
-  """
-  Resizes the image to the specified dimensions, padding the image if needed.
-          Uses desired background color as padding color.
-  """
-  PAD
-  "Resizes the image to the specified dimensions, cropping the image if needed."
-  FILL
-  "Resizes the image to the specified dimensions, changing the original aspect ratio if needed."
-  SCALE
-  "Crops a part of the original image to fit into the specified dimensions."
-  CROP
-  "Creates a thumbnail from the image."
-  THUMB
+enum AppConfigOrder {
+  name_ASC
+  name_DESC
+  sys_firstPublishedAt_ASC
+  sys_firstPublishedAt_DESC
+  sys_id_ASC
+  sys_id_DESC
+  sys_publishedAt_ASC
+  sys_publishedAt_DESC
+  sys_publishedVersion_ASC
+  sys_publishedVersion_DESC
 }
-enum ImageResizeFocus {
-  "Focus the resizing on the center."
-  CENTER
-  "Focus the resizing on the top."
-  TOP
-  "Focus the resizing on the top right."
-  TOP_RIGHT
-  "Focus the resizing on the right."
-  RIGHT
-  "Focus the resizing on the bottom right."
-  BOTTOM_RIGHT
-  "Focus the resizing on the bottom."
-  BOTTOM
-  "Focus the resizing on the bottom left."
-  BOTTOM_LEFT
-  "Focus the resizing on the left."
-  LEFT
-  "Focus the resizing on the top left."
-  TOP_LEFT
-  "Focus the resizing on the largest face."
-  FACE
-  "Focus the resizing on the area containing all the faces."
-  FACES
+enum AssetOrder {
+  contentType_ASC
+  contentType_DESC
+  fileName_ASC
+  fileName_DESC
+  height_ASC
+  height_DESC
+  size_ASC
+  size_DESC
+  sys_firstPublishedAt_ASC
+  sys_firstPublishedAt_DESC
+  sys_id_ASC
+  sys_id_DESC
+  sys_publishedAt_ASC
+  sys_publishedAt_DESC
+  sys_publishedVersion_ASC
+  sys_publishedVersion_DESC
+  url_ASC
+  url_DESC
+  width_ASC
+  width_DESC
+}
+enum DemoItemOrder {
+  sys_firstPublishedAt_ASC
+  sys_firstPublishedAt_DESC
+  sys_id_ASC
+  sys_id_DESC
+  sys_publishedAt_ASC
+  sys_publishedAt_DESC
+  sys_publishedVersion_ASC
+  sys_publishedVersion_DESC
+  title_ASC
+  title_DESC
+}
+enum EntryOrder {
+  sys_firstPublishedAt_ASC
+  sys_firstPublishedAt_DESC
+  sys_id_ASC
+  sys_id_DESC
+  sys_publishedAt_ASC
+  sys_publishedAt_DESC
+  sys_publishedVersion_ASC
+  sys_publishedVersion_DESC
 }
 enum ImageFormat {
+  "AVIF image format."
+  AVIF
   "JPG image format."
   JPG
   """
@@ -173,74 +238,198 @@ enum ImageFormat {
   PNG8
   "WebP image format."
   WEBP
-  AVIF
 }
-enum AssetOrder {
-  url_ASC
-  url_DESC
-  size_ASC
-  size_DESC
-  contentType_ASC
-  contentType_DESC
-  fileName_ASC
-  fileName_DESC
-  width_ASC
-  width_DESC
-  height_ASC
-  height_DESC
-  sys_id_ASC
-  sys_id_DESC
-  sys_publishedAt_ASC
-  sys_publishedAt_DESC
-  sys_firstPublishedAt_ASC
-  sys_firstPublishedAt_DESC
-  sys_publishedVersion_ASC
-  sys_publishedVersion_DESC
+enum ImageResizeFocus {
+  "Focus the resizing on the bottom."
+  BOTTOM
+  "Focus the resizing on the bottom left."
+  BOTTOM_LEFT
+  "Focus the resizing on the bottom right."
+  BOTTOM_RIGHT
+  "Focus the resizing on the center."
+  CENTER
+  "Focus the resizing on the largest face."
+  FACE
+  "Focus the resizing on the area containing all the faces."
+  FACES
+  "Focus the resizing on the left."
+  LEFT
+  "Focus the resizing on the right."
+  RIGHT
+  "Focus the resizing on the top."
+  TOP
+  "Focus the resizing on the top left."
+  TOP_LEFT
+  "Focus the resizing on the top right."
+  TOP_RIGHT
 }
-enum DemoItemOrder {
-  title_ASC
-  title_DESC
-  sys_id_ASC
-  sys_id_DESC
-  sys_publishedAt_ASC
-  sys_publishedAt_DESC
-  sys_firstPublishedAt_ASC
-  sys_firstPublishedAt_DESC
-  sys_publishedVersion_ASC
-  sys_publishedVersion_DESC
+enum ImageResizeStrategy {
+  "Crops a part of the original image to fit into the specified dimensions."
+  CROP
+  "Resizes the image to the specified dimensions, cropping the image if needed."
+  FILL
+  "Resizes the image to fit into the specified dimensions."
+  FIT
+  """
+  Resizes the image to the specified dimensions, padding the image if needed.
+          Uses desired background color as padding color.
+  """
+  PAD
+  "Resizes the image to the specified dimensions, changing the original aspect ratio if needed."
+  SCALE
+  "Creates a thumbnail from the image."
+  THUMB
 }
-enum AppConfigOrder {
-  name_ASC
-  name_DESC
-  sys_id_ASC
-  sys_id_DESC
-  sys_publishedAt_ASC
-  sys_publishedAt_DESC
-  sys_firstPublishedAt_ASC
-  sys_firstPublishedAt_DESC
-  sys_publishedVersion_ASC
-  sys_publishedVersion_DESC
+input AppConfigFilter {
+  AND: [AppConfigFilter]
+  OR: [AppConfigFilter]
+  contentfulMetadata: ContentfulMetadataFilter
+  name: String
+  name_contains: String
+  name_exists: Boolean
+  name_in: [String]
+  name_not: String
+  name_not_contains: String
+  name_not_in: [String]
+  privacyPolicy: String
+  privacyPolicy_contains: String
+  privacyPolicy_exists: Boolean
+  privacyPolicy_in: [String]
+  privacyPolicy_not: String
+  privacyPolicy_not_contains: String
+  privacyPolicy_not_in: [String]
+  sys: SysFilter
+  termsAndConditions: String
+  termsAndConditions_contains: String
+  termsAndConditions_exists: Boolean
+  termsAndConditions_in: [String]
+  termsAndConditions_not: String
+  termsAndConditions_not_contains: String
+  termsAndConditions_not_in: [String]
 }
-enum EntryOrder {
-  sys_id_ASC
-  sys_id_DESC
-  sys_publishedAt_ASC
-  sys_publishedAt_DESC
-  sys_firstPublishedAt_ASC
-  sys_firstPublishedAt_DESC
-  sys_publishedVersion_ASC
-  sys_publishedVersion_DESC
+input AssetFilter {
+  AND: [AssetFilter]
+  OR: [AssetFilter]
+  contentType: String
+  contentType_contains: String
+  contentType_exists: Boolean
+  contentType_in: [String]
+  contentType_not: String
+  contentType_not_contains: String
+  contentType_not_in: [String]
+  contentfulMetadata: ContentfulMetadataFilter
+  description: String
+  description_contains: String
+  description_exists: Boolean
+  description_in: [String]
+  description_not: String
+  description_not_contains: String
+  description_not_in: [String]
+  fileName: String
+  fileName_contains: String
+  fileName_exists: Boolean
+  fileName_in: [String]
+  fileName_not: String
+  fileName_not_contains: String
+  fileName_not_in: [String]
+  height: Int
+  height_exists: Boolean
+  height_gt: Int
+  height_gte: Int
+  height_in: [Int]
+  height_lt: Int
+  height_lte: Int
+  height_not: Int
+  height_not_in: [Int]
+  size: Int
+  size_exists: Boolean
+  size_gt: Int
+  size_gte: Int
+  size_in: [Int]
+  size_lt: Int
+  size_lte: Int
+  size_not: Int
+  size_not_in: [Int]
+  sys: SysFilter
+  title: String
+  title_contains: String
+  title_exists: Boolean
+  title_in: [String]
+  title_not: String
+  title_not_contains: String
+  title_not_in: [String]
+  url: String
+  url_contains: String
+  url_exists: Boolean
+  url_in: [String]
+  url_not: String
+  url_not_contains: String
+  url_not_in: [String]
+  width: Int
+  width_exists: Boolean
+  width_gt: Int
+  width_gte: Int
+  width_in: [Int]
+  width_lt: Int
+  width_lte: Int
+  width_not: Int
+  width_not_in: [Int]
+}
+input ContentfulMetadataFilter {
+  tags: ContentfulMetadataTagsFilter
+  tags_exists: Boolean
+  concepts_exists: Boolean
+  concepts: ContentfulMetadataConceptsFilter
+}
+input ContentfulMetadataConceptsFilter {
+  id_contains_all: [String]
+  id_contains_some: [String]
+  id_contains_none: [String]
+  descendants: ContentfulMetadataConceptsDescendantsFilter
+}
+input ContentfulMetadataConceptsDescendantsFilter {
+  id_contains_all: [String]
+  id_contains_some: [String]
+  id_contains_none: [String]
+}
+input ContentfulMetadataTagsFilter {
+  id_contains_all: [String]
+  id_contains_none: [String]
+  id_contains_some: [String]
+}
+input DemoItemFilter {
+  AND: [DemoItemFilter]
+  OR: [DemoItemFilter]
+  contentfulMetadata: ContentfulMetadataFilter
+  description: String
+  description_contains: String
+  description_exists: Boolean
+  description_in: [String]
+  description_not: String
+  description_not_contains: String
+  description_not_in: [String]
+  image_exists: Boolean
+  sys: SysFilter
+  title: String
+  title_contains: String
+  title_exists: Boolean
+  title_in: [String]
+  title_not: String
+  title_not_contains: String
+  title_not_in: [String]
+}
+input EntryFilter {
+  AND: [EntryFilter]
+  OR: [EntryFilter]
+  contentfulMetadata: ContentfulMetadataFilter
+  sys: SysFilter
 }
 input ImageTransformOptions {
-  "Desired width in pixels. Defaults to the original image width."
-  width: Dimension
-  "Desired height in pixels. Defaults to the original image height."
-  height: Dimension
   """
-  Desired quality of the image in percents.
-          Used for `PNG8`, `JPG`, `JPG_PROGRESSIVE` and `WEBP` formats.
+  Desired background color, used with corner radius or `PAD` resize strategy.
+          Defaults to transparent (for `PNG`, `PNG8` and `WEBP`) or white (for `JPG` and `JPG_PROGRESSIVE`).
   """
-  quality: Quality
+  backgroundColor: HexColor
   """
   Desired corner radius in pixels.
           Results in an image with rounded corners (pass `-1` for a full circle/ellipse).
@@ -248,187 +437,76 @@ input ImageTransformOptions {
           unless the format is `JPG` or `JPG_PROGRESSIVE` and resize strategy is `PAD`, then defaults to white.
   """
   cornerRadius: Int
-  "Desired resize strategy. Defaults to `FIT`."
-  resizeStrategy: ImageResizeStrategy
-  "Desired resize focus area. Defaults to `CENTER`."
-  resizeFocus: ImageResizeFocus
-  """
-  Desired background color, used with corner radius or `PAD` resize strategy.
-          Defaults to transparent (for `PNG`, `PNG8` and `WEBP`) or white (for `JPG` and `JPG_PROGRESSIVE`).
-  """
-  backgroundColor: HexColor
   "Desired image format. Defaults to the original image format."
   format: ImageFormat
-}
-input AssetFilter {
-  sys: SysFilter
-  contentfulMetadata: ContentfulMetadataFilter
-  title_exists: Boolean
-  title: String
-  title_not: String
-  title_in: [String]
-  title_not_in: [String]
-  title_contains: String
-  title_not_contains: String
-  description_exists: Boolean
-  description: String
-  description_not: String
-  description_in: [String]
-  description_not_in: [String]
-  description_contains: String
-  description_not_contains: String
-  url_exists: Boolean
-  url: String
-  url_not: String
-  url_in: [String]
-  url_not_in: [String]
-  url_contains: String
-  url_not_contains: String
-  size_exists: Boolean
-  size: Int
-  size_not: Int
-  size_in: [Int]
-  size_not_in: [Int]
-  size_gt: Int
-  size_gte: Int
-  size_lt: Int
-  size_lte: Int
-  contentType_exists: Boolean
-  contentType: String
-  contentType_not: String
-  contentType_in: [String]
-  contentType_not_in: [String]
-  contentType_contains: String
-  contentType_not_contains: String
-  fileName_exists: Boolean
-  fileName: String
-  fileName_not: String
-  fileName_in: [String]
-  fileName_not_in: [String]
-  fileName_contains: String
-  fileName_not_contains: String
-  width_exists: Boolean
-  width: Int
-  width_not: Int
-  width_in: [Int]
-  width_not_in: [Int]
-  width_gt: Int
-  width_gte: Int
-  width_lt: Int
-  width_lte: Int
-  height_exists: Boolean
-  height: Int
-  height_not: Int
-  height_in: [Int]
-  height_not_in: [Int]
-  height_gt: Int
-  height_gte: Int
-  height_lt: Int
-  height_lte: Int
-  OR: [AssetFilter]
-  AND: [AssetFilter]
+  "Desired height in pixels. Defaults to the original image height."
+  height: Dimension
+  """
+  Desired quality of the image in percents.
+          Used for `PNG8`, `JPG`, `JPG_PROGRESSIVE` and `WEBP` formats.
+  """
+  quality: Quality
+  "Desired resize focus area. Defaults to `CENTER`."
+  resizeFocus: ImageResizeFocus
+  "Desired resize strategy. Defaults to `FIT`."
+  resizeStrategy: ImageResizeStrategy
+  "Desired width in pixels. Defaults to the original image width."
+  width: Dimension
 }
 input SysFilter {
-  id_exists: Boolean
-  id: String
-  id_not: String
-  id_in: [String]
-  id_not_in: [String]
-  id_contains: String
-  id_not_contains: String
-  publishedAt_exists: Boolean
-  publishedAt: DateTime
-  publishedAt_not: DateTime
-  publishedAt_in: [DateTime]
-  publishedAt_not_in: [DateTime]
-  publishedAt_gt: DateTime
-  publishedAt_gte: DateTime
-  publishedAt_lt: DateTime
-  publishedAt_lte: DateTime
-  firstPublishedAt_exists: Boolean
   firstPublishedAt: DateTime
-  firstPublishedAt_not: DateTime
-  firstPublishedAt_in: [DateTime]
-  firstPublishedAt_not_in: [DateTime]
+  firstPublishedAt_exists: Boolean
   firstPublishedAt_gt: DateTime
   firstPublishedAt_gte: DateTime
+  firstPublishedAt_in: [DateTime]
   firstPublishedAt_lt: DateTime
   firstPublishedAt_lte: DateTime
-  publishedVersion_exists: Boolean
+  firstPublishedAt_not: DateTime
+  firstPublishedAt_not_in: [DateTime]
+  id: String
+  id_contains: String
+  id_exists: Boolean
+  id_in: [String]
+  id_not: String
+  id_not_contains: String
+  id_not_in: [String]
+  publishedAt: DateTime
+  publishedAt_exists: Boolean
+  publishedAt_gt: DateTime
+  publishedAt_gte: DateTime
+  publishedAt_in: [DateTime]
+  publishedAt_lt: DateTime
+  publishedAt_lte: DateTime
+  publishedAt_not: DateTime
+  publishedAt_not_in: [DateTime]
   publishedVersion: Float
-  publishedVersion_not: Float
-  publishedVersion_in: [Float]
-  publishedVersion_not_in: [Float]
+  publishedVersion_exists: Boolean
   publishedVersion_gt: Float
   publishedVersion_gte: Float
+  publishedVersion_in: [Float]
   publishedVersion_lt: Float
   publishedVersion_lte: Float
+  publishedVersion_not: Float
+  publishedVersion_not_in: [Float]
 }
-input ContentfulMetadataFilter {
-  tags_exists: Boolean
-  tags: ContentfulMetadataTagsFilter
+input TimelineFilterInput {
+  "Preview content starting from a given release date"
+  release_lte: String
+  "Preview content starting from a given timestamp"
+  timestamp_lte: DateTime
 }
-input ContentfulMetadataTagsFilter {
-  id_contains_all: [String]
-  id_contains_some: [String]
-  id_contains_none: [String]
-}
-input DemoItemFilter {
-  sys: SysFilter
-  contentfulMetadata: ContentfulMetadataFilter
-  title_exists: Boolean
-  title: String
-  title_not: String
-  title_in: [String]
-  title_not_in: [String]
-  title_contains: String
-  title_not_contains: String
-  description_exists: Boolean
-  description: String
-  description_not: String
-  description_in: [String]
-  description_not_in: [String]
-  description_contains: String
-  description_not_contains: String
-  image_exists: Boolean
-  OR: [DemoItemFilter]
-  AND: [DemoItemFilter]
-}
-input AppConfigFilter {
-  sys: SysFilter
-  contentfulMetadata: ContentfulMetadataFilter
-  name_exists: Boolean
-  name: String
-  name_not: String
-  name_in: [String]
-  name_not_in: [String]
-  name_contains: String
-  name_not_contains: String
-  privacyPolicy_exists: Boolean
-  privacyPolicy: String
-  privacyPolicy_not: String
-  privacyPolicy_in: [String]
-  privacyPolicy_not_in: [String]
-  privacyPolicy_contains: String
-  privacyPolicy_not_contains: String
-  termsAndConditions_exists: Boolean
-  termsAndConditions: String
-  termsAndConditions_not: String
-  termsAndConditions_in: [String]
-  termsAndConditions_not_in: [String]
-  termsAndConditions_contains: String
-  termsAndConditions_not_contains: String
-  OR: [AppConfigFilter]
-  AND: [AppConfigFilter]
-}
-input EntryFilter {
-  sys: SysFilter
-  contentfulMetadata: ContentfulMetadataFilter
-  OR: [EntryFilter]
-  AND: [EntryFilter]
-}
+directive @contentSourceMaps on QUERY
+directive @contentfulSchemaMetadata(contentTypePublishedCounters: JSON) on SCHEMA
+directive @delegatedResourceLink(contentTypeId: String, field: JSON) on FIELD_DEFINITION | OBJECT
+directive @enumMapper(value: JSON) on ENUM_VALUE
+directive @featureFlag(featureName: String) on FIELD
+directive @fieldResolver(data: JSON, kind: String) on FIELD_DEFINITION
+directive @timeline(where: TimelineFilterInput!) on QUERY
+directive @typeIdentifier(contentTypeId: String) on OBJECT
 "Exposes a URL that specifies the behavior of this scalar."
 directive @specifiedBy(
     "The URL that specifies the behavior of this scalar."
     url: String!
   ) on SCALAR
+"Indicates exactly one field must be supplied and this field must not be `null`."
+directive @oneOf on INPUT_OBJECT

@@ -40,6 +40,33 @@ These rules apply to all work in this codebase, not to one feature. When a rule 
 - A rule that exists only in an AI agent's private notes, and not here, is not a rule of this codebase.
 - `CLAUDE.md` at the repository root holds the **dev flow bindings**: the concrete values for this repo, such as default branch, commit convention, verification commands and project board. It doesn't hold working rules. Where a binding and a rule here overlap (for example, the verification commands), they must agree. When one changes, update the other in the same change.
 
+---
+
+> ### ⚠️ CRITICAL: WHERE THE HOW-TO GUIDES LIVE
+>
+> **The comprehensive development how-to guides for this codebase are at
+> [`packages/internal/docs/docs/`](../../packages/internal/docs/docs/).**
+>
+> **READ THESE BEFORE writing any code.** They document the established patterns
+> for GraphQL (queries, mutations, schema updates, codegen, fragments, error
+> conventions), backend patterns (Django models, DRF serializers, testing), and
+> frontend patterns (components, forms, routing, Storybook). Ignoring them leads
+> to wasted time debugging issues that the guides already solve.
+>
+> **AGENT DIRECTIVE:** If you are unsure of what commands to run, or what architecture
+> is implemented, YOU MUST CHECK THE GUIDES FIRST. Always read the guides to
+> understand the scaffolding and established patterns before starting a new feature
+> or fixing a major bug.
+>
+> Key guides every AI agent must know:
+>
+> - [`packages/internal/docs/docs/working-with-sb/graphql/`](../../packages/internal/docs/docs/working-with-sb/graphql/) — **GraphQL data flow, schema updates, codegen commands**
+> - [`packages/internal/docs/docs/working-with-sb/graphql/backend/adding-new-mutation.mdx`](../../packages/internal/docs/docs/working-with-sb/graphql/backend/adding-new-mutation.mdx) — **How to add mutations (model, serializer, schema, config/schema.py)**
+> - [`packages/internal/docs/docs/working-with-sb/graphql/web-app/update-schema.mdx`](../../packages/internal/docs/docs/working-with-sb/graphql/web-app/update-schema.mdx) — **How to regenerate TypeScript types after backend changes**
+> - [`packages/internal/docs/docs/working-with-sb/guides/backend/backend-model.mdx`](../../packages/internal/docs/docs/working-with-sb/guides/backend/backend-model.mdx) — **Django model creation patterns**
+
+---
+
 ## Who is who
 
 This document refers to three distinct parties. They are never interchangeable.
@@ -100,6 +127,11 @@ When giving manual verification steps, use the real top-level command a user or 
 When committing, pushing or opening a PR, follow the repository's documented protocol and nothing more. It's recorded in `CONTRIBUTING.md` and the `CLAUDE.md` dev flow bindings:
 
 - GitHub Flow: a feature branch off `master`, then a pull request based on `master`.
+- The README's "Commit Protocol" section, followed exactly (set by the human maintainer on 2026-10-07):
+  `git checkout -b feature/<short-description>`, `git add .`,
+  `git commit -m "type(scope): description (vX.Y.Z)"`, `gh pr create --title … --body …`, then
+  `gh pr merge --squash --delete-branch`. Hand these over filled in, without extra or reordered steps;
+  anything worth flagging goes in a separate short note.
 - Conventional Commits (`feat(scope): brief description`, `fix(scope): …`, `docs: …`, and so on).
 
 Give the human maintainer exactly the branch, `git add`/`git commit`, `gh pr create` and `gh pr merge --squash --delete-branch` commands. Don't add extra steps, elaborate heredoc bodies or inferred prerequisites. If a genuinely necessary step is missing, mention it briefly and mark it as an addition.

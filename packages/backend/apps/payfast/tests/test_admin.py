@@ -15,6 +15,17 @@ from django.urls import reverse
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("payfast_backend")]
 
 
+@pytest.fixture(autouse=True)
+def plain_static_files(settings):
+    # Admin pages render {% static %}, and the manifest storage in settings.py only knows files
+    # that collectstatic has written. Plain storage serves them straight from the apps, so these
+    # tests don't depend on whatever a local static volume happens to hold.
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+
+
 @pytest.fixture
 def admin_user_client(client, user_factory):
     # In this codebase User.is_staff is is_superuser, so only superusers can use the Django admin.
