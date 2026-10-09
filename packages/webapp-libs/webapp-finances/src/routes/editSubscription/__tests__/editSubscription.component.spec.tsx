@@ -94,9 +94,14 @@ describe('EditSubscription: Component', () => {
       );
       const requestMock = fillCurrentSubscriptionQuery(tenantId);
       const requestPlansMock = fillSubscriptionPlansAllQuery([mockMonthlyPlan, mockYearlyPlan]);
-      const requestMockMutation = fillChangeSubscriptionMutation(undefined, {
-        input: { price: 'plan_monthly', tenantId },
-      });
+      // The answer is delayed so the button stays disabled long enough for the check after the click;
+      // answered instantly, the button was sometimes enabled again before the check ran.
+      const requestMockMutation = {
+        ...fillChangeSubscriptionMutation(undefined, {
+          input: { price: 'plan_monthly', tenantId },
+        }),
+        delay: 100,
+      };
 
       const routerProps = createMockRouterProps(CoreRoutesConfig.home);
       render(<Component />, {

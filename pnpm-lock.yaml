@@ -729,6 +729,9 @@ importers:
       '@sb/webapp-notifications':
         specifier: workspace:*
         version: link:../webapp-libs/webapp-notifications
+      '@sb/webapp-shopify':
+        specifier: workspace:*
+        version: link:../webapp-libs/webapp-shopify
       '@sb/webapp-tenants':
         specifier: workspace:*
         version: link:../webapp-libs/webapp-tenants

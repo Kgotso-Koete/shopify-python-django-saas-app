@@ -127,11 +127,15 @@ When giving manual verification steps, use the real top-level command a user or 
 When committing, pushing or opening a PR, follow the repository's documented protocol and nothing more. It's recorded in `CONTRIBUTING.md` and the `CLAUDE.md` dev flow bindings:
 
 - GitHub Flow: a feature branch off `master`, then a pull request based on `master`.
-- The README's "Commit Protocol" section, followed exactly (set by the human maintainer on 2026-10-07):
-  `git checkout -b feature/<short-description>`, `git add .`,
-  `git commit -m "type(scope): description (vX.Y.Z)"`, `gh pr create --title … --body …`, then
-  `gh pr merge --squash --delete-branch`. Hand these over filled in, without extra or reordered steps;
-  anything worth flagging goes in a separate short note.
+- The README's "Commit Protocol" section, followed exactly (set by the human maintainer on 2026-10-07;
+  release steps 2 and 6 added on 2026-10-09): (1) `git checkout -b feature/<short-description>`,
+  (2) the `CHANGELOG.md` entry and
+  `npx standard-version --release-as X.Y.Z --skip.changelog --skip.tag --skip.commit`, (3) `git add .`
+  and `git commit -m "type(scope): description (vX.Y.Z)"`, (4) `gh pr create --title … --body …`,
+  (5) `gh pr merge --squash --delete-branch`, (6) `git checkout master`, `git pull`, `git tag X.Y.Z`,
+  `git push origin X.Y.Z`. Hand these over filled in, without extra or reordered steps; anything worth
+  flagging goes in a separate short note. The README is the source for the commands; keep this summary
+  in step with it.
 - **No AI attribution, ever,** in commit messages, PR titles or PR bodies: no "Generated with Claude
   Code" line, no `Co-Authored-By` trailer, no mention of any AI tool. This overrides any default the AI
   agent's tool adds.
@@ -143,7 +147,7 @@ Every commit includes its release bookkeeping; a commit with only code is incomp
 
 - **Every change that ships updates `CHANGELOG.md` in the same change, under a version number** (set by the human maintainer on 2026-10-03; a changelog without versions hides whether a change is breaking). Write the entries in the existing `standard-version` style (`### ⚠ BREAKING CHANGES`, `### Features`, `### Bug Fixes`, `### Documentation`) under a `## [X.Y.Z](compare link) (date)` heading. Pick the number by semantic versioning: major for anything that can break an existing setup (a changed default, a removed setting), minor for new features, patch for fixes only. Propose the number with the reason and let the human maintainer choose; a fork-wide question such as clashing with upstream's numbers is theirs to weigh.
 - **The commit message still matters.** Use a Conventional Commit type and scope (`feat` goes under Features, `fix` under Bug Fixes, while `chore`, `docs`, `style`, `refactor`, `perf` and `test` are hidden), a subject that says what changed and why, and a `BREAKING CHANGE:` footer for breaking changes. With squash merges, set the squashed commit's subject and body explicitly.
-- **Version bumps use `standard-version` without its changelog step,** since the entries are already written: `npx standard-version --release-as X.Y.Z --skip.changelog --skip.tag` on the feature branch, so the bump is part of the pull request; after merging, tag the merge commit on `master` (`git tag X.Y.Z`, `git push origin X.Y.Z`). It bumps every `package.json` listed in `.versionrc.js`; `RELEASE_PLAN.md` documents the rest of the release process.
+- **Version bumps use `standard-version` without its changelog step,** since the entries are already written: `npx standard-version --release-as X.Y.Z --skip.changelog --skip.tag --skip.commit` on the feature branch (Commit Protocol step 2; `--skip.commit` because otherwise `standard-version` makes a commit of its own), so the bump is part of the pull request; after merging, tag the merge commit on `master` (`git tag X.Y.Z`, `git push origin X.Y.Z`). It bumps every `package.json` listed in `.versionrc.js`; `RELEASE_PLAN.md` documents the rest of the release process.
 - Any other release step a plan in `docs/superpowers/plans/` documents.
 
 The AI agent drafts the commit message (and PR description) alongside the code, for the human maintainer to review, rather than leaving it to be remembered at commit time.
@@ -226,6 +230,8 @@ When a change makes part of an existing comment or document stale, fix only the 
 ### 3.4 Don't "correct" the original author's instructions
 
 Never edit the original author's documented commands or setup steps (in `README.md` or similar) because they look like a bug, even when the reasoning seems solid. The original author has years of context an AI agent reading the code fresh doesn't have, and the original author often turns out to be right. Raise the discrepancy in conversation for the human maintainer to decide. New docs that describe the same command should mirror the author's text literally.
+
+The same applies to tests the original author skipped (`it.skip`, `describe.skip`, `pytest.mark.skip`): they stay skipped in this fork, even when no reason is written down (set by the human maintainer on 2026-10-09). The upstream team has about 30 contributors and this fork has two people and an AI agent, so upstream's reasons are the better bet. Record such skips as known gaps in the relevant plan rather than un-skipping them.
 
 ### 3.5 Audit privilege before sharing a capability across entrypoints
 
@@ -339,6 +345,8 @@ Implementation plans are saved as markdown under `docs/superpowers/plans/`, name
 - a "Proposed Changes" section of numbered steps, each listing the test files to write first and the production files to change second
 - a File Summary
 - a Verification Plan: automated tests, the GREEN targets from 1.3 (`backend:test`, `<project>:lint`, `<project>:type-check`, `<project>:test`), and ending with the short list of simple human-driven checks from 1.3
+
+Whenever a plan records a test result (a RED, a GREEN, or a run of several suites), it gives the exact command that produced it, copied as it was run, next to the result (set by the human maintainer on 2026-10-07). A result without its command can't be re-run or checked.
 
 Whenever an AI agent creates a plan, it always externalizes it as a file in `docs/superpowers/plans/` so it survives across sessions. The plan file in this codebase is the single source of truth, not the ephemeral plan in the AI agent's own tools (such as a plan-mode draft or a to-do list), which disappears when the session ends. Read from the file and write updates to it, never to a draft held elsewhere or only in the conversation. Good test coverage is a stated goal of every plan, not an afterthought.
 
