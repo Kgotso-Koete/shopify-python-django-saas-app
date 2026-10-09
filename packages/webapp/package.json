@@ -1,6 +1,6 @@
 {
   "name": "webapp",
-  "version": "6.0.0",
+  "version": "6.1.1",
   "private": true,
   "scripts": {
     "plop": "plop",
@@ -49,6 +49,7 @@
     "@sb/webapp-finances": "workspace:*",
     "@sb/webapp-generative-ai": "workspace:*",
     "@sb/webapp-notifications": "workspace:*",
+    "@sb/webapp-shopify": "workspace:*",
     "@sb/webapp-tenants": "workspace:*",
     "@storybook/addon-docs": "^10.1.11",
     "@storybook/addon-themes": "^10.1.11",

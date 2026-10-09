@@ -1,6 +1,6 @@
 {
   "name": "@sb/webapp-contentful",
-  "version": "6.0.0",
+  "version": "6.1.1",
   "type": "commonjs",
   "scripts": {
     "test": "jest",

@@ -65,7 +65,9 @@ describe('PayFast edit subscription', () => {
       apolloMocks: [tenantMock(), fillPayfastSubscriptionQuery({}, tenantId), fillPayfastPlansQuery(), checkoutMock],
     });
 
-    expect(within(await planCard('free_plan')).getByRole('button', { name: /current plan/i })).toBeDisabled();
+    // The cards come from the plans query; which one is current comes from the subscription query,
+    // which can arrive later. findByRole waits for it; getByRole failed on CI's slower Node 22 runner.
+    expect(await within(await planCard('free_plan')).findByRole('button', { name: /current plan/i })).toBeDisabled();
     const monthly = await planCard('monthly_plan');
     expect(within(monthly).getByText(/start with a free trial/i)).toBeInTheDocument();
     await userEvent.click(within(monthly).getByRole('button', { name: /select plan/i }));
@@ -107,9 +109,9 @@ describe('PayFast edit subscription', () => {
       ],
     });
 
-    expect(within(await planCard('monthly_plan')).getByRole('button', { name: /current plan/i })).toBeDisabled();
+    expect(await within(await planCard('monthly_plan')).findByRole('button', { name: /current plan/i })).toBeDisabled();
     // As on Stripe, a paying organisation moves to Free by cancelling, not from this page.
-    expect(within(await planCard('free_plan')).getByRole('button', { name: /free plan/i })).toBeDisabled();
+    expect(await within(await planCard('free_plan')).findByRole('button', { name: /free plan/i })).toBeDisabled();
     await userEvent.click(within(await planCard('yearly_plan')).getByRole('button', { name: /select plan/i }));
 
     await waitFor(() => expect(checkoutMock.result).toHaveBeenCalled());

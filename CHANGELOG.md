@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.1.1](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.1.0...6.1.1) (2026-10-09)
+
+### Bug Fixes
+
+- CI: the web app build couldn't find `lucide-react`, because `webapp` didn't declare the `webapp-shopify` library it imports
+- Contentful: restored the upstream Contentful schema that 6.1.0 replaced by accident, which broke the `webapp` and `webapp-contentful` type checks. The generated GraphQL client now also includes the repo's own patch step, so a query missing from the generated list fails loudly instead of returning an empty object
+- SSO library: its tests never loaded (a `react-markdown` path pnpm doesn't create) and its type check failed (`rootDir` excluded the libraries it imports); both inherited from upstream and now pass
+- Flaky tests: the PayFast change-plan test on Node 22, and the Stripe change-plan test, now wait for the state they check
+- CI now runs the `webapp-sso`, `webapp-ai-assistant` and `webapp-backup` tests, and a new check fails when a library with tests is missing from CI's list
+
+### Documentation
+
+- Restore-green-test-suite plan: every test suite measured, with the command behind each result
+- Working agreement: keep upstream's skipped tests skipped, record the command with every test result, and keep logs in the gitignored `logs/` folder
+- README Commit Protocol: the changelog and version bump (step 2) and tagging the release after the merge (step 6) are now part of it; they were only in the working agreement, which is how 6.1.0 went unbumped and untagged
+- README Testing section: replaced commands that didn't work here (a `webapp` Docker service that doesn't exist, a `--testFile` flag `backend:test` doesn't take) with ones that do, including running all frontend tests one project at a time
+
 ## [6.1.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.0.0...6.1.0) (2026-10-07)
 
 ### Features

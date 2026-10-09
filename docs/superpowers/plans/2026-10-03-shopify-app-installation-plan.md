@@ -893,7 +893,12 @@ Branch: `feat/shopify-app-installation` off `master`. Every step is strict TDD (
     - Then: `products.py` (the Admin API query and mapping), the `shopifyProducts` field in `schema.py`,
       schema regeneration, the `shopifyProducts` GraphQL document, the page component, its route and the
       sidebar entry. Run the checks 17 to 21 after.
-12. **Release bookkeeping.** `CHANGELOG.md` entry and version bump (section 10).
+12. **Release bookkeeping.** `CHANGELOG.md` entry and version bump (section 10). Done for steps 1 to
+    10 as 6.1.0 (2026-10-07); step 11 gets its own entry.
+13. **Walkthrough** (added 2026-10-07, not started): `docs/superpowers/specs/<date>-shopify-walkthrough.md`,
+    shaped like [`2026-10-01-payfast-walkthrough.md`](../specs/2026-10-01-payfast-walkthrough.md). How
+    the install, link, token refresh and webhooks work, with the diagrams from section 2; setting up a
+    Shopify app, a dev store, the tunnel and `shopify app deploy`; and the section 5.1 pitfalls.
 
 ### 5.1 Bugs found during the live install (2026-10-07), all fixed
 

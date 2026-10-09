@@ -31,6 +31,8 @@ node_modules
 npm-debug.log
 yarn-error.log
 testem.log
+# Local test and CI logs (saved by the commands in docs/superpowers plans); never committed
+/logs/
 /typings
 .local.env
 __pycache__/

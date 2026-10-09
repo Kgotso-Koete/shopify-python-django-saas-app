@@ -228,36 +228,46 @@ After starting the application, you'll have these services available:
 
 ### Testing
 
-You can run tests for the application either using NX directly (recommended when the app container is not running) or through Docker (when the app container is running).
+Run these from the repository root. The backend tests run inside Docker, so Docker must be running; the frontend tests run on your machine (the web app isn't a Docker service).
 
-#### Using Docker (When `pnpm saas up` is running)
+#### Backend
 
-If you have already started the application using `pnpm saas up`, you can run tests directly inside the running containers using `docker compose exec`:
+The backend is one Nx project, so one command runs all its tests. It also runs the `black` formatter and the missing-migrations check first, as CI does:
 
-**Backend:**
+```shell
+pnpm nx run backend:test
+```
 
-- **All backend tests:** `docker compose exec backend uv run pytest`
-- **Specific app tests:** `docker compose exec backend uv run pytest apps/shopify/tests/`
-- **Specific test file:** `docker compose exec backend uv run pytest apps/shopify/tests/test_views.py`
-- **Specific test case:** `docker compose exec backend uv run pytest apps/shopify/tests/test_views.py::test_install_view_disabled`
+One test file, or one test, in the backend container. `-e DATABASE_URL=` keeps the tests on the local database even if your `.env` points `DATABASE_URL` elsewhere:
 
-**Webapp:**
+```shell
+docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_views.py -v
+docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_views.py::test_install_view_disabled -v
+```
 
-- **All webapp tests:** `docker compose exec webapp pnpm test`
+#### Frontend
 
-#### Using NX (Standalone)
+The frontend is 15 Nx projects (`webapp` and 14 libraries in `packages/webapp-libs`), each with its own `lint`, `type-check` and `test` targets, so each is run by name:
 
-If you do not have the application running, you can use the NX workspace commands. This will automatically spin up the necessary environments to run the tests.
+```shell
+pnpm nx run webapp:test --watchAll=false
+pnpm nx run webapp-core:test --watchAll=false
+pnpm nx run webapp-finances:test --watchAll=false --testPathPattern=editSubscription
+```
 
-**Backend:**
+All frontend tests, one project at a time. `pnpm nx run-many` runs three projects at once by default, which can run a 16 GB machine out of memory. `--maxWorkers=2` limits each Jest run, and `--skip-nx-cache` makes Nx really run the tests instead of replaying an earlier result. Each project's output is saved to `logs/<project>.log` (the `logs/` folder is gitignored), and the terminal shows one exit code per project (`0` = passed):
 
-- **All backend tests:** `pnpm nx test backend`
-- **Specific test file:** `pnpm nx test backend --testFile=apps/shopify/tests/test_views.py`
+```shell
+mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1; echo "$p test exit code: $?"; done
+```
 
-**Webapp:**
+To see a project's test counts afterwards, for example `webapp-core`:
 
-- **All webapp tests:** `pnpm nx test webapp`
-- **Specific library:** `pnpm nx test webapp-core`
+```shell
+grep -E "Test Suites:|Tests:" logs/webapp-core.log
+```
+
+The full set (frontend lint and type-check, all tests, and the check that CI runs every library's tests), with logs saved to the gitignored `logs/` folder, is in section 8 of [`docs/superpowers/plans/2026-10-07-restore-green-test-suite-plan.md`](docs/superpowers/plans/2026-10-07-restore-green-test-suite-plan.md).
 
 **All Packages:**
 
@@ -271,7 +281,14 @@ If you do not have the application running, you can use the NX workspace command
 git checkout -b feature/<short-description>
 ```
 
-**2. Stage and commit your changes using [Conventional Commits](https://www.conventionalcommits.org/)**
+**2. Update the changelog and bump the version**
+Add an entry for the new version at the top of `CHANGELOG.md` (major for a breaking change, minor for a new feature, patch for fixes only). Then set that version in every `package.json` listed in `.versionrc.js`. `--skip.changelog` keeps your entry, `--skip.tag` leaves tagging until after the merge (step 6), and `--skip.commit` lets step 3 commit everything together.
+
+```shell
+npx standard-version --release-as X.Y.Z --skip.changelog --skip.tag --skip.commit
+```
+
+**3. Stage and commit your changes using [Conventional Commits](https://www.conventionalcommits.org/)**
 
 ```shell
 git add .
@@ -280,18 +297,28 @@ git commit -m "feat(scope): brief description (vX.Y.Z)"
 
 Common prefixes: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`
 
-**3. Create a Pull Request**
+**4. Create a Pull Request**
 Use the GitHub CLI to open a PR for review.
 
 ```shell
 gh pr create --title "feat(scope): brief description" --body "Detailed explanation of changes."
 ```
 
-**4. Merge and Delete Branch**
+**5. Merge and Delete Branch**
 Once approved, squash and merge the PR, and automatically delete the feature branch.
 
 ```shell
 gh pr merge --squash --delete-branch
+```
+
+**6. Tag the release**
+Switch back to `master`, pull the merge commit, tag it with the version from step 2, and push the tag.
+
+```shell
+git checkout master
+git pull
+git tag X.Y.Z
+git push origin X.Y.Z
 ```
 
 ## Features

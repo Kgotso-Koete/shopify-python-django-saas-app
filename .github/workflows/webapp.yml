@@ -89,6 +89,9 @@ jobs:
           - webapp-finances
           - webapp-generative-ai
           - webapp-tenants
+          - webapp-sso
+          - webapp-ai-assistant
+          - webapp-backup
     steps:
       - uses: actions/checkout@v3
         with:
@@ -134,3 +137,21 @@ jobs:
           SONAR_WEBAPP_TENANTS_PROJECT_KEY: ${{ vars.SONAR_WEBAPP_TENANTS_PROJECT_KEY }}
         with:
             projectBaseDir: "packages/webapp-libs/${{ matrix.webapp-lib-name }}"
+
+  # Fails when a webapp library that has tests (a `test` target, so `pnpm nx run <library>:test` exists)
+  # is missing from the test-lib matrix above.
+  test-lib-matrix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: "Guard's own tests"
+        shell: bash
+        run: node .github/workflows/scripts/check-test-lib-matrix.test.js
+
+      - name: "Every webapp library with tests is in the matrix"
+        shell: bash
+        run: node .github/workflows/scripts/check-test-lib-matrix.js
