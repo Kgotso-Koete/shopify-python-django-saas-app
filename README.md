@@ -228,44 +228,110 @@ After starting the application, you'll have these services available:
 
 ### Testing
 
-Run these from the repository root. The backend tests run inside Docker, so Docker must be running; the frontend tests run on your machine (the web app isn't a Docker service).
+Run these from the repository root, with Node 20 (`nvm use 20`). The backend tests run inside Docker, so Docker must be running; the frontend tests run on your machine (the web app isn't a Docker service).
+
+Every command saves the full output to the gitignored `logs/` folder, and comes in two forms:
+
+- **Summary:** the terminal shows only the counts (tests, passed, failed, skipped), one line per module or project. The full output is in the log if something fails.
+- **Verbose:** the terminal shows every test as it runs, with its file and its result, and the same text is saved to the log. `tee` does both: it prints its input and writes it to a file. `${PIPESTATUS[0]}` is the tests' own exit code (`0` = passed); a plain `$?` would be `tee`'s, which is always 0.
+
+Run one command at a time, never side by side: `pnpm nx run-many` runs three projects at once by default, which can run a 16 GB machine out of memory, so the commands below loop through projects one by one.
 
 #### Backend
 
-The backend is one Nx project, so one command runs all its tests. It also runs the `black` formatter and the missing-migrations check first, as CI does:
+The backend tests live in 12 modules: the Django apps in `packages/backend/apps/` that have tests, plus `common`. `apps/content` and `apps/websockets` have no tests, so they aren't in the lists; when an app gets its first tests, add its folder to the lists below. The 12 modules add up to the same total as `pnpm nx run backend:test` (1007 on 2026-10-12). pytest's last line names every non-zero count, so a module with skipped tests shows `N skipped`, and one without shows nothing about skips. `-e DATABASE_URL=` keeps the tests on the local database even if your `.env` points `DATABASE_URL` elsewhere. The backend's `setup.cfg` already runs pytest with `-v`, so the logs always list every test. pytest prints no total in its last line, so the summaries take it from the `collected N items` line.
+
+**Every module, one at a time.** Each module runs in its own container and gets its own log, `logs/backend-<module>.log`.
+
+Summary, one line per module (`apps/shopify: 88 tests | 88 passed, 45 warnings in 33.37s`):
 
 ```shell
-pnpm nx run backend:test
+mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/shopify apps/sso apps/translations apps/users common; do f=logs/backend-$(basename $a).log; docker compose run --rm -T -e DATABASE_URL= backend pytest $a > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|error|errors|skipped)" | tr -d '='); echo "$a: $n tests |${r:- no test results, see $f}"; done
 ```
 
-One test file, or one test, in the backend container. `-e DATABASE_URL=` keeps the tests on the local database even if your `.env` points `DATABASE_URL` elsewhere:
+Verbose, every test live:
 
 ```shell
-docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_views.py -v
-docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_views.py::test_install_view_disabled -v
+mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/shopify apps/sso apps/translations apps/users common; do docker compose run --rm -T -e DATABASE_URL= backend pytest $a 2>&1 | tee logs/backend-$(basename $a).log; echo "$a exit code: ${PIPESTATUS[0]}"; done
+```
+
+**Before committing: the whole backend as CI runs it.** `pnpm nx run backend:test` also runs the `black` formatter and the missing-migrations check before the tests, which the module loop doesn't. `workers:test` runs the Celery workers' tests (its script runs pytest without `-v`, so its log has no per-test lines).
+
+Summary:
+
+```shell
+mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; pnpm nx run workers:test --skip-nx-cache > logs/workers-test.log 2>&1; for x in backend workers; do f=logs/$x-test.log; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|error|errors|skipped)" | tr -d '='); echo "$x: $n tests |${r:- no test results, see $f}"; done
+```
+
+Verbose:
+
+```shell
+mkdir -p logs; pnpm nx run backend:test --skip-nx-cache 2>&1 | tee logs/backend-test.log; echo "backend exit code: ${PIPESTATUS[0]}"; pnpm nx run workers:test --skip-nx-cache 2>&1 | tee logs/workers-test.log; echo "workers exit code: ${PIPESTATUS[0]}"
+```
+
+`black` rewrites files it would format differently, upstream ones included. Check `git status` afterwards and don't commit changes to files you didn't touch.
+
+**One module, file or test.** Swap the path for any module, file (`apps/shopify/tests/test_views.py`) or test (`apps/shopify/tests/test_views.py::test_install_view_disabled`).
+
+Summary:
+
+```shell
+mkdir -p logs; t=apps/shopify/tests/test_views.py; f=logs/backend-one.log; docker compose run --rm -T -e DATABASE_URL= backend pytest $t > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|error|errors|skipped)" | tr -d '='); echo "$t: $n tests |${r:- no test results, see $f}"
+```
+
+Verbose:
+
+```shell
+mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_views.py 2>&1 | tee logs/backend-one.log; echo "exit code: ${PIPESTATUS[0]}"
 ```
 
 #### Frontend
 
-The frontend is 15 Nx projects (`webapp` and 14 libraries in `packages/webapp-libs`), each with its own `lint`, `type-check` and `test` targets, so each is run by name:
+The frontend is 15 Nx projects (`webapp` and 14 libraries in `packages/webapp-libs`), each with its own `lint`, `type-check` and `test` targets, so each is run by name. `--watchAll=false` makes Jest run once and exit, `--maxWorkers=2` limits each Jest run's memory, and `--skip-nx-cache` makes Nx really run the tests instead of replaying an earlier result. Jest's `--verbose` must come after a bare `--`: Nx has a `--verbose` flag of its own and keeps it otherwise (the log's `> jest ...` line shows which flags reached Jest).
+
+**Every project, one at a time.** Each project gets its own log, `logs/<project>.log`.
+
+Summary, two lines per project (`webapp-shopify: Test Suites: 2 passed, 2 total` and `webapp-shopify: Tests: 13 passed, 13 total`):
 
 ```shell
-pnpm nx run webapp:test --watchAll=false
-pnpm nx run webapp-core:test --watchAll=false
-pnpm nx run webapp-finances:test --watchAll=false --testPathPattern=editSubscription
+mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1; s=$(sed 's/\x1b\[[0-9;]*m//g' logs/$p.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"); echo "${s:-$p: no test results, see logs/$p.log}"; done
 ```
 
-All frontend tests, one project at a time. `pnpm nx run-many` runs three projects at once by default, which can run a 16 GB machine out of memory. `--maxWorkers=2` limits each Jest run, and `--skip-nx-cache` makes Nx really run the tests instead of replaying an earlier result. Each project's output is saved to `logs/<project>.log` (the `logs/` folder is gitignored), and the terminal shows one exit code per project (`0` = passed):
+Verbose, every test live, listed under its file's `PASS` or `FAIL` line:
 
 ```shell
-mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1; echo "$p test exit code: $?"; done
+mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache -- --verbose 2>&1 | tee logs/$p.log; echo "$p test exit code: ${PIPESTATUS[0]}"; done
 ```
 
-To see a project's test counts afterwards, for example `webapp-core`:
+The summary of the last run, read from the logs (after a verbose run, for example):
 
 ```shell
-grep -E "Test Suites:|Tests:" logs/webapp-core.log
+for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do sed 's/\x1b\[[0-9;]*m//g' logs/$p.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"; done
 ```
+
+**One project or one test file.** Leave out `--testPathPattern` for the whole project; with it, Jest runs only the test files whose path contains that text.
+
+Summary:
+
+```shell
+mkdir -p logs; p=webapp-shopify; pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache --testPathPattern=shopifyLink > logs/$p-one.log 2>&1; sed 's/\x1b\[[0-9;]*m//g' logs/$p-one.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"
+```
+
+Verbose:
+
+```shell
+mkdir -p logs; p=webapp-shopify; pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache --testPathPattern=shopifyLink -- --verbose 2>&1 | tee logs/$p-one.log; echo "$p test exit code: ${PIPESTATUS[0]}"
+```
+
+#### CI test-list check
+
+CI's `test-lib` job runs each frontend library's tests from a hand-written list in `.github/workflows/webapp.yml`. [`check-test-lib-matrix.js`](.github/workflows/scripts/check-test-lib-matrix.js) fails when a library with a `test` target is missing from that list, and [`check-test-lib-matrix.test.js`](.github/workflows/scripts/check-test-lib-matrix.test.js) is its own test: 5 checks of how it reads the list and finds missing libraries, written with Node's built-in `assert`, so it needs no install. CI runs both in the `test-lib-matrix` job. Neither prints per-test lines, so there is one form: the first prints `all assertions passed` (or the first check that failed), the second the libraries it found:
+
+```shell
+mkdir -p logs; (node .github/workflows/scripts/check-test-lib-matrix.test.js && node .github/workflows/scripts/check-test-lib-matrix.js) 2>&1 | tee logs/test-lib-matrix.log; echo "test-lib-matrix exit code: ${PIPESTATUS[0]}"
+```
+
+Expect `check-test-lib-matrix.test.js: all assertions passed`, then `All 14 webapp libraries with a test target are in the test-lib matrix.` and exit code 0. Run it after adding a frontend library or changing `webapp.yml`'s list.
 
 The full set (frontend lint and type-check, all tests, and the check that CI runs every library's tests), with logs saved to the gitignored `logs/` folder, is in section 8 of [`docs/superpowers/plans/2026-10-07-restore-green-test-suite-plan.md`](docs/superpowers/plans/2026-10-07-restore-green-test-suite-plan.md).
 

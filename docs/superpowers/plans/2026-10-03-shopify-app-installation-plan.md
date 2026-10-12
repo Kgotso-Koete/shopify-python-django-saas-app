@@ -816,6 +816,28 @@ mutation shopifyDisconnectShopMutation($input: ShopifyDisconnectShopInput!) {
 | No tenants with permission | User has no tenant where they have `shopify.manage`              | "You don't have permission" message                               |
 | Not signed in              | No auth cookie                                                   | Redirect to login, then back to `/shopify/link?claim=...`         |
 
+**Checked against the built pages on 2026-10-09** (step 9). Seven scenarios match the pages and are
+tested as written: Shops page config disabled, empty state, badges, start install, invalid domain,
+disconnect, and Link page expired claim (message only; the page has no link back to the Shopify page).
+Five didn't match. The human maintainer's decisions, all as recommended:
+
+- **A. Shops page, query error.** Users without `shopify.view` never reach the page (the route's
+  `PermissionAuthRoute` sends them to "Access denied"), but any other failure of `shopifyShops` showed
+  "No stores connected". → Add an error message for a failed load, with a test.
+- **B. Link page, which organization.** The page links to the current organization without naming it.
+  → Show the target organization's name, with a hint to switch organization first if it's wrong; no
+  picker. Tested.
+- **C. Link page, already connected.** → Test that the server's error message is shown (the page
+  doesn't add the domain itself).
+- **D. Link page, no permission.** The raw code `permission_denied` was shown. → Map it to a readable
+  message ("You need permission to manage Shopify stores in this organization"), with a test.
+- **E. Link page, not signed in: a bug in upstream code.** The login redirect
+  ([`authRoute.hook.ts`](../../../packages/webapp/src/shared/components/routes/authRoute/authRoute.hook.ts),
+  `useGenerateRedirectSearchParams`) keeps only the path, not the query, so `?claim=…` is lost and the
+  merchant lands on "No link provided" after logging in. Affects every page, not just Shopify. → Keep
+  the query in the redirect (one-line change to an upstream file under the exception agreed on
+  2026-10-07), test first, and upstream's existing tests must still pass.
+
 ---
 
 ## 5. Proposed Changes (implementation steps)
@@ -876,13 +898,153 @@ Branch: `feat/shopify-app-installation` off `master`. Every step is strict TDD (
      refresh and both tokens rotated; `401` → `needs_reinstall` and `ShopifyReauthorizationRequired`;
      transient error leaves the stored refresh token untouched.
    - Then: `admin_client_for`, `shopify.app.toml.example` (after checking the CLI reference, section 3.8).
-9. ⚠️ **Frontend library.** Production code done; **the component tests were never written.**
+9. ✅ **Frontend library.** Component tests written 2026-10-11 (13 tests, decisions A to E; details below).
+   Originally: production code done; **the component tests were never written.**
    `webapp-shopify` has no test files, so nothing automated covers the two pages. That gap is how the
    blank screens in section 5.1 reached the browser.
    - Tests first: the scenarios in section 4.2, one test file per component. **Still to do**, before
-     step 11's frontend work.
+     step 11's frontend work. Sub-steps (2026-10-09, branch `feature/shopify-component-tests`):
+     1. Test setup for `webapp-shopify` (a `src/tests/setupTests.ts` like `webapp-backup`'s; Jest config
+        checked).
+     2. The seven scenarios that match the pages (section 4.2, "Checked against the built pages").
+        These test code that already exists, so they're expected to pass at once; each is checked to be
+        able to fail by breaking the behaviour it covers once, then restoring it.
+     3. Decisions A to E (section 4.2), each test first (RED), then the change (GREEN).
+     4. Rename the Nx project `webapp-libs-webapp-shopify` to `webapp-shopify`, add it to the `test-lib`
+        matrix in `webapp.yml`, and remove its exception from `check-test-lib-matrix.js`.
+
+     Results (logs in the gitignored `logs/` folder; counts read with
+     `sed 's/\x1b\[[0-9;]*m//g' logs/<log> | grep -E "✓|✕|^Tests:"`):
+     - **Sub-step 1, 2026-10-11.** `webapp-shopify` had no test setup: no `setupFilesAfterEnv`, no
+       `react-markdown`/`remark-gfm` mocks, no `jsdom`. Mirrored `webapp-backup`:
+       [`jest.config.ts`](../../../packages/webapp-libs/webapp-shopify/jest.config.ts), a new
+       [`src/tests/setupTests.ts`](../../../packages/webapp-libs/webapp-shopify/src/tests/setupTests.ts),
+       and `jsx` plus `src/tests/**` in `tsconfig.spec.json`.
+     - **Sub-step 2, Shops page:** 6 tests in
+       [`shopifyShops.component.spec.tsx`](../../../packages/webapp-libs/webapp-shopify/src/routes/shopifyShops/__tests__/shopifyShops.component.spec.tsx).
+       - Run S1 (Node 20):
+         `pnpm nx run webapp-libs-webapp-shopify:test --watchAll=false --skip-nx-cache > logs/shopify-test.log 2>&1; echo "shopify test exit code: $?"`
+         → exit code 0, 6 passed.
+       - Run S2, the "can it fail?" check: five temporary breakages in `shopifyShops.component.tsx`
+         marked `MUTATION CHECK` (the not-configured text, the empty-state text, the "Active" badge label,
+         the redirect to Shopify, the domain check). Same command with `logs/shopify-mutation.log` →
+         exit code 1, 5 failed, but **the badge test still passed**: it matched "active" anywhere in the
+         row, and the store is named `active.myshopify.com`. Fixed by matching each badge's exact label
+         inside its row (`within(row).getByText(/^active$/i)`).
+       - Run S3: only the badge breakage, `logs/shopify-mutation-badge.log` → exit code 1, only the badge
+         test failed. The page was restored from a backup each time; `git status` showed it identical
+         to the committed file.
+       - Run S4, final GREEN: Run S1's command → exit code 0, 6 passed.
+     - **Sub-step 3, decision A (Shops page, failed load):**
+       - RED, Run S5:
+         `pnpm nx run webapp-libs-webapp-shopify:test --watchAll=false --skip-nx-cache --testNamePattern="could not be loaded" > logs/shopify-red-a.log 2>&1; echo "decision A RED exit code: $?"`
+         → exit code 1, `Unable to find an element by: [data-testid="shopify-shops-error"]`.
+       - Change: `shopifyShops.component.tsx` reads the query's `error` and shows "Couldn't load your
+         Shopify stores" (`shopify-shops-error`) instead of the empty state.
+       - GREEN, Run S6: Run S1's command → exit code 0, 7 passed.
+     - **Link page:** 6 tests in
+       [`shopifyLink.component.spec.tsx`](../../../packages/webapp-libs/webapp-shopify/src/routes/shopifyLink/__tests__/shopifyLink.component.spec.tsx):
+       no claim, expired claim, happy path, already connected (decision C: the server's message), and
+       the tests for decisions B and D.
+       - Run L1 (RED for B and D):
+         `pnpm nx run webapp-libs-webapp-shopify:test --watchAll=false --skip-nx-cache --testPathPattern=shopifyLink > logs/shopify-link-red.log 2>&1; echo "link page RED exit code: $?"`
+         → exit code 1; 4 passed, 2 failed: B (`Unable to find … [data-testid="shopify-link-target-organization"]`)
+         and D (the error box lacked the readable message).
+       - Changes: `shopifyLink.component.tsx` names the target organization
+         (`shopify-link-target-organization`, with a hint to switch organization first), and maps an
+         error containing `permission_denied` to "You need permission to manage Shopify stores in this
+         organization."; other errors still show the server's message.
+       - GREEN, Run L2:
+         `pnpm nx run webapp-libs-webapp-shopify:test --watchAll=false --skip-nx-cache > logs/shopify-test.log 2>&1; echo "shopify all tests exit code: $?"`
+         → exit code 0, 13 passed (both files).
+       - Run L3, the "can it fail?" check for the four tests that passed at once: four breakages marked
+         `MUTATION CHECK` in `shopifyLink.component.tsx` (the no-claim, expired and success texts, and
+         an empty error box).
+         `pnpm nx run webapp-libs-webapp-shopify:test --watchAll=false --skip-nx-cache --testPathPattern=shopifyLink > logs/shopify-link-mutation.log 2>&1; echo "link page mutation check exit code: $?"`
+         → exit code 1, 5 failed and only B passed, as predicted (D also reads the error box). Restored
+         from a backup and checked byte-identical with `cmp`.
+     - **Decision E (login redirect loses the query):**
+       - Test added to upstream's
+         [`authRoute.component.spec.tsx`](../../../packages/webapp/src/shared/components/routes/authRoute/__tests__/authRoute.component.spec.tsx)
+         (its 4 existing tests unchanged): logged out at `/en/shopify/link?claim=abc123`, the login page's
+         `redirect` must be the full URL.
+       - RED, Run E1:
+         `pnpm nx run webapp:test --watchAll=false --skip-nx-cache --testPathPattern=authRoute > logs/authroute-red.log 2>&1; echo "decision E RED exit code: $?"`
+         → exit code 1; 4 passed, the new one failed: expected `/en/shopify/link?claim=abc123`, received
+         `/en/shopify/link`.
+       - Change (upstream file, under the agreed exception):
+         [`authRoute.hook.tsx`](../../../packages/webapp/src/shared/components/routes/authRoute/authRoute.hook.tsx)
+         reads `search` from `useLocation()` and appends it to the redirect. Login (`loginForm.hooks.ts`)
+         and `AnonymousRoute` pass `redirect` to `navigate`/`<Navigate>`, which accept a query string, so
+         the claim reaches the link page.
+       - GREEN: the whole `webapp` suite, because the helper runs for every protected page. Run E2:
+         `pnpm nx run webapp:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/webapp.log 2>&1; echo "decision E GREEN exit code: $?"`
+         → exit code 0; 165 passed, 2 skipped (upstream's), 1 skipped file: the earlier 164 plus the
+         new test.
+     - **Sub-step 4, 2026-10-11:** Nx project renamed to `webapp-shopify` (`project.json`; the
+       `jest.config.ts` and `vite.config.ts` labels; the library's README, which also wrongly said Vitest),
+       added to the `test-lib` matrix in `webapp.yml`, and its exception removed from
+       `check-test-lib-matrix.js`. Forward-looking commands updated (README Testing loop, section 8 of the
+       green-suite plan, this plan's verification section); earlier run records keep the old name.
+       GREEN, Run R1 (2026-10-11). Command:
+       `for t in lint type-check; do pnpm nx run webapp-shopify:$t --skip-nx-cache > logs/webapp-shopify-$t.log 2>&1; echo "webapp-shopify $t exit code: $?"; done; pnpm nx run webapp-shopify:test --watchAll=false --skip-nx-cache > logs/webapp-shopify-test.log 2>&1; echo "webapp-shopify test exit code: $?"; for t in lint type-check; do pnpm nx run webapp:$t --skip-nx-cache > logs/webapp-$t.log 2>&1; echo "webapp $t exit code: $?"; done; node .github/workflows/scripts/check-test-lib-matrix.test.js; node .github/workflows/scripts/check-test-lib-matrix.js; echo "matrix check exit code: $?"`
+       → read from the logs (each says "Successfully ran target"): `webapp-shopify` lint, type-check
+       and test (13 passed) under the new name; `webapp` lint (0 errors, the 5 existing warnings) and
+       type-check. Guard: `All 14 webapp libraries with a test target are in the test-lib matrix.`, exit
+       code 0. **Step 9 complete.**
+     - **Sub-step 5, 2026-10-12, after human checks 22 to 25:** the first frontend run below logged one
+       React warning, "Each child in a list should have a unique key prop", from decision B's bold
+       organization name (a `<strong>` passed in FormattedMessage `values`). Fixed with
+       `key="organization"` in
+       [`shopifyLink.component.tsx`](../../../packages/webapp-libs/webapp-shopify/src/routes/shopifyLink/shopifyLink.component.tsx);
+       no visible change. Then all Shopify tests, GREEN:
+       - Backend, run B1:
+         `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests -v > logs/shopify-backend.log 2>&1; echo "shopify backend exit code: $?"; tail -n 20 logs/shopify-backend.log`
+         → exit code 0; 88 passed (77 test functions, the parametrized ones counted once per case),
+         45 warnings (upstream library deprecations: factory_boy, drf_yasg).
+       - Frontend, run F1, after the key fix:
+         `pnpm nx run webapp-shopify:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/shopify-frontend.log 2>&1; echo "shopify frontend exit code: $?"; tail -n 20 logs/shopify-frontend.log`
+         → exit code 0; 2 suites, 13 passed; 0 `console.error` lines in the log.
+       - Login redirect (decision E), run F2:
+         `pnpm nx run webapp:test --watchAll=false --maxWorkers=2 --skip-nx-cache --testPathPattern=authRoute > logs/shopify-authroute.log 2>&1; echo "authRoute exit code: $?"; tail -n 20 logs/shopify-authroute.log`
+         → exit code 0; 1 suite, 5 passed, including "should keep the query string in the redirect back
+         after login".
+     - **Full suite before the 6.1.2 commit, 2026-10-12, backend first** (the human maintainer's order:
+       the backend is the source of truth):
+       - Backend and workers:
+         `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; echo "backend exit code: $?"; pnpm nx run workers:test --skip-nx-cache > logs/workers-test.log 2>&1; echo "workers exit code: $?"; tail -n 3 logs/backend-test.log; tail -n 3 logs/workers-test.log`
+         → both exit code 0; backend 1007 passed, 1472 warnings, 11 min 53 s; workers 2 passed.
+       - Lint and type-check, 15 projects (section 8 command 1 of the green-suite plan) → 30 of 30
+         "Successfully ran"; lint 0 errors, the existing warnings only (`webapp` 5, `webapp-core` 2,
+         `webapp-crud-demo` 1).
+       - Tests, 15 projects:
+         `for p in <the 15 projects>; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache --verbose 2>&1 | tee logs/$p.log; echo "$p test exit code: ${PIPESTATUS[0]}"; done`
+         → 15 of 15 passed, 0 failed: 213 suites (212 passed, 1 skipped), 916 passed, 4 skipped
+         (upstream's), 920 in all, `webapp-shopify` 13 of them. Nx kept `--verbose` for itself, so most logs lack the
+         per-test lines; the command is now `... -- --verbose` (agents.md section 1.3).
+       - Guard: `node .github/workflows/scripts/check-test-lib-matrix.test.js; node .github/workflows/scripts/check-test-lib-matrix.js; echo "check exit code: $?"`
+         → `All 14 webapp libraries with a test target are in the test-lib matrix.`, exit code 0.
+       - Two order-dependent upstream backend tests, found in later runs the same day; neither is in code
+         this branch touches:
+         - `apps/multitenancy/tests/test_schema.py::TestAllTenantsQuery::test_all_tenants_query`
+           failed in a second full run (17:57, verbose:
+           `pnpm nx run backend:test --skip-nx-cache 2>&1 | tee logs/backend-test.log`) → 1006 passed,
+           1 failed. It expects tenants in creation order from a query that sets no order. It passed
+           in the 17:31 run and in the per-module run below.
+         - `apps/backup/tests/test_schema.py::TestDownloadBackupDecryptedMutation::test_download_backup_decrypted_success`
+           errored at setup when `apps/backup` ran alone ("Tenant test_tenant not found for backup key
+           lookup"), and passed in both full runs.
+         - Per-module run (README Testing, backend summary):
+           `mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/shopify apps/sso apps/translations apps/users common; do f=logs/backend-$(basename $a).log; docker compose run --rm -T -e DATABASE_URL= backend pytest $a > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|error|errors|skipped)" | tr -d '='); echo "$a: $n tests |$r"; done`
+           → 12 modules, 1007 tests: all passed except `apps/backup`, 72 passed and 1 error (the test
+           above); `apps/shopify` 88 of 88.
+       - Console noise in the passing upstream tests (React `act(...)` and key warnings, MSW
+         unhandled requests, Radix dialog accessibility notices): logged, not failures, none from
+         `webapp-shopify`. Left as upstream's, like the backend's deprecation warnings.
+
    - Then: the GraphQL documents (section 4.1), the `shopifyShops` and `shopifyLink` components, routes,
      sidebar entry, and the `webapp-shopify` Nx library wiring (`project.json`, `tsconfig`, `index.ts`).
+
 10. ✅ **Live install on a development store.** Done 2026-10-07: installed from Shopify, linked to an
     organization, store listed as Active (checks 9 and 14 to 16). Checks 10 to 13 not yet run. The two
     things section 1 leaves open (HMAC encoding of special characters; the CLI's accepted config keys)
@@ -1121,6 +1283,13 @@ Changes to original files beyond appended lines, from the live-install fixes (se
 - [`apps/payfast/tests/test_admin.py`](../../../packages/backend/apps/payfast/tests/test_admin.py)
   (fork code): plain static storage for admin page tests, so they don't need `collectstatic`
 
+From step 9 (2026-10-11), under the exception agreed on 2026-10-07:
+
+- [`authRoute.hook.tsx`](../../../packages/webapp/src/shared/components/routes/authRoute/authRoute.hook.tsx):
+  the login redirect keeps the query string (decision E). One line, plus a comment.
+- [`authRoute.component.spec.tsx`](../../../packages/webapp/src/shared/components/routes/authRoute/__tests__/authRoute.component.spec.tsx):
+  one test added; upstream's tests unchanged.
+
 Not part of this feature, so leave them out of the commit: the `black` quote rewrites the local test run
 makes in `apps/backup`, `apps/sso`, `apps/users`, `common/` and `multitenancy/permissions.py`, and the
 Contentful schema refresh.
@@ -1137,11 +1306,11 @@ human maintainer picks the number.
 
 - RED per test file: `docker compose run --rm -T backend pytest apps/shopify/tests/<file> -v`
   (check `DATABASE_URL` first, section 1.3 of [`agents.md`](../agents.md)).
-- GREEN: `pnpm nx run backend:test`; for the frontend `pnpm nx run webapp-libs-webapp-shopify:lint`,
-  `pnpm nx run webapp-libs-webapp-shopify:type-check`,
-  `pnpm nx run webapp-libs-webapp-shopify:test --watchAll=false` (the Nx project is named
-  `webapp-libs-webapp-shopify`, not `webapp-shopify`), the same three for `webapp` because its routes
-  change, and `lint` and `type-check` for `webapp-tenants`.
+- GREEN: `pnpm nx run backend:test`; for the frontend `pnpm nx run webapp-shopify:lint`,
+  `pnpm nx run webapp-shopify:type-check`, `pnpm nx run webapp-shopify:test --watchAll=false`, the same
+  three for `webapp` because its routes change, and `lint` and `type-check` for `webapp-tenants`. (The Nx
+  project was called `webapp-libs-webapp-shopify` until step 9 renamed it on 2026-10-11; run records
+  above keep the old name.)
 - After `pnpm nx run backend:test`, check `git status`: its `black` run rewrites quotes in upstream files.
   Don't commit those.
 - Then `pnpm saas down` / `pnpm saas up` and the human checks.
@@ -1227,3 +1396,29 @@ generated test data):
 21. Cross-tenant isolation:
     `curl -s -X POST http://localhost:5001/api/graphql/ -b cookies-other-org.txt -H 'Content-Type: application/json' -d '{"query":"{ shopifyProducts(tenantId: \"<the other org id>\", shopDomain: \"<your store>.myshopify.com\", first: 5) { products { title } } }"}'`,
     logged in as a user of another organization → an error, no products.
+
+Step 9 checks (2026-10-11), with `pnpm saas up` and the ngrok tunnel running, as the owner of the
+organization your dev store is linked to. They cover decisions B, D and E (section 4.2) and check 16.
+Decision A (a failed load) can't be caused safely by hand: stopping the backend also fails the
+configuration query, so the page shows "not configured" instead. Its component test covers it.
+
+22. Reopening a linked store (repeats check 16): Shopify admin → Apps → the app → you land on
+    `/en/<org id>/shopify?connected=<store>.myshopify.com`, the Shopify Stores page, with the store
+    marked Active.
+23. Decision B, the link page names the organization: Shopify Stores page → Disconnect your store →
+    confirm → it disappears. Shopify admin → Apps → the app → you land on
+    `/en/shopify/link?claim=…`, which shows "This store will be connected to **<your organization>**."
+    and the hint to switch organization first. Click **Connect to this organization** → "Store connected!"
+    → the Stores page lists it as Active.
+24. Decision E, the link survives logging in: Stores page → Disconnect the store again. Log out of the web
+    app (avatar menu → Log out). Shopify admin → Apps → the app → you land on the login page, and its URL
+    contains `redirect=` with `claim` in it (encoded as `%3Fclaim%3D`). Log in → you land on the link
+    page showing your store's domain, **not** "No link provided". Connect it again.
+25. Decision D, a missing permission in plain words (optional: needs a second user who is a Member,
+    not an Owner or Admin, of the organization): disconnect the store, then as the Member open the app
+    from Shopify and click **Connect to this organization** → the red box says "You need permission to
+    manage Shopify stores in this organization.", not `permission_denied`. Reconnect as the Owner
+    afterwards.
+
+Result, 2026-10-12: the human maintainer reported checks 22 to 25 as passed ("human checks went fine"),
+with the dev store and ngrok tunnel. Check 25 is optional and wasn't confirmed separately.

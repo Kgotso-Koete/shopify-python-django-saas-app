@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.1.2](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.1.1...6.1.2) (2026-10-11)
+
+### Bug Fixes
+
+- Login: the redirect back after logging in kept only the page path and dropped the query string, so a merchant who installed the Shopify app while logged out lost the `?claim=…` link and saw "No link provided"
+- Shopify Stores page: a failed load showed "No stores connected"; it now says the stores couldn't be loaded
+- Shopify link page: a missing permission showed the raw code `permission_denied`; it now explains it in plain words. The page also names the organization the store will be connected to
+- Tests: `webapp-shopify` had no tests and no test setup; it now has 13 component tests for the Stores and link pages, and CI runs them. Its Nx project is renamed from `webapp-libs-webapp-shopify` to `webapp-shopify`, like the other libraries
+
+### Documentation
+
+- Shopify plan: step 9 (component tests) done, with the decisions on where the pages differed from the plan
+- README Testing: commands for the whole backend (also per module) and frontend (per project), and for one module, file or test, each in a summary form (test counts per module or project) and a verbose form (every test live), all saving their output to `logs/`
+
 ## [6.1.1](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.1.0...6.1.1) (2026-10-09)
 
 ### Bug Fixes

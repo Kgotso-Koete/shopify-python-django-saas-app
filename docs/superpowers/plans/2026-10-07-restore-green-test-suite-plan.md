@@ -1,13 +1,12 @@
 # Restore a Green Test Suite — Implementation Plan
 
 **Date:** 2026-10-07
-**Status (2026-10-09):** Step 1 (measure) done (section 2.3). Step 5.1 done. Step 2 done locally (`package.json` and
-lockfile); its GREEN comes from CI on the PR. Steps 3 and 5.2 done (Run 8). Step 4 done locally (Run 9). Step 6.3 done (Run 10). Step 6.1 decided (keep upstream's skips). Step 7 done (7.1 decided, 7.2 and 7.4 GREEN in Run 13).
-Step 8 decided (leave the hook unused). Step 9 decided (disable the reviewer workflow; the human maintainer clicks it). Step 10: `CHANGELOG.md` 6.1.1 entry written 2026-10-09. Final local GREEN: Runs 14 and 15
-(lint and type-check 30/30, backend 1007 passed, frontend tests green apart from one known
-load-sensitive upstream test that passed 5 of 5 on its own). Left: commit and push by the human
-maintainer, and the CI-only checks on the PR; 6.2 moved to the Shopify
-work. Not committed; no branch yet.
+**Status (2026-10-09): complete.** Merged as PR #4 (`29de4ca7 fix(ci): restore a green test suite
+(v6.1.1)`), tagged `6.1.1`; the missed `6.1.0` tag was added to `13aa4660`. CI on the merge commit
+(`gh run list --branch master --limit 8`): Webapp (build, all `test-lib` jobs including Node 22
+`webapp-finances` and the three new libraries, and the new `test-lib-matrix` job), Workers, Docs, Infra,
+internal/tools and internal/status-dashboard succeeded; Backend was still running when checked.
+Steps 1 to 10 done or decided as recorded below; step 6.2 (Shopify tests) moved to the Shopify plan.
 **Goal:** Every test in the repository runs, locally and in CI, and passes, before any new feature
 starts. TDD depends on it: a RED only means something when everything else is green. With failures
 already in the suite, a new failing test is lost in the noise, and nothing proves a change caused it or
@@ -473,8 +472,9 @@ src/payfast/__tests__/editSubscription.component.spec.tsx`, 4 passed, so the fil
         itself and the other tests are unchanged.
       - ✅ GREEN 2026-10-09 (Run 10): 10 of 10 on Node 20, and `webapp-finances` type-check exit code 0. Command:
         `for i in $(seq 1 10); do pnpm nx run webapp-finances:test --watchAll=false --skip-nx-cache --testPathPattern="routes/editSubscription/.*editSubscription" > logs/webapp-finances-stripe-run$i.log 2>&1; echo "run $i exit code: $?"; done; pnpm nx run webapp-finances:type-check --skip-nx-cache > logs/webapp-finances-type-check.log 2>&1; echo "type-check exit code: $?"`
-        Runs 1 and 10 checked in their logs: `PASS
-src/routes/editSubscription/__tests__/editSubscription.component.spec.tsx`, 2 passed.
+        Runs 1 and 10 checked in their logs:
+        `PASS src/routes/editSubscription/__tests__/editSubscription.component.spec.tsx`, 2 passed.
+
 7. **Make CI run every test.** Sub-steps, in order:
    1. ✅ **Measure `internal/tools`' 4 tests** (Run 11): 2 pass, 2 don't compile, all upstream and never
       run by upstream. **Decided 2026-10-09: leave them unwired, as upstream has them; no change.** Same
@@ -609,13 +609,13 @@ commands one after another from the repository root, in this order, never side b
 1. Lint and type-check, 15 frontend projects (30 lines):
 
 ```shell
-mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-libs-webapp-shopify; do for t in lint type-check; do pnpm nx run $p:$t --skip-nx-cache > logs/$p-$t.log 2>&1; echo "$p $t exit code: $?"; done; done
+mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do for t in lint type-check; do pnpm nx run $p:$t --skip-nx-cache > logs/$p-$t.log 2>&1; echo "$p $t exit code: $?"; done; done
 ```
 
-2. Tests, the 14 frontend projects that have tests (`webapp-shopify` has none yet):
+2. Tests, all 15 frontend projects (`webapp-shopify` has tests since 2026-10-11):
 
 ```shell
-for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1; echo "$p test exit code: $?"; done
+for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1; echo "$p test exit code: $?"; done
 ```
 
 3. Backend (formatter, migrations check, about 1,000 tests; about 15 to 20 minutes) and workers:
@@ -630,8 +630,8 @@ pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; echo "bac
 node .github/workflows/scripts/check-test-lib-matrix.test.js; node .github/workflows/scripts/check-test-lib-matrix.js; echo "check exit code: $?"
 ```
 
-When the Shopify work renames its Nx project, use `webapp-shopify` instead of
-`webapp-libs-webapp-shopify`, and add it to command 2 once it has tests.
+The Shopify library's Nx project was renamed from `webapp-libs-webapp-shopify` to `webapp-shopify` on
+2026-10-11; earlier run records above keep the old name, as they were run.
 
 ### Human checks
 
@@ -652,4 +652,22 @@ When the Shopify work renames its Nx project, use `webapp-shopify` instead of
   [`2026-10-01-payfast-walkthrough.md`](../specs/2026-10-01-payfast-walkthrough.md): diagrams, setup and
   installation instructions. Tracked as step 13 of the
   [Shopify plan](2026-10-03-shopify-app-installation-plan.md).
-- **Shopify component tests** (Shopify plan step 9) and **products page** (Shopify plan step 11).
+- **Shopify component tests** (Shopify plan step 9, done 2026-10-11) and **products page** (Shopify plan
+  step 11).
+- **To consider, not decided: the GraphQL type watcher skips the patch steps** (found 2026-10-12). In
+  [`webapp-api-client/project.json`](../../../packages/webapp-libs/webapp-api-client/project.json),
+  `graphql:generate-types` runs the code generator, then `remove-duplicate-types.js` and `patch-gql.js`
+  (which makes a missing query throw "GraphQL query not found" instead of returning `{}`).
+  `graphql:generate-types:watch`, started by `webapp:start` and `pnpm saas up`, runs only the
+  generator, so every app start rewrites `src/graphql/__generated/gql/gql.ts` and `graphql.ts` without
+  the patch, and they show as changed in `git status`. Upstream's design, unchanged since 5.0.0.
+  - Workaround until then: don't commit those two files unless the change is intended; undo the
+    watcher's rewrite with
+    `git restore packages/webapp-libs/webapp-api-client/src/graphql/__generated/gql/gql.ts packages/webapp-libs/webapp-api-client/src/graphql/__generated/gql/graphql.ts`.
+  - Possible fix: run the two scripts from the generator's `hooks.afterAllFileWrite` in
+    `graphql/codegen.ts`, which fires after every write in both modes, with a test first that
+    generates the files and checks `gql.ts` for the "GraphQL query not found" error.
+  - Weigh first: the benefit (no stray changes after each app start, the patch can't be lost by
+    accident) against the risk of drifting further from upstream. `codegen.ts` and `project.json` are
+    upstream files, so every upstream merge that touches them would need resolving by hand. The
+    workaround costs one command per commit; the fix is a permanent difference from upstream.
