@@ -9,11 +9,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // Libraries allowed to be missing, each with the reason. Remove an entry once the reason is gone.
-const ALLOWED_MISSING = {
-  // No tests yet; added to the matrix by the Shopify work
-  // (docs/superpowers/plans/2026-10-03-shopify-app-installation-plan.md, step 9).
-  'webapp-shopify': 'no tests yet',
-};
+// Empty since webapp-shopify got its tests (Shopify plan step 9, 2026-10-11).
+const ALLOWED_MISSING = {};
 
 // The folder names listed under `webapp-lib-name:` in the workflow file.
 function parseMatrixLibs(workflowText) {

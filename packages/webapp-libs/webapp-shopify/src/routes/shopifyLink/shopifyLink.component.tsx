@@ -44,9 +44,18 @@ export const ShopifyLink: FC = () => {
         navigate(generateTenantPath(RoutesConfig.shopify.list));
       }, 2000);
     } catch (err: any) {
-      setErrorMessage(err?.message ?? String(err));
+      const message = err?.message ?? String(err);
+      // The backend's permission check answers with the bare code "permission_denied".
+      setErrorMessage(
+        message.includes('permission_denied')
+          ? intl.formatMessage({
+              defaultMessage: 'You need permission to manage Shopify stores in this organization.',
+              id: 'ShopifyLink / Permission denied',
+            })
+          : message
+      );
     }
-  }, [currentTenant, claim, linkShop, navigate, generateTenantPath]);
+  }, [currentTenant, claim, linkShop, navigate, generateTenantPath, intl]);
 
   if (!claim) {
     return (
@@ -176,6 +185,20 @@ export const ShopifyLink: FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Say which organization the store goes to: the page links to the current one. */}
+            <div className="rounded-md border border-input p-3 text-sm" data-testid="shopify-link-target-organization">
+              <FormattedMessage
+                id="ShopifyLink / Target organization"
+                defaultMessage="This store will be connected to {organization}."
+                values={{ organization: <strong key="organization">{currentTenant?.name}</strong> }}
+              />{' '}
+              <span className="text-muted-foreground">
+                <FormattedMessage
+                  id="ShopifyLink / Target organization hint"
+                  defaultMessage="To use another organization, switch to it first, then open this link again."
+                />
+              </span>
+            </div>
             {errorMessage && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive" data-testid="shopify-link-error">
                 {errorMessage}

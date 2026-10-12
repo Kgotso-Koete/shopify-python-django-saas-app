@@ -108,6 +108,13 @@ When giving manual verification steps, use the real top-level command a user or 
 
   These are the same targets CI runs (`.github/workflows/backend.yml`, `.github/workflows/webapp.yml`). They catch a GREEN whose tests pass but that breaks a type, a lint rule, formatting or a missing migration.
 
+- **Test commands come in two forms, summary and verbose, and both keep a log** (set by the human maintainer on 2026-10-12: the counts per module show the volume of tests at a glance, and the verbose form shows each test's name, file and result). The commands are in the README's Testing section; hand over the one that fits, or both, in those formats:
+  - **Summary:** the run writes only to `logs/`, then the terminal shows the counts. Backend, one line per module: `apps/shopify: 88 tests | 88 passed, 45 warnings in 33.37s` (the total from pytest's `collected N items` line, the rest from its last line). Frontend, two lines per project: `webapp-shopify: Test Suites: 2 passed, 2 total` and `webapp-shopify: Tests: 13 passed, 13 total`.
+  - **Verbose:** the run prints one line per test with its file and pass or fail result. Backend pytest already does (`-v` is in `addopts` in [`setup.cfg`](../../packages/backend/setup.cfg)); for a bare `pytest`, add `-v`. Frontend Jest needs `--verbose`, which lists each test under its file's `PASS` or `FAIL` line. Through Nx it must go after a bare `--` (`pnpm nx run <project>:test --watchAll=false -- --verbose`): Nx has a `--verbose` flag of its own and keeps it, so without the `--` Jest never sees it (the log's `> jest ...` line shows which flags reached Jest);
+    It streams to the terminal and to the gitignored `logs/` folder at once, with `2>&1 | tee logs/<name>.log`, then prints the test command's own exit code with `echo "<name> exit code: ${PIPESTATUS[0]}"` (a plain `$?` would give `tee`'s exit code, always 0).
+
+  Lint, type-check and other non-test commands keep writing only to their log, with `> logs/<name>.log 2>&1`. The workers' `pnpm nx run workers:test` is the one exception: its upstream script runs `pytest` without `-v` and has only 2 tests, so it shows the summary line only.
+
 - **Anything touching infrastructure (Postgres, Redis, Celery, the worker, external APIs such as Stripe or PayFast):** run the GREEN targets, then start the whole stack with `pnpm saas up`, and only then do manual checks. Don't skip the automated tier.
 - **The final and ultimate check: simple, human-driven, common-sense verification.** Automated tests prove what they were written to prove. The last rung is a small list of manual checks the human maintainer can do and see for themselves, without complex container workflows or reading test output:
   - a click-through in the browser, or a request from Postman

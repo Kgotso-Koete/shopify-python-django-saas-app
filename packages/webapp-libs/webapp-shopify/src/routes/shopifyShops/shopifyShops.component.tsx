@@ -24,7 +24,7 @@ export const ShopifyShops: FC = () => {
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
   const { data: configData, loading: configLoading } = useQuery(shopifyConfigQuery);
-  const { data: shopsData, loading: shopsLoading, refetch } = useQuery(shopifyShopsQuery, {
+  const { data: shopsData, loading: shopsLoading, error: shopsError, refetch } = useQuery(shopifyShopsQuery, {
     variables: { tenantId: currentTenant?.id ?? '' },
     skip: !currentTenant,
   });
@@ -235,6 +235,24 @@ export const ShopifyShops: FC = () => {
               <div className="animate-pulse space-y-3">
                 <div className="h-10 rounded bg-muted" />
                 <div className="h-10 rounded bg-muted" />
+              </div>
+            </CardContent>
+          </Card>
+        ) : shopsError ? (
+          // A failed load must not look like "no stores connected".
+          <Card>
+            <CardContent className="py-16">
+              <div className="flex flex-col items-center justify-center text-center" data-testid="shopify-shops-error">
+                <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
+                <h3 className="text-lg font-semibold mb-2">
+                  <FormattedMessage id="ShopifyShops / Load error title" defaultMessage="Couldn't load your Shopify stores" />
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  <FormattedMessage
+                    id="ShopifyShops / Load error description"
+                    defaultMessage="Please refresh the page. If it keeps happening, check that you can view Shopify stores in this organization."
+                  />
+                </p>
               </div>
             </CardContent>
           </Card>
