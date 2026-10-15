@@ -4,5 +4,6 @@ export const RoutesConfig = {
   shopify: nestedPath('shopify', {
     list: '',
     link: 'link',
+    products: 'products',
   }),
 };

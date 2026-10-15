@@ -1,6 +1,6 @@
 {
   "name": "@sb/webapp-notifications",
-  "version": "6.1.2",
+  "version": "6.2.0",
   "type": "commonjs",
   "scripts": {
     "test": "jest",

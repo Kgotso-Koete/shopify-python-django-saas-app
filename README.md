@@ -246,7 +246,7 @@ The backend tests live in 12 modules: the Django apps in `packages/backend/apps/
 Summary, one line per module (`apps/shopify: 88 tests | 88 passed, 45 warnings in 33.37s`):
 
 ```shell
-mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/shopify apps/sso apps/translations apps/users common; do f=logs/backend-$(basename $a).log; docker compose run --rm -T -e DATABASE_URL= backend pytest $a > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|error|errors|skipped)" | tr -d '='); echo "$a: $n tests |${r:- no test results, see $f}"; done
+mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/shopify apps/sso apps/translations apps/users common; do f=logs/backend-$(basename $a).log; docker compose run --rm -T -e DATABASE_URL= backend pytest $a > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "$a: $n tests |${r:- no test results, see $f}"; done
 ```
 
 Verbose, every test live:
@@ -260,7 +260,7 @@ mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations ap
 Summary:
 
 ```shell
-mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; pnpm nx run workers:test --skip-nx-cache > logs/workers-test.log 2>&1; for x in backend workers; do f=logs/$x-test.log; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|error|errors|skipped)" | tr -d '='); echo "$x: $n tests |${r:- no test results, see $f}"; done
+mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; pnpm nx run workers:test --skip-nx-cache > logs/workers-test.log 2>&1; for x in backend workers; do f=logs/$x-test.log; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "$x: $n tests |${r:- no test results, see $f}"; done
 ```
 
 Verbose:
@@ -276,7 +276,7 @@ mkdir -p logs; pnpm nx run backend:test --skip-nx-cache 2>&1 | tee logs/backend-
 Summary:
 
 ```shell
-mkdir -p logs; t=apps/shopify/tests/test_views.py; f=logs/backend-one.log; docker compose run --rm -T -e DATABASE_URL= backend pytest $t > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|error|errors|skipped)" | tr -d '='); echo "$t: $n tests |${r:- no test results, see $f}"
+mkdir -p logs; t=apps/shopify/tests/test_views.py; f=logs/backend-one.log; docker compose run --rm -T -e DATABASE_URL= backend pytest $t > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "$t: $n tests |${r:- no test results, see $f}"
 ```
 
 Verbose:
@@ -287,7 +287,7 @@ mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/s
 
 #### Frontend
 
-The frontend is 15 Nx projects (`webapp` and 14 libraries in `packages/webapp-libs`), each with its own `lint`, `type-check` and `test` targets, so each is run by name. `--watchAll=false` makes Jest run once and exit, `--maxWorkers=2` limits each Jest run's memory, and `--skip-nx-cache` makes Nx really run the tests instead of replaying an earlier result. Jest's `--verbose` must come after a bare `--`: Nx has a `--verbose` flag of its own and keeps it otherwise (the log's `> jest ...` line shows which flags reached Jest).
+The frontend is 15 Nx projects (`webapp` and 14 libraries in `packages/webapp-libs`), each with its own `lint`, `type-check` and `test` targets, so each is run by name. `--watchAll=false` makes Jest run once and exit, `--maxWorkers=2` limits each Jest run's memory, and `--skip-nx-cache` makes Nx really run the tests instead of replaying an earlier result. In the verbose form, every Jest flag goes after a bare `--`, and only Nx's own `--skip-nx-cache` before it: Nx has a `--verbose` flag of its own, so Jest's must come after `--`, and once `--` is there Nx passes on only what follows it, silently dropping Jest flags placed before it (the log's `> nx run ...` line shows what was passed on).
 
 **Every project, one at a time.** Each project gets its own log, `logs/<project>.log`.
 
@@ -300,7 +300,7 @@ mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp
 Verbose, every test live, listed under its file's `PASS` or `FAIL` line:
 
 ```shell
-mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache -- --verbose 2>&1 | tee logs/$p.log; echo "$p test exit code: ${PIPESTATUS[0]}"; done
+mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --verbose 2>&1 | tee logs/$p.log; echo "$p test exit code: ${PIPESTATUS[0]}"; done
 ```
 
 The summary of the last run, read from the logs (after a verbose run, for example):
@@ -320,7 +320,7 @@ mkdir -p logs; p=webapp-shopify; pnpm nx run $p:test --watchAll=false --maxWorke
 Verbose:
 
 ```shell
-mkdir -p logs; p=webapp-shopify; pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache --testPathPattern=shopifyLink -- --verbose 2>&1 | tee logs/$p-one.log; echo "$p test exit code: ${PIPESTATUS[0]}"
+mkdir -p logs; p=webapp-shopify; pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=shopifyLink --verbose 2>&1 | tee logs/$p-one.log; echo "$p test exit code: ${PIPESTATUS[0]}"
 ```
 
 #### CI test-list check
@@ -370,8 +370,14 @@ Use the GitHub CLI to open a PR for review.
 gh pr create --title "feat(scope): brief description" --body "Detailed explanation of changes."
 ```
 
-**5. Merge and Delete Branch**
-Once approved, squash and merge the PR, and automatically delete the feature branch.
+**5. Wait for the checks, then merge and delete the branch**
+Watch the PR's GitHub Actions checks in the terminal until they finish: `--watch` refreshes the list until every check is done, then prints the totals (`0 failing, N successful, …`). Use the PR number from step 4.
+
+```shell
+gh pr checks <PR number> --watch
+```
+
+Once every check has passed and the PR is approved, squash and merge it, and automatically delete the feature branch. Commit everything first: with uncommitted changes, `gh` merges on GitHub but can't switch your copy to `master`, so the branch isn't deleted.
 
 ```shell
 gh pr merge --squash --delete-branch
@@ -386,6 +392,8 @@ git pull
 git tag X.Y.Z
 git push origin X.Y.Z
 ```
+
+The last line must name the tag: `git push origin X.Y.Z`, for example `git push origin 6.1.2`. A plain `git push` sends branches only, never tags, so it prints `Everything up-to-date` and the tag stays on your machine. The tag has reached GitHub when the output ends with `* [new tag] X.Y.Z -> X.Y.Z`.
 
 ## Features
 

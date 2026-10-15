@@ -3115,6 +3115,7 @@ export type Query = {
   scimTokens?: Maybe<ScimTokenConnection>;
   shopifyClaim?: Maybe<ShopifyClaimType>;
   shopifyConfig: ShopifyConfigType;
+  shopifyProducts: ShopifyProductsType;
   shopifyShops: Array<ShopifyShopType>;
   ssoAuditLogs?: Maybe<SsoAuditLogConnection>;
   ssoConnection?: Maybe<SsoConnectionType>;
@@ -3433,6 +3434,15 @@ export type QueryScimTokensArgs = {
 
 export type QueryShopifyClaimArgs = {
   claim: Scalars['String']['input'];
+};
+
+
+export type QueryShopifyProductsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first: Scalars['Int']['input'];
+  shopDomain: Scalars['String']['input'];
+  tenantId: Scalars['ID']['input'];
 };
 
 
@@ -3865,6 +3875,33 @@ export type ShopifyLinkShop = {
 export type ShopifyLinkShopInput = {
   claim: Scalars['String']['input'];
   tenantId: Scalars['ID']['input'];
+};
+
+export type ShopifyProductType = {
+  __typename?: 'ShopifyProductType';
+  currencyCode: Scalars['String']['output'];
+  handle: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  imageAlt?: Maybe<Scalars['String']['output']>;
+  imageUrl?: Maybe<Scalars['String']['output']>;
+  priceMax: Scalars['String']['output'];
+  priceMin: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+};
+
+export type ShopifyProductsPageInfoType = {
+  __typename?: 'ShopifyProductsPageInfoType';
+  endCursor?: Maybe<Scalars['String']['output']>;
+  hasNextPage: Scalars['Boolean']['output'];
+  hasPreviousPage: Scalars['Boolean']['output'];
+  startCursor?: Maybe<Scalars['String']['output']>;
+};
+
+export type ShopifyProductsType = {
+  __typename?: 'ShopifyProductsType';
+  pageInfo: ShopifyProductsPageInfoType;
+  products: Array<ShopifyProductType>;
 };
 
 export type ShopifyShopType = {
@@ -5729,6 +5766,17 @@ export type ShopifyShopsQueryQueryVariables = Exact<{
 
 export type ShopifyShopsQueryQuery = { __typename?: 'Query', shopifyShops: Array<{ __typename?: 'ShopifyShopType', shopDomain: string, scopes: Array<string>, installedAt?: any | null, uninstalledAt?: any | null, needsReinstall: boolean }> };
 
+export type ShopifyProductsQueryQueryVariables = Exact<{
+  tenantId: Scalars['ID']['input'];
+  shopDomain: Scalars['String']['input'];
+  first: Scalars['Int']['input'];
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type ShopifyProductsQueryQuery = { __typename?: 'Query', shopifyProducts: { __typename?: 'ShopifyProductsType', products: Array<{ __typename?: 'ShopifyProductType', id: string, title: string, handle: string, status: string, imageUrl?: string | null, imageAlt?: string | null, priceMin: string, priceMax: string, currencyCode: string }>, pageInfo: { __typename?: 'ShopifyProductsPageInfoType', hasNextPage: boolean, hasPreviousPage: boolean, startCursor?: string | null, endCursor?: string | null } } };
+
 export type ShopifyClaimQueryQueryVariables = Exact<{
   claim: Scalars['String']['input'];
 }>;
@@ -6379,6 +6427,7 @@ export const NotificationCreatedSubscriptionDocument = {"kind":"Document","defin
 export const NotificationsListMarkAsReadMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"notificationsListMarkAsReadMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"MarkReadAllNotificationsMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"markReadAllNotifications"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}},{"kind":"Field","name":{"kind":"Name","value":"hasUnreadNotifications"}},{"kind":"Field","name":{"kind":"Name","value":"unreadNotificationsCount"}}]}}]}}]} as unknown as DocumentNode<NotificationsListMarkAsReadMutationMutation, NotificationsListMarkAsReadMutationMutationVariables>;
 export const ShopifyConfigQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"shopifyConfigQuery"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyConfig"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"enabled"}}]}}]}}]} as unknown as DocumentNode<ShopifyConfigQueryQuery, ShopifyConfigQueryQueryVariables>;
 export const ShopifyShopsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"shopifyShopsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyShops"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopDomain"}},{"kind":"Field","name":{"kind":"Name","value":"scopes"}},{"kind":"Field","name":{"kind":"Name","value":"installedAt"}},{"kind":"Field","name":{"kind":"Name","value":"uninstalledAt"}},{"kind":"Field","name":{"kind":"Name","value":"needsReinstall"}}]}}]}}]} as unknown as DocumentNode<ShopifyShopsQueryQuery, ShopifyShopsQueryQueryVariables>;
+export const ShopifyProductsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"shopifyProductsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"shopDomain"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"first"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"after"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"before"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyProducts"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}},{"kind":"Argument","name":{"kind":"Name","value":"shopDomain"},"value":{"kind":"Variable","name":{"kind":"Name","value":"shopDomain"}}},{"kind":"Argument","name":{"kind":"Name","value":"first"},"value":{"kind":"Variable","name":{"kind":"Name","value":"first"}}},{"kind":"Argument","name":{"kind":"Name","value":"after"},"value":{"kind":"Variable","name":{"kind":"Name","value":"after"}}},{"kind":"Argument","name":{"kind":"Name","value":"before"},"value":{"kind":"Variable","name":{"kind":"Name","value":"before"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"products"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"handle"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"imageAlt"}},{"kind":"Field","name":{"kind":"Name","value":"priceMin"}},{"kind":"Field","name":{"kind":"Name","value":"priceMax"}},{"kind":"Field","name":{"kind":"Name","value":"currencyCode"}}]}},{"kind":"Field","name":{"kind":"Name","value":"pageInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasNextPage"}},{"kind":"Field","name":{"kind":"Name","value":"hasPreviousPage"}},{"kind":"Field","name":{"kind":"Name","value":"startCursor"}},{"kind":"Field","name":{"kind":"Name","value":"endCursor"}}]}}]}}]}}]} as unknown as DocumentNode<ShopifyProductsQueryQuery, ShopifyProductsQueryQueryVariables>;
 export const ShopifyClaimQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"shopifyClaimQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"claim"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyClaim"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"claim"},"value":{"kind":"Variable","name":{"kind":"Name","value":"claim"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopDomain"}}]}}]}}]} as unknown as DocumentNode<ShopifyClaimQueryQuery, ShopifyClaimQueryQueryVariables>;
 export const ShopifyStartInstallMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"shopifyStartInstallMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ShopifyStartInstallInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyStartInstall"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"authorizeUrl"}}]}}]}}]} as unknown as DocumentNode<ShopifyStartInstallMutationMutation, ShopifyStartInstallMutationMutationVariables>;
 export const ShopifyLinkShopMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"shopifyLinkShopMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ShopifyLinkShopInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopifyLinkShop"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shop"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"shopDomain"}},{"kind":"Field","name":{"kind":"Name","value":"scopes"}},{"kind":"Field","name":{"kind":"Name","value":"installedAt"}}]}}]}}]}}]} as unknown as DocumentNode<ShopifyLinkShopMutationMutation, ShopifyLinkShopMutationMutationVariables>;

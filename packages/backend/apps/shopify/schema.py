@@ -5,10 +5,12 @@ from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 from graphql import GraphQLError
 
 from apps.shopify.models import ShopifyShop
+from apps.shopify.products import ShopifyReconnectRequired, ShopifyTryAgainLater, fetch_products
 from apps.shopify.services import start_install
 from apps.multitenancy.models import Tenant
 from apps.multitenancy.constants import ActionEntityType, ActionType
 from common.action_logging.service import log_action
+from common.graphql import exceptions
 from common.graphql.acl import permission_classes, requires
 from common.acl.policies import AnyoneFullAccess, IsTenantMemberAccess, IsAuthenticatedFullAccess
 
@@ -34,12 +36,53 @@ class ShopifyClaimType(graphene.ObjectType):
     shop_domain = graphene.String(required=True)
 
 
+# The products page (plan step 11). Fields match the plain dicts from products.fetch_products.
+class ShopifyProductType(graphene.ObjectType):
+    id = graphene.ID(required=True)
+    title = graphene.String(required=True)
+    handle = graphene.String(required=True)
+    status = graphene.String(required=True)
+    image_url = graphene.String()
+    image_alt = graphene.String()
+    # Decimal strings as Shopify sends them, so no rounding on the way to the browser.
+    price_min = graphene.String(required=True)
+    price_max = graphene.String(required=True)
+    currency_code = graphene.String(required=True)
+
+
+class ShopifyProductsPageInfoType(graphene.ObjectType):
+    has_next_page = graphene.Boolean(required=True)
+    has_previous_page = graphene.Boolean(required=True)
+    start_cursor = graphene.String()
+    end_cursor = graphene.String()
+
+
+class ShopifyProductsType(graphene.ObjectType):
+    products = graphene.List(graphene.NonNull(ShopifyProductType), required=True)
+    page_info = graphene.Field(graphene.NonNull(ShopifyProductsPageInfoType))
+
+
+def _user_error(message: str, code: str) -> exceptions.GraphQlValidationError:
+    # GraphQlValidationError is on SanitizeErrorsMiddleware's safe list, so the message and code reach
+    # the browser in production too, as extensions {"non_field_errors": [{"message": ..., "code": ...}]},
+    # the same shape apps/payfast/schema.py uses.
+    return exceptions.GraphQlValidationError({"non_field_errors": [message]}, code=code)
+
+
 class Query(graphene.ObjectType):
     shopify_config = graphene.Field(graphene.NonNull(ShopifyConfigType))
     shopify_shops = graphene.List(
         graphene.NonNull(ShopifyShopType), tenant_id=graphene.ID(required=True), required=True
     )
     shopify_claim = graphene.Field(ShopifyClaimType, claim=graphene.String(required=True))
+    shopify_products = graphene.Field(
+        graphene.NonNull(ShopifyProductsType),
+        tenant_id=graphene.ID(required=True),
+        shop_domain=graphene.String(required=True),
+        first=graphene.Int(required=True),
+        after=graphene.String(),
+        before=graphene.String(),
+    )
 
     @staticmethod
     @permission_classes(AnyoneFullAccess)
@@ -56,6 +99,24 @@ class Query(graphene.ObjectType):
         except Exception:
             pk = tenant_id
         return ShopifyShop.objects.filter(tenant_id=pk)
+
+    @staticmethod
+    @permission_classes(IsTenantMemberAccess, requires("shopify.view"))
+    def resolve_shopify_products(root, info, tenant_id, shop_domain, first, after=None, before=None):
+        # The tenant comes from the request context, which the tenant middleware has already checked
+        # the user belongs to. A store of another organization is then simply not found, with the same
+        # answer as a missing one. No tenant must never match the unlinked stores (tenant NULL).
+        tenant = getattr(info.context, "tenant", None)
+        shop = ShopifyShop.objects.filter(tenant=tenant, shop_domain=shop_domain).first() if tenant else None
+        if shop is None:
+            raise _user_error("Store not found.", "store_not_found")
+
+        try:
+            return fetch_products(shop, first=first, after=after, before=before)
+        except ShopifyReconnectRequired as error:
+            raise _user_error(str(error), "reconnect_required") from error
+        except ShopifyTryAgainLater as error:
+            raise _user_error(str(error), "try_again_later") from error
 
     @staticmethod
     @permission_classes(IsAuthenticatedFullAccess)
