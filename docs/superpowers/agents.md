@@ -81,7 +81,90 @@ This document refers to three distinct parties. They are never interchangeable.
 
 ### 1.1 The human maintainer runs every command
 
-The human maintainer runs every terminal command (shell, git, docker, pnpm, nx, uv, pytest, and so on) unless they explicitly say otherwise for a specific command. The AI agent does not run commands itself. It hands over the exact command to run, with a short explanation of what that command does, so the human maintainer understands it before running it.
+The human maintainer runs every terminal command (shell, git, docker, pnpm, nx, uv, pytest, and so on) unless they explicitly say otherwise for a specific command. The AI agent does not run commands itself. It hands over the exact command to run, with a short explanation of what that command does, so the human maintainer understands it before running it. The explanation covers the syntax too, not only the overall effect: every flag and option (`--skip-nx-cache`, `-T`, `-e`), and every shell operator (`&&`, `;`, `|`, `$( )`, `2>&1`) the command uses. It is given every time, even for a command explained earlier in the session. The human maintainer's words: "always explain what a command does including syntax and flags".
+
+- **Every command, or block of commands, starts with a Purpose line** (set by the human maintainer on 2026-10-14): "**Purpose:** …", saying what running it achieves and why it's needed now, in terms of the task (for example "the running backend still has the old code, so this rebuilds it"), before any flag is explained. It also says where to run it when that matters, such as "in a second terminal, leave `pnpm saas up` running in the first".
+- **How a command is handed over.** The explanation comes first, then the command alone between a `COPY FROM HERE ▼` line and a `COPY TO HERE ▲` line, then what to expect. The human maintainer's terminal doesn't render code fences, so the markers are what separates the command from the comments. Inside a command, avoid two `*` or two `__` (the terminal reads them as markdown emphasis and drops them).
+- **Several commands come as numbered blocks, one block per thing being checked** (set by the human maintainer on 2026-10-14). Each block tests one thing, such as the linter and type-check, the backend tests or the frontend tests, and sits between separator lines with a title saying what it checks (for example "BLOCK 2: products page tests"). A test block holds both forms of its command: the verbose form first, then the summary form, each labelled, with a note that either one runs the same tests. Each command in a block keeps its own explanation, COPY markers and expected result. Copy this layout exactly, rather than reinventing it, including the full explanation of every part of each command:
+
+  ```text
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BLOCK 1: linter and type-check for webapp-shopify  (not tests, one form only)
+
+  Purpose: the tests passed, but Jest doesn't check types or code style; these two checks catch a type
+  mistake or a lint problem in the new code before it's committed, as CI would.
+
+  - pnpm nx run webapp-shopify:lint: runs the lint target (ESLint, the code style and likely-mistake
+    checker) of the webapp-shopify project, through Nx.
+  - pnpm nx run webapp-shopify:type-check: runs the TypeScript compiler over the project to check
+    types, without building anything. Jest doesn't check types, so only this catches a type mistake.
+  - --skip-nx-cache: really runs the check, instead of Nx replaying a stored result from an earlier run.
+  - > logs/webapp-shopify-lint.log: sends the normal output into that log file instead of the screen.
+  - 2>&1: sends the error output to the same place as the normal output, so errors land in the log too.
+  - ; : runs the next command whatever the result of the one before.
+  - echo "webapp-shopify lint exit code: $?": prints a line with the exit code of the command just
+    before. $? is that exit code: 0 means it passed, anything else means it failed.
+
+  COPY FROM HERE ▼
+
+  pnpm nx run webapp-shopify:lint --skip-nx-cache > logs/webapp-shopify-lint.log 2>&1; echo "webapp-shopify lint exit code: $?"
+  pnpm nx run webapp-shopify:type-check --skip-nx-cache > logs/webapp-shopify-type-check.log 2>&1; echo "webapp-shopify type-check exit code: $?"
+
+  COPY TO HERE ▲
+
+  Expect: both exit code 0.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BLOCK 2: products page tests  (either form runs the same tests)
+
+  Purpose: confirm the GREEN: every products page test passes, including the ones written for this step.
+
+  Verbose form, every test listed:
+  - mkdir -p logs: makes the logs folder; -p means no error if it already exists.
+  - pnpm nx run webapp-shopify:test: runs the project's Jest tests through Nx.
+  - --skip-nx-cache: really runs the tests, instead of Nx replaying a stored result.
+  - -- : everything after it is passed to Jest; Nx drops Jest flags placed before it.
+  - --watchAll=false: Jest runs once and exits, instead of waiting for file changes.
+  - --maxWorkers=2: at most 2 Jest processes at once, to keep memory use down.
+  - --testPathPattern=shopifyProducts: only test files whose path contains "shopifyProducts".
+  - --verbose: Jest lists every test by name, with ✓ (passed) or ✕ (failed), under its file.
+  - 2>&1: error output joins the normal output, so both are shown and saved.
+  - | tee logs/shopify-products.log: the pipe | hands the output to tee, which prints it on the
+    screen and writes the same text to the log file.
+  - echo "exit code: ${PIPESTATUS[0]}": prints the exit code of the first command in the pipe (Jest);
+    a plain $? would give tee's exit code, which is always 0.
+
+  COPY FROM HERE ▼
+
+  mkdir -p logs; pnpm nx run webapp-shopify:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=shopifyProducts --verbose 2>&1 | tee logs/shopify-products.log; echo "exit code: ${PIPESTATUS[0]}"
+
+  COPY TO HERE ▲
+
+  Expect: every test ✓, exit code 0.
+
+  Summary form, counts only:
+  - p=webapp-shopify: stores the project name in a variable called p; later, $p is replaced by it.
+  - pnpm nx run $p:test … --testPathPattern=shopifyProducts: the same test run as the verbose form,
+    without --verbose, so Jest prints only per-file results and totals.
+  - > logs/shopify-products.log 2>&1: all output, errors included, goes to the log only.
+  - sed 's/\x1b[[0-9;]*m//g' logs/shopify-products.log: reads the log and removes the colour codes
+    Jest writes into it; s/…//g means "replace every match with nothing".
+  - | grep -E "(Test Suites|Tests):": keeps only the lines with Jest's totals; -E allows the (a|b)
+    "either" pattern. This | runs in the human maintainer's own shell, not through Nx, so it's safe.
+  - | sed "s/^/$p: /": puts "webapp-shopify: " at the start of each line; ^ means line start.
+
+  COPY FROM HERE ▼
+
+  mkdir -p logs; p=webapp-shopify; pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=shopifyProducts > logs/shopify-products.log 2>&1; sed 's/\x1b[[0-9;]*m//g' logs/shopify-products.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"
+
+  COPY TO HERE ▲
+
+  Expect: webapp-shopify: Tests: N passed, N total.
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ```
+
+- **Readable beats short.** Write each command out on its own line rather than folding a few into a shell loop: two plain `pnpm nx run …:lint` and `pnpm nx run …:type-check` lines, not `for t in lint type-check; do … done`. The human maintainer copies and pastes the commands either way, so readability is what matters (set by the human maintainer on 2026-10-14). A loop is kept only where writing every command out would be long and repetitive, such as the 15 frontend projects or the 12 backend modules in the README's Testing section.
+- **Command output goes to the repository's gitignored `logs/` folder** (`mkdir -p logs; … > logs/<name>.log 2>&1`), never to the repository root, the home folder or `/tmp`, so the human maintainer always knows where every log is.
 
 - This holds whatever permission or autonomy setting the AI agent's tool is running under. An auto-approving mode, or earlier commands in the same session that ran without objection, is never authorization to keep running commands. Such settings change how much the AI agent can decide without asking; they do not change who runs commands.
 - Read-only commands (`ls`, `grep`, `cat`, `find`) are not exempt. To inspect the codebase, the AI agent uses its tool's built-in file-reading and search features, not shell commands.
@@ -108,9 +191,9 @@ When giving manual verification steps, use the real top-level command a user or 
 
   These are the same targets CI runs (`.github/workflows/backend.yml`, `.github/workflows/webapp.yml`). They catch a GREEN whose tests pass but that breaks a type, a lint rule, formatting or a missing migration.
 
-- **Test commands come in two forms, summary and verbose, and both keep a log** (set by the human maintainer on 2026-10-12: the counts per module show the volume of tests at a glance, and the verbose form shows each test's name, file and result). The commands are in the README's Testing section; hand over the one that fits, or both, in those formats:
+- **Test commands come in two forms, summary and verbose, and both keep a log** (set by the human maintainer on 2026-10-12: the counts per module show the volume of tests at a glance, and the verbose form shows each test's name, file and result). The commands are in the README's Testing section; hand over both, in those formats, the verbose form first and the summary form second:
   - **Summary:** the run writes only to `logs/`, then the terminal shows the counts. Backend, one line per module: `apps/shopify: 88 tests | 88 passed, 45 warnings in 33.37s` (the total from pytest's `collected N items` line, the rest from its last line). Frontend, two lines per project: `webapp-shopify: Test Suites: 2 passed, 2 total` and `webapp-shopify: Tests: 13 passed, 13 total`.
-  - **Verbose:** the run prints one line per test with its file and pass or fail result. Backend pytest already does (`-v` is in `addopts` in [`setup.cfg`](../../packages/backend/setup.cfg)); for a bare `pytest`, add `-v`. Frontend Jest needs `--verbose`, which lists each test under its file's `PASS` or `FAIL` line. Through Nx it must go after a bare `--` (`pnpm nx run <project>:test --watchAll=false -- --verbose`): Nx has a `--verbose` flag of its own and keeps it, so without the `--` Jest never sees it (the log's `> jest ...` line shows which flags reached Jest);
+  - **Verbose:** the run prints one line per test with its file and pass or fail result. Backend pytest already does (`-v` is in `addopts` in [`setup.cfg`](../../packages/backend/setup.cfg)); for a bare `pytest`, add `-v`. Frontend Jest needs `--verbose`, which lists each test under its file's `PASS` or `FAIL` line. Through Nx, every Jest flag goes after a bare `--` and only `--skip-nx-cache` before it (`pnpm nx run <project>:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --verbose`): Nx has a `--verbose` flag of its own, so Jest's must follow `--`, and once `--` is there Nx passes on only what follows it, silently dropping Jest flags placed before it (found 2026-10-14; the log's `> nx run ...` line shows what was passed on). A Jest filter passed through Nx can't contain `|`, even in quotes: Nx re-runs the command in a new shell without the quotes, so `|` becomes a pipe. Run one command per pattern instead;
     It streams to the terminal and to the gitignored `logs/` folder at once, with `2>&1 | tee logs/<name>.log`, then prints the test command's own exit code with `echo "<name> exit code: ${PIPESTATUS[0]}"` (a plain `$?` would give `tee`'s exit code, always 0).
 
   Lint, type-check and other non-test commands keep writing only to their log, with `> logs/<name>.log 2>&1`. The workers' `pnpm nx run workers:test` is the one exception: its upstream script runs `pytest` without `-v` and has only 2 tests, so it shows the summary line only.
@@ -127,7 +210,24 @@ When giving manual verification steps, use the real top-level command a user or 
 - **Seed data comes before the human check, not after it.** Most human checks run against data that seed commands have already created: named accounts, tenants, roles and every interesting state (pending, expired, accepted, and so on). The repository has no general seed script yet. Seed data is added as an idempotent Django management command in the app it belongs to, run with `docker compose run --rm backend python manage.py <command>`, following the existing `init_customers_plans` and `init_subscriptions` commands. The human maintainer creates only a little data by hand, to exercise the create/update/delete paths themselves. So whenever a slice becomes reachable by a human (its routes exist), the seed data for it is added in that same step, before the human check is handed over. It is never deferred to the end of the plan. An AI-assisted human check that makes the human build all the test data from scratch has missed the point.
 - **Human checks are written down in the feature's plan, as copy-pasteable commands or click paths.** Each check is a numbered item in a "Human checks" section of that feature's plan in `docs/superpowers/plans/`. It gives which seeded account it acts as, the expected result, and one of:
   - for a UI flow, the exact click path in the web app (http://localhost:3000)
-  - for an HTTP endpoint (a webhook such as the PayFast ITN, the REST API, or the GraphQL API at `/api/graphql/`), the exact, human-readable `curl` command, with a login step and one cookie file per user where needed The checks live in the plan, not only in chat, so they survive between sessions and can be re-run at any time. Aim for 5 to 20 checks per step. Seeded rows the checks act on get fixed ids, so the commands can be pasted as written.
+  - for an HTTP endpoint (a webhook such as the PayFast ITN, the REST API, or the GraphQL API at `/api/graphql/`), the exact, human-readable `curl` command, with a login step and one cookie file per user where needed
+
+  The checks live in the plan, not only in chat, so they survive between sessions and can be re-run at any time. Aim for 5 to 20 checks per step. Seeded rows the checks act on get fixed ids, so the commands can be pasted as written.
+
+- **Human checks are exact and unambiguous: no placeholders, ever.** The human maintainer's words: "No placeholder values please, it makes life hard for no reason. No ambiguity."
+  - Every login is written out as its own command or click path, with the real seeded email and password, right before that user's first step. Never "log in as X first" without the command.
+  - No `<id>`, `<your store>` or similar to fill in. A value only known at run time (such as a new row's id) is captured into a shell variable by the command that creates it, then reused as `$VARIABLE`. A value that is genuinely the human maintainer's own (their dev store's domain, their ngrok address) is named once at the top of the checks, with where to find it.
+  - No "re-run check N" or "run it again": repeat the command or click path in full where it's needed, so the checks read top to bottom in the order they're run.
+- **Every human check explains what it's testing and why.** A short title like "A Member can't connect a store" isn't enough. Each check gets a **Why** line: the rule being tested (for example "connecting needs `shopify.manage`"), why the rule exists, and why this result rather than a similar one (for example "Store not found" rather than a permission error, so nobody can learn another organization's stores). A feature with roles or permissions also gets a short "who can do what" reference before its checks. The human maintainer's words: "The more I know what I am testing against, the easier."
+- **Prove every assumption with a command before relying on it.** If a check depends on a starting state ("this user is a Member", "this store is uninstalled"), it first shows that state (a read-only `curl`, a Django admin page, or a `manage.py shell` one-liner), before the step under test. The same goes for the result: a check that changes something ends by showing the change, rather than trusting a status code or a toast.
+  - Each check proves its own starting state, right before its step under test, even if an earlier check already showed it. Never write "check N proved…".
+  - Each check logs in every user it acts as, at its own start. Never rely on "logged in at check N": a session can expire while a human reads the checks.
+  - When behaviour hinges on a distinction (for example "not found" versus "no permission"), give it its own self-contained check showing the cases side by side, with only the variable that matters changed.
+  - Name every id. Wherever a command uses an id, an **Acts on:** line says what it is (the organization's name, whose membership, which store). A bare id tells a human nothing.
+- **Everything a check prints is human-readable.** JSON always goes through `python3 -m json.tool`, including on a command that also shows its status code: `curl -s -w '%{stderr}%{http_code}\n' … | python3 -m json.tool` prints the code on its own line, then the JSON one field per line. Only a response with no body uses `curl -s -o /dev/null -w '%{http_code}\n'`. Never throw away a body the check's **Expect** line asks the reader to look at.
+- **State is set and shown with terminal commands; the browser is only for what needs eyes on a page** (set by the human maintainer on 2026-10-15). Creating test data, reading an id, switching context or building an address is a command (a `curl` to the API, a `manage.py` command), with any value it finds kept in a shell variable and printed, never "note the id in the address bar" or "click through to create it". For example, `echo "http://localhost:3000/en/$ORG_A_ID/"` prints the page a check should open. The browser part of a check is limited to looking at what the page shows.
+- **Every `curl` in a human check is readable at a glance** (set by the human maintainer on 2026-10-15). One request per code block; each block is introduced by a short sentence saying who acts and what the request is ("Log in as …", "**Prove** …", "Then, as …, ask for …"), and followed by its **Expect** line. Inside the block, the URL stays on the first line and each further option (`-H`, `-d`, `-b`, `-c`) goes on its own line, joined with a trailing ` \`. A JSON body that needs shell values is built with `jq -n --arg name "$VALUE" '{ … }'`, never with escaped quotes (`\"`) or a `python3 -c` one-liner, and a GraphQL request sends values as GraphQL variables. When two requests differ in one value, write both out in full and say which value changed. The model to copy is the human checks of `docs/plans/10-profile-editing.md` in the sister repository `fastapi-clean-example`. Long human checks are run from the plan file, not pasted into chat: a chat that renders markdown drops a line-ending backslash.
+- **Show whole objects, never a few picked fields.** A command that prints only selected fields hides the rest, and a wrong value in a hidden field goes unnoticed. To narrow a list, filter the rows but print each one whole, as pretty JSON. A count is fine as an extra line next to the whole objects, never instead of them. The human maintainer's words: "Its always better to see the entire object."
 
 ### 1.4 Git follows the documented protocol exactly
 
@@ -139,7 +239,8 @@ When committing, pushing or opening a PR, follow the repository's documented pro
   (2) the `CHANGELOG.md` entry and
   `npx standard-version --release-as X.Y.Z --skip.changelog --skip.tag --skip.commit`, (3) `git add .`
   and `git commit -m "type(scope): description (vX.Y.Z)"`, (4) `gh pr create --title … --body …`,
-  (5) `gh pr merge --squash --delete-branch`, (6) `git checkout master`, `git pull`, `git tag X.Y.Z`,
+  (5) `gh pr checks <PR number> --watch` until every check has passed (added 2026-10-12), then
+  `gh pr merge --squash --delete-branch`, (6) `git checkout master`, `git pull`, `git tag X.Y.Z`,
   `git push origin X.Y.Z`. Hand these over filled in, without extra or reordered steps; anything worth
   flagging goes in a separate short note. The README is the source for the commands; keep this summary
   in step with it.
@@ -165,6 +266,15 @@ The AI agent drafts the commit message (and PR description) alongside the code, 
 - The hook doesn't check Python. Python formatting (`black`) and linting (`ruff`) only run inside `pnpm nx run backend:test`, so run that target before committing any backend change. Don't rely on CI to catch it.
 
 Never bypass the repository's safeguards to get a commit or push through: no `--no-verify` to skip pre-commit hooks, no setting `CI=1` locally to make the hook exit early, no `--force` pushes, no skipping or silencing a failing check. When a hook or check fails, the failure is information; fix what it found. See 4.4.
+
+### 1.5 Every file change is asked for first, and shown as a diff
+
+Whenever the AI agent wants to create, edit or update a file, it asks the human maintainer's permission first, unless the human maintainer has said it may work autonomously. The human maintainer's words: "When ever you want to edit/update/create a file, always ask me for permission unless I give you permission to work autonomously."
+
+- **Every change is made so the human maintainer sees the diff:** with the AI agent's tool's own file-editing feature, which shows the exact lines removed and added. Never by running code that rewrites files (a `python3` script, `sed -i`, a heredoc redirected into a file, and so on), which hides the change (set by the human maintainer on 2026-10-14). The human maintainer's words: "If you need to edit files, dont edit files using code, rather edit the files by showing the diff and asking for approval".
+- **Before asking, the AI agent says what it will change and why** (see 5.2), so the permission is an informed one.
+- **Permission is asked per TDD step, not per edit:** once for a RED (the tests it adds and what each one proves) and once for a GREEN (the code change that makes them pass). With a yes, the AI agent makes all of that step's edits straight away, each shown as a diff, without asking again file by file. The same goes for a non-code step, such as a docs or plan update. The human maintainer's words: "Just ask permission for a red or a green edit/creation, and explain what change you propose for a red or green. Then jump straight to the red or green change where I see the diff."
+- A request from the human maintainer that names the change ("update agents.md with…", "fix that test") is that permission, for that change only.
 
 ---
 
@@ -386,10 +496,13 @@ The same basics apply to every document under `docs/superpowers/` (plans, specs,
 
 - **Every file or folder the document references is a clickable link** to it, written relative to the document (for example `[`apps/payfast/services.py`](../../../packages/backend/apps/payfast/services.py)`), so the reader never has to find a file by hand. Check that every link resolves before handing the document over.
 - **Code goes in fenced code blocks** with a language tag: commands to run, settings lines, and excerpts quoted from the codebase, copied exactly from the source. Names of functions, classes, settings and fields mentioned in a sentence stay as inline code.
+- **Never split an inline code span across two lines.** Put a long span on its own line instead. The pre-commit hook runs `prettier --write` on staged markdown, and a split span can make it merge a list into a paragraph or turn `__tests__` into bold text. Run `npx prettier --check <file>` after editing any markdown file.
 
 ### 6.5 Never leak the private downstream fork
 
 This repository is public and open source for now, and is expected to become private at some point. Until then everything in it, including its git history, is treated as public, and anything pushed while it was public stays public. A private downstream fork exists for a real business. That business's name, its industry and any domain-specific terms from it must never appear anywhere in this repository: code, comments, docs, plans, commit messages or PR descriptions. This applies even when the human maintainer has explained that domain in conversation for context. The repository also must never contain secrets: real merchant IDs, keys, passphrases or webhook secrets go in untracked `.env` files or deployment secrets. Only placeholders, or the public sandbox credentials a provider documents, go in `.env.shared` and plans. Illustrative examples stay generic (a CRUD demo item, a donation, a generic SaaS plan).
+
+The same goes for the human maintainer's own details (set by the human maintainer on 2026-10-15): their email, account names, organization names, dev store domain, tunnel address, app ids and ids from their local database never go into a tracked file, a plan, a commit or a PR. Human checks get such values at run time instead (for example with `read` into shell variables, see 1.3), and examples use made-up values.
 
 ---
 

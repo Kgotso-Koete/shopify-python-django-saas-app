@@ -18,6 +18,10 @@ class ShopifyAPIError(Exception):
     """Raised when a GraphQL request returns HTTP errors or GraphQL-level errors."""
 
 
+class ShopifyThrottledError(ShopifyAPIError):
+    """Raised when Shopify rate-limits a GraphQL request (an error with extensions.code THROTTLED)."""
+
+
 @dataclass
 class TokenResponse:
     access_token: str
@@ -123,7 +127,10 @@ class ShopifyAdminClient:
 
         data = response.json()
         if "errors" in data:
-            raise ShopifyAPIError(f"GraphQL errors: {json.dumps(data['errors'])}")
+            message = f"GraphQL errors: {json.dumps(data['errors'])}"
+            if any((error.get("extensions") or {}).get("code") == "THROTTLED" for error in data["errors"]):
+                raise ShopifyThrottledError(message)
+            raise ShopifyAPIError(message)
 
         return data["data"]
 
@@ -147,8 +154,13 @@ def admin_client_for(shop) -> ShopifyAdminClient:
     # Check if expiring soon
     margin = timedelta(seconds=REFRESH_MARGIN_SECONDS)
     if timezone.now() + margin > shop.access_token_expires_at:
-        # Needs refresh
-        token_response = client.refresh(shop.refresh_token)
+        # Needs refresh. A rejected refresh token only recovers by reinstalling, so flag the store.
+        try:
+            token_response = client.refresh(shop.refresh_token)
+        except ShopifyRefreshTokenRejected:
+            shop.needs_reinstall = True
+            shop.save(update_fields=["needs_reinstall"])
+            raise
 
         # Update shop
         shop.access_token = token_response.access_token

@@ -18,7 +18,7 @@ import {
   TransactionsHistoryContent,
 } from '@sb/webapp-finances/routes';
 import { SaasIdeas } from '@sb/webapp-generative-ai/routes';
-import { ShopifyShops, ShopifyLink } from '@sb/webapp-shopify/routes';
+import { ShopifyShops, ShopifyLink, ShopifyProducts } from '@sb/webapp-shopify/routes';
 import { PermissionAuthRoute } from '@sb/webapp-tenants/components/routes/permissionAuthRoute';
 import { TenantBackupSettings } from '@sb/webapp-backup';
 import {
@@ -132,6 +132,8 @@ export const App = () => {
             {/* Shopify - protected by shopify.view */}
             <Route element={<PermissionAuthRoute permissions="shopify.view" />}>
               <Route path={RoutesConfig.shopify.index} element={<ShopifyShops />} />
+              {/* A specific path outranks shopify/* in React Router, whatever the order. */}
+              <Route path={RoutesConfig.shopify.products} element={<ShopifyProducts />} />
             </Route>
             <Route path={RoutesConfig.tenant.accessDenied} element={<AccessDenied />} />
             <Route path="*" element={<NotFound />} />

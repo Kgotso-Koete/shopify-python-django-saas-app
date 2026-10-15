@@ -33,6 +33,9 @@ yarn-error.log
 testem.log
 # Local test and CI logs (saved by the commands in docs/superpowers plans); never committed
 /logs/
+# The Shopify CLI's app config holds personal values (tunnel address, app client id); the committed
+# template is shopify.app.toml.example next to it
+/packages/backend/apps/shopify/shopify.app.toml
 /typings
 .local.env
 __pycache__/

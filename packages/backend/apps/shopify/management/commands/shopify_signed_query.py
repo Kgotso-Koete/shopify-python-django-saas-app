@@ -1,8 +1,24 @@
+import hashlib
+import hmac
 import urllib.parse
 from django.core.management.base import BaseCommand
 from django.conf import settings
 
-from apps.shopify.verification import _sign_query
+
+def _sign_query(params: dict, secret: str) -> str:
+    """
+    Sign a query the way Shopify does, so verification.verify_query_hmac accepts it: the parameters sorted
+    by key, with Shopify's escaping, joined with &, then HMAC-SHA256 in hex. A copy of the tests' helper
+    (apps/shopify/tests/test_views.py); verification.py only verifies, it has no signing function.
+    """
+    sorted_parts = []
+    for k in sorted(params.keys()):
+        v = params[k]
+        encoded_k = str(k).replace("%", "%25").replace("&", "%26").replace("=", "%3D")
+        encoded_v = str(v).replace("%", "%25").replace("&", "%26")
+        sorted_parts.append(f"{encoded_k}={encoded_v}")
+    query_string = "&".join(sorted_parts)
+    return hmac.new(secret.encode("utf-8"), query_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 class Command(BaseCommand):

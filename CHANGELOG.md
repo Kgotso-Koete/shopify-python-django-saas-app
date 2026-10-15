@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.2.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.1.2...6.2.0) (2026-10-14)
+
+### Features
+
+- Shopify products page: a read-only list of a connected store's products, fetched live from Shopify's Admin API (12, 24 or 48 per page, 12 by default, with Previous and Next; the page, page size and store are kept in the address, so a refresh keeps the place). A store picker appears when the organization has more than one store, and the page explains an empty store, no connected stores, a store that must be reconnected, and Shopify being busy. A "Shopify products" item joins the sidebar
+- Backend: the `shopifyProducts` GraphQL query, for members with `shopify.view`. A store linked to another organization gets the same "Store not found" as a missing one, and store problems reach the browser with a code (`store_not_found`, `reconnect_required`, `try_again_later`) that survives the production error sanitizer
+
+### Bug Fixes
+
+- Shopify: a refresh token Shopify rejects now flags the store as needing a reinstall, instead of failing the same way on every call. A throttled Admin API call is now recognised as such (`ShopifyThrottledError`)
+- README test commands: the backend summary missed pytest's results line when it started with warnings, and the verbose frontend commands silently dropped Jest's `--watchAll`, `--maxWorkers` and `--testPathPattern` flags
+- Shopify development commands: `shopify_seed_demo` never ran (a wrong relation name) and could seed into the wrong organization; it now takes `--organization` and also seeds a Member for the permission check. `shopify_signed_query` imported a signing function that didn't exist; it now signs queries itself
+- Shopify: `packages/backend/apps/shopify/shopify.app.toml`, the Shopify CLI's config with a personal tunnel address and app id, was committed in 6.1.0; it's no longer tracked and is now in `.gitignore` (the template is `shopify.app.toml.example`)
+
+### Documentation
+
+- Shopify walkthrough (`docs/superpowers/specs/2026-10-12-shopify-walkthrough.md`): how the install, linking, token refresh and webhooks work, with diagrams
+- README Commit Protocol: watch the pull request's checks with `gh pr checks <PR number> --watch` before merging, and push the tag by name
+- `agents.md`: every file change is asked for first and shown as a diff (section 1.5); stricter human checks; command explanations cover every flag; numbered command blocks
+- Shopify plan: step 11 (products page) with every RED and GREEN and its command, and all 25 human checks rewritten to the new rules: values read at run time, readable `curl` built with `jq`, Why, Prove and Acts on lines
+- Production readiness roadmap (`docs/superpowers/plans/0-production-readiness-roadmap.md`): known gaps by priority, including formatting product prices as money and stopping test runs from reaching Sentry
+
 ## [6.1.2](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.1.1...6.1.2) (2026-10-11)
 
 ### Bug Fixes

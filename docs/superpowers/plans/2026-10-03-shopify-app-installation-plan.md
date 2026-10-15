@@ -1055,6 +1055,278 @@ Branch: `feat/shopify-app-installation` off `master`. Every step is strict TDD (
     - Then: `products.py` (the Admin API query and mapping), the `shopifyProducts` field in `schema.py`,
       schema regeneration, the `shopifyProducts` GraphQL document, the page component, its route and the
       sidebar entry. Run the checks 17 to 21 after.
+    - Branch `feature/shopify-products-page`, release 6.2.0 (decided 2026-10-12). The Shopify facts were
+      checked first (section 5.2), which corrected backward paging and added `ShopifyThrottledError`.
+    - **Cycle 1, `ShopifyThrottledError`** (2026-10-12). Two tests in
+      [`test_client.py`](../../../packages/backend/apps/shopify/tests/test_client.py): a `THROTTLED`
+      error raises `ShopifyThrottledError`, a subclass of `ShopifyAPIError`; any other GraphQL error
+      stays a plain `ShopifyAPIError`. They read the class from the module, so a missing class fails
+      only these two tests instead of stopping the file from loading.
+      - RED:
+        `mkdir -p logs; f=logs/shopify-throttled-red.log; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_client.py 2>&1 | tee $f; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 1; 15 tests, 2 failed, 13 passed. Both failures:
+        `AttributeError: module 'apps.shopify.client' has no attribute 'ShopifyThrottledError'`.
+      - Code: [`client.py`](../../../packages/backend/apps/shopify/client.py) gets
+        `class ShopifyThrottledError(ShopifyAPIError)`; `graphql()` raises it when any error's
+        `extensions.code` is `THROTTLED`, and `ShopifyAPIError` otherwise, with the same message.
+      - GREEN, the whole Shopify module:
+        `mkdir -p logs; f=logs/shopify-throttled-green.log; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify 2>&1 | tee $f; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 0; 90 tests, 90 passed.
+    - **Cycle 2, reading products** (2026-10-12). New
+      [`test_products.py`](../../../packages/backend/apps/shopify/tests/test_products.py), 9 tests (section
+      5.2 cases 1 to 4): mapping to plain data with prices kept as strings, current fields only
+      (`featuredMedia`, `priceRangeV2`), no image (no media, or preview not processed yet), first page,
+      next page (`first` + `after`), previous page (`last` + `before`), `pageInfo` unchanged, page size
+      capped at 50. `admin_client_for` is replaced by a fake client.
+      - RED:
+        `mkdir -p logs; f=logs/shopify-products-red.log; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_products.py 2>&1 | tee $f; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 1; 9 tests, 9 errors, each at setup of the `fake_client` fixture:
+        `AttributeError: module 'apps.shopify' has no attribute 'products'`.
+      - The README's summary command printed "no test results" for this run: pytest's last line was
+        `4 warnings, 9 errors`, and the pattern only accepted lines starting with passed, failed,
+        errors or skipped. The README pattern now also accepts warnings, deselected, xfailed and
+        xpassed.
+      - Code: new [`products.py`](../../../packages/backend/apps/shopify/products.py),
+        `fetch_products(shop, first, after=None, before=None)` with the Admin API query and the
+        mapping.
+      - GREEN, the whole Shopify module:
+        `mkdir -p logs; f=logs/shopify-products-green.log; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify 2>&1 | tee $f; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 0; 99 tests, 99 passed (the summary form, with the fixed pattern, printed
+        `apps/shopify: 99 tests | 99 passed, 45 warnings in 37.62s`).
+    - **Cycle 3, a store that can't be used** (2026-10-12; section 5.2 cases 7 to 10). Decided: the
+      `needs_reinstall` flag is set in `admin_client_for`, so every Shopify caller gets it.
+      - Tests: in `test_client.py`, a rejected refresh token flags the store (and still raises), and a
+        temporary refresh failure (a 500) doesn't (a guard, passing from the start). In
+        `test_products.py`, an uninstalled or flagged store raises `ShopifyReconnectRequired` without
+        calling Shopify; a rejected refresh token raises `ShopifyReconnectRequired`; a throttle raises
+        `ShopifyTryAgainLater`; both messages are fixed texts with no token or Shopify reply in them.
+      - RED:
+        `mkdir -p logs; f=logs/shopify-reconnect-red.log; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_client.py apps/shopify/tests/test_products.py 2>&1 | tee $f; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 1; 31 tests, 6 failed, 25 passed. The flag test: `assert False is True`; the five
+        products tests:
+        `AttributeError: module 'apps.shopify.products' has no attribute 'ShopifyReconnectRequired'`
+        (or `'ShopifyTryAgainLater'`). The guard passed.
+      - Code: `admin_client_for` catches `ShopifyRefreshTokenRejected`, saves `needs_reinstall=True`
+        and re-raises. `products.py` gets the two error classes with fixed messages, refuses an
+        uninstalled or flagged store before any call (a reinstall clears both fields in
+        [`services.py`](../../../packages/backend/apps/shopify/services.py)), and turns a rejected
+        refresh token and a throttle into them.
+      - GREEN, the whole Shopify module:
+        `mkdir -p logs; f=logs/shopify-reconnect-green.log; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify 2>&1 | tee $f; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 0; 106 tests, 106 passed.
+    - **Cycle 4, the `shopifyProducts` GraphQL query** (2026-10-12; section 5.2 cases 5, 6 and 10). New
+      [`test_schema_products.py`](../../../packages/backend/apps/shopify/tests/test_schema_products.py),
+      with `fetch_products` replaced by a fake: a member gets a page in the browser's shape; page size
+      and cursors reach `fetch_products` with the right store; no `shopify.view` is refused; a store of
+      another organization gets the same "Store not found." as a missing one; the reconnect and
+      try-again problems reach the browser with a code; they survive the production error sanitizer;
+      no token in the response.
+      - RED (7 tests at the time):
+        `mkdir -p logs; f=logs/shopify-schema-products-red.log; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_schema_products.py 2>&1 | tee $f; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 1; 7 errors, each at setup of `fake_fetch`:
+        `AttributeError: <module 'apps.shopify.schema' …> does not have the attribute 'fetch_products'`.
+      - Found before GREEN: with `DEBUG` off, `SanitizeErrorsMiddleware`
+        ([`common/graphql/security.py`](../../../packages/backend/common/graphql/security.py)) replaces
+        any GraphQL error message with "An error occurred while processing your request.", unless the
+        error type is on its safe list or the message starts with a safe prefix ("Invalid", "Not
+        found", …). The tests run with `DEBUG` on and without that middleware, so they can't see it.
+        Following the repo's convention, user-facing errors are
+        `GraphQlValidationError(message, code=…)`: the GraphQL message is the class name, and the
+        browser reads
+        `extensions[0].message` and `extensions[0].code` (`store_not_found`, `reconnect_required`,
+        `try_again_later`). The error tests were changed to read the code, and one test was added that
+        turns `DEBUG` off and adds the middleware (8 tests now). The RED cause is unchanged: every test
+        still stops at the `fake_fetch` fixture.
+      - Same finding, not this step: the link page's "Store is already connected." (decision C) is a
+        plain `GraphQLError` without a safe prefix, so in production the page shows the generic message
+        instead. Fix later with the same convention.
+      - Code: [`schema.py`](../../../packages/backend/apps/shopify/schema.py) gets
+        `ShopifyProductType`, `ShopifyProductsPageInfoType`, `ShopifyProductsType` and
+        `shopifyProducts(tenantId, shopDomain, first, after, before)`, guarded by `IsTenantMemberAccess`
+        and `shopify.view`. It finds the store by domain and the request context's tenant (never
+        matching unlinked stores) and turns the two store problems into coded errors.
+      - GREEN, the whole Shopify module:
+        `mkdir -p logs; f=logs/shopify-schema-products-green.log; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify 2>&1 | tee $f; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 0; 114 tests, 114 passed, including all 8 in `test_schema_products.py`.
+    - **Full backend check, attempt 1** (2026-10-12):
+      `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache 2>&1 | tee logs/backend-test.log; echo "backend exit code: ${PIPESTATUS[0]}"`
+      → exit code 1 before any test ran: `black` reported `would reformat /app/apps/shopify/products.py`
+      (one blank line missing before the comment after `ShopifyTryAgainLater`). Fixed, then checked
+      with the same version as the image, without writing:
+      `uvx black==23.1.0 --config=pyproject.toml --check apps/ common/ config/` (in `packages/backend`)
+      → "415 files would be left unchanged".
+    - **Full backend check, attempt 2: GREEN** (2026-10-12). Verbose:
+      `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache 2>&1 | tee logs/backend-test.log; echo "backend exit code: ${PIPESTATUS[0]}"`
+      → exit code 0; 1033 passed, 1505 warnings, 15 min 2 s. Summary, run again after it:
+      `mkdir -p logs; f=logs/backend-test.log; pnpm nx run backend:test --skip-nx-cache > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "backend: $n tests |${r:- no test results, see $f}"`
+      → `backend: 1033 tests | 1033 passed, 1505 warnings in 802.79s (0:13:22)`. That is 1007 before this
+      step plus 26 new (4 in `test_client.py`, 14 in `test_products.py`, 8 in
+      `test_schema_products.py`). `git status --short` afterwards listed only this step's files.
+      **Backend for step 11 done.**
+    - **Next (where work stopped, 2026-10-13), frontend:** start the stack (`pnpm saas up`, which also
+      rebuilds the backend image with this step's code), then refresh the schema the web app uses:
+      `mkdir -p logs; pnpm nx run webapp-api-client:graphql:download-schema > logs/schema-download.log 2>&1; echo "schema download exit code: $?"`
+      and check that only `api.graphql` (plus generated files) changed, adding `shopifyProducts` and its
+      three types. Then the RED component test for the products page (section 5.2, Frontend). Nothing
+      is committed yet on `feature/shopify-products-page`; the README step 5 and 6 notes and the
+      `agents.md` line are part of this branch, and the 6.2.0 CHANGELOG entry is still to write.
+    - **Schema refresh** (2026-10-14), after `docker compose up -d backend` and waiting for it to answer:
+      `mkdir -p logs; pnpm nx run webapp-api-client:graphql:download-schema > logs/schema-download.log 2>&1; echo "schema download exit code: $?"`
+      → exit code 0. `api.graphql` gained `shopifyProducts(tenantId, shopDomain, first, after, before)`
+      and its three types (22 lines); the generated `graphql.ts` gained their types and `gql.ts` kept
+      the "GraphQL query not found" patch. A first try failed with "Connection reset by peer": the
+      backend container had only just started.
+    - **Cycle 5, the products page** (2026-10-14). New
+      [`shopifyProducts.component.spec.tsx`](../../../packages/webapp-libs/webapp-shopify/src/routes/shopifyProducts/__tests__/shopifyProducts.component.spec.tsx),
+      12 tests: a card per product (image with alt text, title, price as sent, status); one price when
+      lowest and highest match; Previous disabled on the first page and Next on the last; Next asks
+      for `after` the end cursor and Previous for `before` the start cursor; the page in the URL is
+      the one opened; the empty, no-stores, reconnect and try-again states (the last two from the
+      backend's coded `GraphQlValidationError`); the store picker hidden with one store, and switching
+      stores.
+      - RED:
+        `mkdir -p logs; pnpm nx run webapp-shopify:test --watchAll=false --maxWorkers=2 --skip-nx-cache --testPathPattern=shopifyProducts -- --verbose 2>&1 | tee logs/shopify-products-page-red.log; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 1; the new suite failed to run:
+        `Cannot find module '../shopifyProducts.component'`. The other two suites ran and passed
+        (13 tests), which showed a fault in this command: with a bare `--`, Nx passes on only what
+        follows it (the log's first line was `> nx run webapp-shopify:test --verbose`), so
+        `--watchAll=false`, `--maxWorkers=2` and `--testPathPattern` were dropped. Every Jest flag now
+        goes after `--` (README Testing and `agents.md` section 1.3 corrected).
+      - Changed before GREEN, backend: the store-problem errors now send
+        `extensions = {"non_field_errors": [{"message": …, "code": …}]}`, the shape the PayFast errors
+        use (`apps/payfast/schema.py`, read by `payfastErrorMessage.ts`), instead of a bare list: the
+        GraphQL spec requires `extensions` to be an object. `_user_error` in `schema.py` and the
+        `problem` helper in `test_schema_products.py` changed to match. Re-run, verbose:
+        `mkdir -p logs; f=logs/shopify-error-shape-green.log; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify 2>&1 | tee $f; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 0; 114 tests, 114 passed.
+      - Code: `products` in [`routes.ts`](../../../packages/webapp-libs/webapp-shopify/src/config/routes.ts);
+        `shopifyProductsQuery` in
+        [`shopify.graphql.ts`](../../../packages/webapp-libs/webapp-shopify/src/graphql/shopify.graphql.ts);
+        the page,
+        [`shopifyProducts.component.tsx`](../../../packages/webapp-libs/webapp-shopify/src/routes/shopifyProducts/shopifyProducts.component.tsx)
+        (store and cursor in the URL, store picker, product cards, Previous and Next, the empty,
+        no-stores, reconnect, try-again and load-error states, the error code read as the PayFast
+        pages do); its `index.ts`, and the lazy `ShopifyProducts` export in `routes/index.ts` and
+        `src/index.ts`. Then the types regenerated so `gql.ts` knows the new document:
+        `mkdir -p logs; pnpm nx run webapp-api-client:graphql:generate-types > logs/generate-types.log 2>&1; echo "generate types exit code: $?"`
+        → exit code 0.
+      - GREEN, verbose:
+        `mkdir -p logs; pnpm nx run webapp-shopify:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=shopifyProducts --verbose 2>&1 | tee logs/shopify-products-page-green.log; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 0; 1 suite, 12 passed (the first line, `> nx run webapp-shopify:test --watchAll=false --maxWorkers=2 --testPathPattern=shopifyProducts --verbose`,
+        confirms Jest got every flag). One `console.error`: React's "unique key" warning for the
+        Shopify page link passed into a translated message; fixed with `key="shopify-page-link"`.
+      - GREEN after the fix, verbose:
+        `mkdir -p logs; pnpm nx run webapp-shopify:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=shopifyProducts --verbose 2>&1 | tee logs/shopify-products-page-green-2.log; echo "exit code: ${PIPESTATUS[0]}"; echo "React warnings: $(grep -c "console.error" logs/shopify-products-page-green-2.log)"`
+        → exit code 0; 12 passed; `React warnings: 0`. Summary form →
+        `webapp-shopify: Test Suites: 1 passed, 1 total` and `webapp-shopify: Tests: 12 passed, 12 total`.
+        Lint and type-check:
+        `for t in lint type-check; do pnpm nx run webapp-shopify:$t --skip-nx-cache > logs/webapp-shopify-$t.log 2>&1; echo "webapp-shopify $t exit code: $?"; done`
+        → both exit code 0. **Cycle 5 GREEN.**
+    - **Wiring the page into the web app** (2026-10-14): one `<Route>` in `app.component.tsx` and a
+      "Shopify products" sidebar item (both upstream files, appended lines; section 10). Decided by the
+      human maintainer: covered by the human checks, not by unit tests (`agents.md` section 2.1's
+      exception). Neither upstream file has tests for individual routes or permission-gated menu items,
+      and the page's own behaviour is covered by its 12 tests. Known cosmetic effect, left as is: the
+      sidebar marks an item active when the path contains the item's path (`pathname.includes`), so on
+      the products page "Shopify" is highlighted too.
+      - Checks after wiring:
+        `pnpm nx run webapp:lint --skip-nx-cache > logs/webapp-lint.log 2>&1; echo "webapp lint exit code: $?"`
+        and
+        `pnpm nx run webapp:type-check --skip-nx-cache > logs/webapp-type-check.log 2>&1; echo "webapp type-check exit code: $?"`
+        → both exit code 0. Tests (a first try with `--testPathPattern="sidebar|app.component"` failed
+        before running: Nx re-runs the command in a new shell without the quotes, so `|` became a pipe):
+        `mkdir -p logs; pnpm nx run webapp:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=sidebar --verbose 2>&1 | tee logs/webapp-sidebar-tests.log; echo "sidebar exit code: ${PIPESTATUS[0]}"`
+        → exit code 0; 2 suites, 14 passed. And
+        `pnpm nx run webapp:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=app.component --verbose 2>&1 | tee logs/webapp-app-tests.log; echo "app exit code: ${PIPESTATUS[0]}"`
+        → exit code 0; 2 suites, 6 passed. The `console.warn` lines (React Router's double slashes, MSW's
+        unhandled request) are upstream's, also present in the full run of 2026-10-12.
+    - **Cycle 6, a "products per page" picker** (asked for by the human maintainer, 2026-10-14). Five
+      tests added to `shopifyProducts.component.spec.tsx`: 12 by default with 12, 24 and 48 offered (all
+      under the backend's cap of 50); choosing 24 asks Shopify for 24; `?perPage=48` in the URL opens
+      with 48; a number not offered (`?perPage=500`) falls back to 12; changing the number goes back to
+      the first page and keeps the store.
+      - RED, verbose:
+        `mkdir -p logs; pnpm nx run webapp-shopify:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=shopifyProducts --verbose 2>&1 | tee logs/shopify-per-page-red.log; echo "exit code: ${PIPESTATUS[0]}"`
+        → exit code 1; 17 tests, 5 failed, 12 passed. Four:
+        `Unable to find an element by: [data-testid="shopify-products-per-page"]`; the URL one:
+        `Unable to find an element by: [data-testid="shopify-product-gid://shopify/Product/48"]`
+        (the page still asked for 12 and showed "Couldn't load the products").
+      - Code: `PAGE_SIZES = [12, 24, 48]` in the page; `perPage` read from the URL (anything else
+        means 12) and sent as `first`; a "Products per page" dropdown beside the store picker, which
+        drops the cursor and keeps the store; Next, Previous and the store picker keep `perPage` in the
+        URL.
+      - GREEN, verbose:
+        `mkdir -p logs; pnpm nx run webapp-shopify:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=shopifyProducts --verbose 2>&1 | tee logs/shopify-per-page-green.log; echo "exit code: ${PIPESTATUS[0]}"; echo "React warnings: $(grep -c "console.error" logs/shopify-per-page-green.log)"`
+        → exit code 0; 17 passed; `React warnings: 0`. Summary form →
+        `webapp-shopify: Test Suites: 1 passed, 1 total` and `webapp-shopify: Tests: 17 passed, 17 total`.
+        Lint and type-check:
+        `pnpm nx run webapp-shopify:lint --skip-nx-cache > logs/webapp-shopify-lint.log 2>&1; echo "webapp-shopify lint exit code: $?"`
+        and
+        `pnpm nx run webapp-shopify:type-check --skip-nx-cache > logs/webapp-shopify-type-check.log 2>&1; echo "webapp-shopify type-check exit code: $?"`
+        → both exit code 0. **Cycle 6 GREEN; the automated part of step 11 is done.** Human checks 17
+        to 21 passed on 2026-10-15 (results under "Human checks"). The full run before the commit
+        followed (next item); left: the 6.2.0 Commit Protocol. Formatting prices as money was moved to the
+        roadmap (`0-production-readiness-roadmap.md`, P1) by the human maintainer on 2026-10-15, rather
+        than done in this release.
+    - **Full run before the 6.2.0 commit** (2026-10-15), after `pnpm saas down`, which frees memory and
+      keeps the test run from recreating the database container under a running app. Summary forms:
+      - Backend and workers:
+        `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; pnpm nx run workers:test --skip-nx-cache > logs/workers-test.log 2>&1; for x in backend workers; do f=logs/$x-test.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "$x: $n tests |${r:- no test results, see $f}"; done`
+        → `backend: 1033 tests | 1033 passed, 1505 warnings in 732.68s (0:12:12)` and
+        `workers: 2 tests | 2 passed, 1 warning in 0.71s`.
+      - Lint and type-check, all 15 frontend projects:
+        `for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do for t in lint type-check; do pnpm nx run $p:$t --skip-nx-cache > logs/$p-$t.log 2>&1; echo "$p $t exit code: $?"; done; done`
+        → 30 lines, all `exit code: 0`.
+      - Frontend tests, all 15 projects:
+        `for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/$p.log 2>&1; s=$(sed 's/\x1b[[0-9;]*m//g' logs/$p.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"); echo "${s:-$p: no test results, see logs/$p.log}"; done`
+        → every project passed: 937 tests, 933 passed and 4 skipped (upstream's, 2 in `webapp` and 2 in
+        `webapp-tenants`). `webapp-shopify: Test Suites: 3 passed, 3 total` and
+        `webapp-shopify: Tests: 30 passed, 30 total` (13 before this step, plus 17); the other 14
+        projects match the run of 2026-10-12.
+      - CI test-list guard:
+        `node .github/workflows/scripts/check-test-lib-matrix.test.js; node .github/workflows/scripts/check-test-lib-matrix.js; echo "check exit code: $?"`
+        → `check-test-lib-matrix.test.js: all assertions passed`, then
+        `All 14 webapp libraries with a test target are in the test-lib matrix.` and `check exit code: 0`.
+        `git status --short` afterwards listed only this step's files.
+      - **`gql.ts` had lost the "GraphQL query not found" patch**, found after the run:
+        `grep -c "GraphQL query not found" packages/webapp-libs/webapp-api-client/src/graphql/__generated/gql/gql.ts`
+        → `0`. The type watcher started by `pnpm saas up` for human checks 17 to 21 had rewritten the
+        file without the patch steps (roadmap, "To consider"). The usual workaround, `git restore`
+        (`2026-10-07-restore-green-test-suite-plan.md`, section 9), couldn't be used: this commit adds
+        the `shopifyProducts` types to the same two files, and restoring would drop them too. Fixed by
+        re-running the full target with the app stopped:
+        `mkdir -p logs; pnpm nx run webapp-api-client:graphql:generate-types > logs/generate-types.log 2>&1; echo "generate types exit code: $?"`
+        → exit code 0. The same `grep -c` → `1`, and `grep "gql.ts" logs/generate-types.log` →
+        `✓ Updated gql.ts to throw helpful errors for missing queries`. Against `master`:
+        `git diff --stat -- packages/webapp-libs/webapp-api-client/src/graphql/__generated/gql/gql.ts packages/webapp-libs/webapp-api-client/src/graphql/__generated/gql/graphql.ts`
+        → `gql.ts` 7 lines added and 1 removed, `graphql.ts` 50 added and 1 removed: only the
+        `shopifyProducts` additions. Then `webapp-shopify` again with the patched file, verbose:
+        `mkdir -p logs; pnpm nx run webapp-shopify:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --verbose 2>&1 | tee logs/webapp-shopify.log; echo "webapp-shopify test exit code: ${PIPESTATUS[0]}"`
+        → exit code 0; 30 passed. Summary:
+        `mkdir -p logs; pnpm nx run webapp-shopify:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/webapp-shopify.log 2>&1; sed 's/\x1b[[0-9;]*m//g' logs/webapp-shopify.log | grep -E "(Test Suites|Tests):" | sed "s/^/webapp-shopify: /"`
+        → `webapp-shopify: Test Suites: 3 passed, 3 total` and
+        `webapp-shopify: Tests: 30 passed, 30 total`. **Full run GREEN; step 11 is ready to commit.**
+    - **Seed command bug, found running it for check 20** (2026-10-14):
+      `docker compose exec backend python manage.py shopify_seed_demo --email "$OWNER_EMAIL"` →
+      `FieldError: Cannot resolve keyword 'memberships' into field`. The command filtered
+      `Tenant` on `memberships__user`, but the membership model's link back to `Tenant` is named
+      `user_memberships`, so it had never worked (setup step 4 was never run). Fixed in
+      [`shopify_seed_demo.py`](../../../packages/backend/apps/shopify/management/commands/shopify_seed_demo.py),
+      written directly as test-support code (`agents.md` section 2.1): `user_memberships__…` with
+      `TenantUserRole.OWNER`, and a new optional `--organization "<name>"`, because a user owns several
+      organizations (always their personal one) and `.first()` could pick the wrong one. Checked with
+      `uvx black==23.1.0 --config=pyproject.toml --check apps/shopify/management/commands/shopify_seed_demo.py`
+      → unchanged. The running backend container needs the new code: see the human-check setup.
+    - **Found while writing the walkthrough (2026-10-12), affecting this step:**
+      - Nothing calls `admin_client_for` yet; the products page is its first caller.
+      - On a rejected refresh token, `admin_client_for` raises `ShopifyRefreshTokenRejected` but does
+        **not** set `needs_reinstall`, and the refresh takes no row lock. Test case 8 in section 5.2
+        assumed "the existing path in `admin_client_for`" marks the shop. So setting `needs_reinstall`
+        is new work in this step: in `products.py` (catch, mark, raise the "reconnect" error) or in
+        `admin_client_for` itself. To decide at that cycle.
+      - Not this step, noted for later: `management/commands/shopify_signed_query.py` imports
+        `_sign_query` from `verification.py`, which doesn't define it, so the command fails with an
+        ImportError.
 12. **Release bookkeeping.** `CHANGELOG.md` entry and version bump (section 10). Done for steps 1 to
     10 as 6.1.0 (2026-10-07); step 11 gets its own entry.
 13. **Walkthrough** (added 2026-10-07, not started): `docs/superpowers/specs/<date>-shopify-walkthrough.md`,
@@ -1108,6 +1380,42 @@ hasPreviousPage startCursor endCursor }`. Cursor pagination only: there are no p
 - Query cost limits and the `THROTTLED` error, so a throttled call shows a "try again" message instead of
   failing.
 
+Checked 2026-10-12 against shopify.dev, API version 2026-10 (our `SHOPIFY_API_VERSION`):
+
+- **Paging.** `products` takes `first`, `last`, `after`, `before`, `query`, `sortKey` (default `ID`) and
+  `reverse`. `PageInfo` has `hasNextPage`, `hasPreviousPage`, `startCursor`, `endCursor`. Forward is
+  `first` + `after: <endCursor>`; **backward is `last` + `before: <startCursor>`**, not `first` + `before`
+  as the design below first said. `fetch_products` keeps the page size as one number and sends it as
+  `last` when `before` is given. At most 250 per page (our cap of 50 is well inside), and at most 25,000
+  objects can be paged through. Sources:
+  [products](https://shopify.dev/docs/api/admin-graphql/latest/queries/products),
+  [pagination](https://shopify.dev/docs/api/usage/pagination-graphql).
+- **Image.** `featuredImage` is deprecated; use `featuredMedia { preview { image { url altText } } }`.
+  `featuredMedia` is null for a product without media, and `preview.image` is null until the media's
+  status is `READY`; both mean `imageUrl: null`. On `Image`, `url` and `altText` are current;
+  `src`, `originalSrc` and `transformedSrc` are deprecated. Sources:
+  [Product](https://shopify.dev/docs/api/admin-graphql/latest/objects/Product),
+  [Media](https://shopify.dev/docs/api/admin-graphql/latest/interfaces/Media),
+  [MediaPreviewImage](https://shopify.dev/docs/api/admin-graphql/latest/objects/MediaPreviewImage),
+  [Image](https://shopify.dev/docs/api/admin-graphql/latest/objects/Image).
+- **Price.** `priceRange` is deprecated; use `priceRangeV2 { minVariantPrice { amount currencyCode }
+maxVariantPrice { amount currencyCode } }`. `amount` is a decimal string; keep it a string to the
+  browser, so no rounding happens on the way.
+- **Status.** `ProductStatus` is `ACTIVE`, `ARCHIVED`, `DRAFT` or `UNLISTED` (`UNLISTED` exists from
+  2025-10). Source: [ProductStatus](https://shopify.dev/docs/api/admin-graphql/latest/enums/ProductStatus).
+- **Cost and throttling.** Each query has a calculated cost; a single query may cost at most 1,000
+  points, and a store's bucket refills at 100 points a second on the Standard plan. A throttled call
+  returns an error with `extensions.code` `THROTTLED` (message "Throttled") and `data` missing; the docs
+  don't say whether GraphQL also uses HTTP 429, so don't rely on it. Shopify advises waiting about a
+  second before retrying. A page of 50 products with these fields costs far less than the limit.
+  Sources: [rate limits](https://shopify.dev/docs/apps/build/apis/graphql-admin/rate-limits),
+  [API limits](https://shopify.dev/docs/api/usage/rate-limits).
+- **What this changes in our code.** `ShopifyAdminClient.graphql` raises one `ShopifyAPIError` with the
+  errors as JSON text, so a throttle can't be told apart from other errors without parsing that text. It
+  gets a `ShopifyThrottledError` (a subclass, so existing callers still catch it), raised when any error's
+  `extensions.code` is `THROTTLED`, with its own case in `test_client.py`. `products.py` turns it into the
+  "try again shortly" error.
+
 Backend:
 
 - `apps/shopify/products.py`: `fetch_products(shop, first, after=None, before=None)` builds the query,
@@ -1123,7 +1431,8 @@ Backend:
 
 1. A page of products is mapped to the GraphQL shape, image and price included.
 2. A product without an image gives `imageUrl: null`, not an error.
-3. `after` and `before` are passed through; `pageInfo` comes back unchanged.
+3. `after` is sent with `first`, and `before` with `last` (backward paging, see the facts above);
+   `pageInfo` comes back unchanged.
 4. `first` above 50 is capped.
 5. A member without `shopify.view` is refused.
 6. A shop linked to another tenant is "not found" (cross-tenant isolation).
@@ -1156,14 +1465,17 @@ first, so the products page follows a tested pattern.
 ## 6. Seed data (`shopify_seed_demo`)
 
 Idempotent, refuses to run when `ENVIRONMENT_NAME=production`, fixed ids/domains so the human checks can
-be pasted as written. Run with
-`docker compose run --rm backend python manage.py shopify_seed_demo --email <your email>`; it uses the
-first tenant that user owns.
+be pasted as written. Run it with the `--email` of a user and, optionally, `--organization` with the
+exact name of an organization they own (otherwise the first one they own); the human checks' setup
+step 4 shows the command, with both values read at run time. Fixed on 2026-10-14 (it never ran before:
+a wrong relation name) and extended on 2026-10-15 with the Member.
 
 - `linked-demo.myshopify.com`: linked to that tenant, valid (fake, encrypted) tokens
 - `unlinked-demo.myshopify.com`: installed, no tenant; the command prints a fresh claim URL for it
 - `uninstalled-demo.myshopify.com`: linked, `uninstalled_at` set, tokens wiped
 - `reinstall-demo.myshopify.com`: linked, `needs_reinstall=True`
+- `shopify-member@example.com` (password `ShopifyMember123!`): an accepted Member of that tenant, with
+  the Member system role, so `shopify.view` but not `shopify.manage` (human check 25)
 
 ---
 
@@ -1290,6 +1602,14 @@ From step 9 (2026-10-11), under the exception agreed on 2026-10-07:
 - [`authRoute.component.spec.tsx`](../../../packages/webapp/src/shared/components/routes/authRoute/__tests__/authRoute.component.spec.tsx):
   one test added; upstream's tests unchanged.
 
+From step 11 (2026-10-14), appended lines only:
+
+- [`app.component.tsx`](../../../packages/webapp/src/app/app.component.tsx): `ShopifyProducts` added to
+  the Shopify import, and one `<Route>` for `shopify/products` inside the existing `shopify.view` group.
+- [`sidebar.component.tsx`](../../../packages/webapp/src/shared/components/layout/sidebar/sidebar.component.tsx):
+  the `Package` icon import, and a "Shopify products" item after "Shopify", with the same
+  `shopify.view` permission.
+
 Not part of this feature, so leave them out of the commit: the `black` quote rewrites the local test run
 makes in `apps/backup`, `apps/sso`, `apps/users`, `common/` and `multitenancy/permissions.py`, and the
 Contentful schema refresh.
@@ -1329,96 +1649,1066 @@ human maintainer picks the number.
 
 ### Human checks
 
-Setup, once:
+Rewritten on 2026-10-15 to `agents.md` section 1.3's rules: every value comes from a command or from a
+`read` prompt at run time (this repository is public, so nothing personal is written here), state is
+shown with terminal commands, and the browser is used only to look at a page or to act in Shopify's
+admin, which has no API we can call here. Results recorded under the old wording are kept.
 
-1. Put the values from section 7 in `packages/backend/.env`. Start a tunnel to the backend (port 5001,
-   the `API_URL` default): `ngrok http --url=<your-static-domain> 5001`, and set `API_URL` to it.
-2. Copy `shopify.app.toml.example` to a working folder outside the repo, fill it in, and run
-   `shopify app deploy` there.
-3. `pnpm saas down` then `pnpm saas up`. Startup shows no `shopify.E00x` errors.
-4. Sign up or log in at http://localhost:3000, then
-   `docker compose run --rm backend python manage.py shopify_seed_demo --email <your email>`.
+Every `curl` shows its HTTP status first, on its own line (`-w '%{stderr}%{http_code}\n'`), then the
+body. JSON goes through `python3 -m json.tool`. A GraphQL error comes back with status `200` and the
+error in the body; only a malformed request gets `400`.
 
-Checks:
+#### Setup, once per terminal session
 
-1. Public config: `curl -s -X POST http://localhost:5001/api/graphql/ -H 'Content-Type: application/json' -d '{"query":"{ shopifyConfig { enabled } }"}'`
-   → `"enabled": true`.
-2. Forged install link: `curl -s -o /dev/null -w '%{http_code}\n' 'http://localhost:5001/api/shopify/install/?shop=linked-demo.myshopify.com&timestamp=1&hmac=bad'`
-   → `400`.
-3. Look-alike shop domain with a valid signature:
-   `docker compose run --rm backend python manage.py shopify_signed_query --shop evil.myshopify.com.attacker.example --timestamp 1`
-   prints a query string; `curl -s -o /dev/null -w '%{http_code}\n' "http://localhost:5001/api/shopify/install/?<that query>"`
-   → `400`. (`shopify_signed_query` is a management command, not exposed on the production verification module.)
-4. Forged webhook: `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5001/api/shopify/webhooks/ -H 'X-Shopify-Topic: shop/redact' -H 'X-Shopify-Hmac-Sha256: bad' -H 'X-Shopify-Webhook-Id: chk-4' -d '{}'`
-   → `401`.
-5. Genuine-looking `customers/data_request`:
-   `BODY='{"shop_domain":"linked-demo.myshopify.com"}'; SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SHOPIFY_API_SECRET" -binary | base64); curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5001/api/shopify/webhooks/ -H "X-Shopify-Topic: customers/data_request" -H "X-Shopify-Shop-Domain: linked-demo.myshopify.com" -H "X-Shopify-Webhook-Id: chk-5" -H "X-Shopify-Hmac-Sha256: $SIG" -d "$BODY"`
-   → `200`; run it again → `200`, and Django admin → Shopify webhook deliveries shows `chk-5` once.
-6. Web app → Shopify page lists `linked-demo`, `uninstalled-demo` (marked uninstalled) and
-   `reinstall-demo` (marked "needs reinstall"); `unlinked-demo` is not listed.
-7. Open the claim URL the seed command printed → the page names `unlinked-demo.myshopify.com` → choose
-   your organization → Confirm → the Shopify page now lists it. Open the same URL again → "already
-   connected".
-8. Disconnect `linked-demo` → it disappears from the list; Django admin still shows the row with no tenant.
-9. Real install from Shopify: in the app's dashboard, "Test on store" with your dev store → approve the
-   scopes → you land on the web app's link page → link it → the Shopify page lists the store.
-10. Django admin → Shopify shops → that store shows scopes `read_products`, expiry times about 1 hour
-    and 90 days out, and no readable token anywhere.
-11. Connect from the web app: Shopify page → "Connect a store" → `not-a-shop.example` → validation
-    error; your dev store's domain → Shopify's approve screen → back on the Shopify page with it listed.
-12. Uninstall the app in your dev store's admin → within a minute the store shows as uninstalled in the
-    web app. Reinstall it → it's back, still linked to the same organization.
-13. Seeding refuses production: with `ENVIRONMENT_NAME=production`, the seed command fails with
-    "Refusing to seed Shopify demo data in production".
+1. One-time Shopify setup (already done if the app is installed on your dev store): put the values from
+   section 7 in `packages/backend/.env`; copy `shopify.app.toml.example` to a working folder **outside**
+   the repository, fill it in and run `shopify app deploy` there; set `API_URL` to your tunnel address.
+2. Start everything, each in its own terminal, and leave both running: `pnpm saas up` (startup shows no
+   `shopify.E00x` errors), and `ngrok http --url=` followed by your static ngrok domain and ` 5001`.
+3. Your own values, in the terminal you run the checks in. Nothing is written to a file:
 
-Checks added after the live install (section 5.1), as the owner of the organization the dev store is
-linked to:
+   ```shell
+   read -r -p "Login email: " OWNER_EMAIL
+   read -r -s -p "Password: " OWNER_PASSWORD; echo
+   read -r -p "Dev store domain (the ….myshopify.com one): " STORE
+   read -r -p "Name of the organization the store is linked to: " ORG_A
+   ```
 
-14. ✅ (2026-10-07) The link page renders: install from Shopify on a store not yet linked → you land on
-    `/en/shopify/link?claim=…` showing "Connect Shopify Store" and the store's domain, not a blank page.
-15. ✅ (2026-10-07) Linking works for an organization created before migration `0003`: Connect to this
-    organization → "Store connected!" (not `permission_denied`) → after about 2 seconds the Shopify
-    page at `/en/<org id>/shopify`, store marked Active.
-16. Reopening a linked store from Shopify: Shopify admin → Apps → the app → you land on
-    `/en/<org id>/shopify?connected=<store>.myshopify.com`, the Shopify page (not the dashboard).
-    Fixed in section 5.1 row 7; re-run to confirm.
+4. Seed the demo stores and the Member into that organization. The command resets them each time, so
+   it's safe to run again before any check:
 
-Products page (step 11). The seeded demo shops have fake tokens, so these use your real dev store. Give
-it at least 13 products first (Shopify admin → Products; a development store can also be filled with
-generated test data):
+   ```shell
+   docker compose exec -T backend python manage.py shopify_seed_demo --email "$OWNER_EMAIL" --organization "$ORG_A"
+   ```
 
-17. Sidebar → "Shopify products" → a grid of 12 cards with images, titles and prices from your store.
-18. Next → the next 12; Previous → back to the first page, with the same products as before. Previous is
-    disabled on the first page; Next is disabled on the last.
-19. Refresh on page 2 → still page 2 (the cursor is in the URL).
-20. Disconnect the store on the Shopify page → "Shopify products" says no stores are connected and links
-    to the Shopify page. Reconnect it.
-21. Cross-tenant isolation:
-    `curl -s -X POST http://localhost:5001/api/graphql/ -b cookies-other-org.txt -H 'Content-Type: application/json' -d '{"query":"{ shopifyProducts(tenantId: \"<the other org id>\", shopDomain: \"<your store>.myshopify.com\", first: 5) { products { title } } }"}'`,
-    logged in as a user of another organization → an error, no products.
+   Expect one line per demo store and one for the Member, each naming your organization, and a
+   `Link URL:` for `unlinked-demo`.
 
-Step 9 checks (2026-10-11), with `pnpm saas up` and the ngrok tunnel running, as the owner of the
-organization your dev store is linked to. They cover decisions B, D and E (section 4.2) and check 16.
+5. Log in as yourself, and keep your organization's id and the app's API secret (the secret signs the
+   webhooks in checks 4 and 5; only its length is printed):
+
+   ```shell
+   mkdir -p logs
+   curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+           query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+           variables: { input: { email: $email, password: $password } }
+         }')" | python3 -m json.tool
+   ORG_A_ID=$(curl -s -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d '{"query": "{ allTenants { edges { node { id name } } } }"}' \
+     | jq -r --arg name "$ORG_A" '.data.allTenants.edges[].node | select(.name == $name) | .id')
+   SHOPIFY_API_SECRET=$(docker compose exec -T backend python manage.py shell \
+     -c "from django.conf import settings; print(settings.SHOPIFY_API_SECRET)" | tail -n 1)
+   echo "ORG_A_ID=$ORG_A_ID"
+   echo "Your organization in the browser: http://localhost:3000/en/$ORG_A_ID/"
+   echo "API secret length: ${#SHOPIFY_API_SECRET}"
+   ```
+
+   Expect `200` with `"otpAuthToken": null`, then your organization's id, its browser address, and a
+   secret length above 0.
+
+#### Seeded data (from `shopify_seed_demo`)
+
+Fake rows in your organization, reset by every run of setup step 4. Their tokens are fake, so nothing
+here ever reaches Shopify:
+
+- `linked-demo.myshopify.com`: linked, marked active, fake token.
+- `uninstalled-demo.myshopify.com`: linked, uninstalled (no token).
+- `reinstall-demo.myshopify.com`: linked, flagged "needs reinstall".
+- `unlinked-demo.myshopify.com`: installed but linked to no organization; setup step 4 prints a claim
+  link for it, valid for 1 hour.
+- `shopify-member@example.com` (password `ShopifyMember123!`): a Member of your organization, with
+  `shopify.view` but not `shopify.manage`.
+
+Your real dev store (`$STORE`) is the only one Shopify knows about.
+
+#### Who can do what
+
+- **Anyone, logged in or not:** asks whether Shopify is enabled (`shopifyConfig`).
+- **Shopify itself:** calls the install link and the webhooks, each signed with the app's API secret.
+- **Members with `shopify.view`** (Owner, Admin and Member by default): list the organization's stores
+  and their products.
+- **Members with `shopify.manage`** (Owner and Admin by default): connect, link and disconnect stores.
+
+#### Install, webhooks and linking (6.1.0)
+
+1. **Anyone can ask whether Shopify is enabled: 200.**
+
+   **Why:** the web app asks before it shows any Shopify page, including to visitors who aren't logged
+   in, so this one query is open to everyone (`AnyoneFullAccess`). It holds no data beyond on or off.
+
+   **Acts on:** nothing; no cookie is sent.
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d '{"query": "{ shopifyConfig { enabled } }"}' | python3 -m json.tool
+   ```
+
+   Expect `200`, with `"enabled": true`.
+
+2. **An install link with a forged signature is refused: 400.**
+
+   **Why:** Shopify signs every install link with the app's API secret (HMAC). A link whose signature
+   doesn't match is refused before anything is looked up, so nobody can start an install for a store
+   they don't own. It's `400`, a bad request, not `401`: there's no login involved.
+
+   **Acts on:** `linked-demo.myshopify.com`, with the signature `bad`.
+
+   ```shell
+   curl -s -w '\n%{http_code}\n' \
+     'http://localhost:5001/api/shopify/install/?shop=linked-demo.myshopify.com&timestamp=1&hmac=bad'
+   ```
+
+   Expect `HMAC verification failed.`, then `400`.
+
+3. **A correctly signed link for a look-alike domain is refused: 400, while the same link for a real
+   store domain is accepted.**
+
+   **Why:** a valid signature isn't enough; the store must be a real `….myshopify.com` host. Otherwise a
+   signed link for `evil.myshopify.com.attacker.example` could send the merchant elsewhere. The second
+   request differs only in the domain, and shows that a properly signed link is accepted.
+
+   **Acts on:** the domains `evil.myshopify.com.attacker.example` and `linked-demo.myshopify.com`.
+
+   Sign both links with the app's secret. `shopify_signed_query` prints the signed query, and
+   `grep -m1 '^shop='` keeps that one line:
+
+   ```shell
+   EVIL_QUERY=$(docker compose exec -T backend python manage.py shopify_signed_query \
+     --shop evil.myshopify.com.attacker.example --timestamp 1 | grep -m1 '^shop=')
+   LINKED_QUERY=$(docker compose exec -T backend python manage.py shopify_signed_query \
+     --shop linked-demo.myshopify.com --timestamp 1 | grep -m1 '^shop=')
+   echo "$EVIL_QUERY"
+   echo "$LINKED_QUERY"
+   ```
+
+   Expect two lines starting `shop=`, each ending `&hmac=` and 64 hex characters. Then the look-alike:
+
+   ```shell
+   curl -s -w '\n%{http_code}\n' "http://localhost:5001/api/shopify/install/?$EVIL_QUERY"
+   ```
+
+   Expect `Missing or invalid 'shop' parameter.`, then `400`. Then the real store domain (only the
+   domain changes):
+
+   ```shell
+   curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "http://localhost:5001/api/shopify/install/?$LINKED_QUERY"
+   ```
+
+   Expect `302`, redirecting to `http://localhost:3000/en/` followed by your organization's id and
+   `/shopify?connected=linked-demo.myshopify.com`: the store is installed and linked, so the link
+   leads to its organization's Shopify page.
+
+4. **A webhook with a forged signature is refused: 401.**
+
+   **Why:** Shopify signs each webhook body with the app's API secret. An unsigned or wrongly signed
+   webhook could otherwise wipe a store's data (`shop/redact`). It's `401`: the sender isn't who it
+   claims to be.
+
+   **Acts on:** `linked-demo.myshopify.com`, with the signature `bad`.
+
+   ```shell
+   curl -s -w '\n%{http_code}\n' -X POST http://localhost:5001/api/shopify/webhooks/ \
+     -H 'X-Shopify-Topic: shop/redact' \
+     -H 'X-Shopify-Shop-Domain: linked-demo.myshopify.com' \
+     -H 'X-Shopify-Hmac-Sha256: bad' \
+     -H 'X-Shopify-Webhook-Id: check-4-forged' \
+     -d '{"shop_domain": "linked-demo.myshopify.com"}'
+   ```
+
+   Expect `401`. **Prove** nothing was recorded:
+
+   ```shell
+   docker compose exec -T backend python manage.py shell \
+     -c "from apps.shopify.models import ShopifyWebhookDelivery as D; print(list(D.objects.filter(webhook_id='check-4-forged').values()))"
+   ```
+
+   Expect `[]`, after the line `Auto-discovered 3 models for backup`.
+
+5. **A correctly signed privacy webhook is answered once, even when Shopify sends it twice: 200 and
+   200, one record.**
+
+   **Why:** Shopify retries a webhook until it gets `200`, so the same delivery can arrive twice. The
+   webhook id makes the second one a no-op: answered `200` (or Shopify keeps retrying), never processed
+   twice.
+
+   **Acts on:** a new webhook id (from the clock, so the check can be re-run) for
+   `linked-demo.myshopify.com`.
+
+   ```shell
+   WEBHOOK_ID="check-5-$(date +%s)"
+   BODY='{"shop_domain": "linked-demo.myshopify.com", "customer": {"id": 1}}'
+   SIGNATURE=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SHOPIFY_API_SECRET" -binary | base64)
+   echo "WEBHOOK_ID=$WEBHOOK_ID"
+   ```
+
+   Send it:
+
+   ```shell
+   curl -s -w '\n%{http_code}\n' -X POST http://localhost:5001/api/shopify/webhooks/ \
+     -H 'X-Shopify-Topic: customers/data_request' \
+     -H 'X-Shopify-Shop-Domain: linked-demo.myshopify.com' \
+     -H "X-Shopify-Hmac-Sha256: $SIGNATURE" \
+     -H "X-Shopify-Webhook-Id: $WEBHOOK_ID" \
+     -d "$BODY"
+   ```
+
+   Expect `200`. Send exactly the same again:
+
+   ```shell
+   curl -s -w '\n%{http_code}\n' -X POST http://localhost:5001/api/shopify/webhooks/ \
+     -H 'X-Shopify-Topic: customers/data_request' \
+     -H 'X-Shopify-Shop-Domain: linked-demo.myshopify.com' \
+     -H "X-Shopify-Hmac-Sha256: $SIGNATURE" \
+     -H "X-Shopify-Webhook-Id: $WEBHOOK_ID" \
+     -d "$BODY"
+   ```
+
+   Expect `200` again. **Prove** it was recorded once:
+
+   ```shell
+   docker compose exec -T backend python manage.py shell \
+     -c "from apps.shopify.models import ShopifyWebhookDelivery as D; print(list(D.objects.filter(webhook_id='$WEBHOOK_ID').values()))"
+   ```
+
+   Expect a list with exactly one whole record: your `webhook_id`, topic `customers/data_request`, shop
+   `linked-demo.myshopify.com` and the payload.
+
+6. **The Stores list shows your organization's stores, each in its state, and not the unlinked one.**
+
+   **Why:** the list is limited to stores linked to the organization asked about, and each store's
+   state decides what the products page will do with it.
+
+   **Acts on:** your organization (`$ORG_A_ID`).
+
+   Log in as yourself:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+           query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+           variables: { input: { email: $email, password: $password } }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect `200`. Then list your organization's stores:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg tenant "$ORG_A_ID" '{
+           query: "query ($tenant: ID!) { shopifyShops(tenantId: $tenant) { shopDomain scopes installedAt uninstalledAt needsReinstall } }",
+           variables: { tenant: $tenant }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect `200` and these stores, whole: your dev store and `linked-demo.myshopify.com` with
+   `"uninstalledAt": null` and `"needsReinstall": false`; `uninstalled-demo.myshopify.com` with an
+   `uninstalledAt` time; `reinstall-demo.myshopify.com` with `"needsReinstall": true`. No
+   `unlinked-demo.myshopify.com`. In the browser, the Shopify page at the address from setup step 5 shows
+   the same, with the badges Active, Uninstalled and Needs reinstall.
+
+7. **A claim link links an unlinked store to your organization once, and only once.**
+
+   **Why:** after installing from Shopify, a store is linked through a signed claim that expires after
+   an hour. Once the store is linked, the same claim must not move it to another organization, so a
+   second use is refused.
+
+   **Acts on:** `unlinked-demo.myshopify.com`, and your organization (`$ORG_A_ID`).
+
+   Reset the demo data and keep a fresh claim (the seed prints the link; `grep -o` and `cut` keep the
+   part after `claim=`):
+
+   ```shell
+   CLAIM=$(docker compose exec -T backend python manage.py shopify_seed_demo --email "$OWNER_EMAIL" --organization "$ORG_A" \
+     | grep -o 'claim=[^ ]*' | cut -d= -f2-)
+   echo "CLAIM=$CLAIM"
+   ```
+
+   Expect a claim like `3:1xH6…`. Log in as yourself:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+           query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+           variables: { input: { email: $email, password: $password } }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect `200`. **Prove** the claim names the unlinked store:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg claim "$CLAIM" '{
+           query: "query ($claim: String!) { shopifyClaim(claim: $claim) { shopDomain } }",
+           variables: { claim: $claim }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect `200`, with `"shopDomain": "unlinked-demo.myshopify.com"`. Then, as yourself, link it to your
+   organization:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg tenant "$ORG_A_ID" --arg claim "$CLAIM" '{
+           query: "mutation ($input: ShopifyLinkShopInput!) { shopifyLinkShop(input: $input) { shop { shopDomain scopes installedAt } } }",
+           variables: { input: { tenantId: $tenant, claim: $claim } }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect `200`, with the shop `unlinked-demo.myshopify.com`. **Prove** it's now in your list:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg tenant "$ORG_A_ID" '{
+           query: "query ($tenant: ID!) { shopifyShops(tenantId: $tenant) { shopDomain scopes installedAt uninstalledAt needsReinstall } }",
+           variables: { tenant: $tenant }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect `unlinked-demo.myshopify.com` in the list. Then use the same claim again:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg tenant "$ORG_A_ID" --arg claim "$CLAIM" '{
+           query: "mutation ($input: ShopifyLinkShopInput!) { shopifyLinkShop(input: $input) { shop { shopDomain scopes installedAt } } }",
+           variables: { input: { tenantId: $tenant, claim: $claim } }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect `200`, with `"message": "Store is already connected."` and no shop. (In production, with
+   `DEBUG` off, the error sanitizer shows a generic message here instead; see the decision C note in
+   step 11.)
+
+8. **Disconnecting removes the store from the organization but keeps its record.**
+
+   **Why:** disconnecting only unlinks the store; the app stays installed on it, so its row (and the
+   uninstall webhook that may come later) still has somewhere to land. Reconnecting is then a new claim.
+
+   **Acts on:** `linked-demo.myshopify.com`, in your organization (`$ORG_A_ID`).
+
+   Log in as yourself:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+           query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+           variables: { input: { email: $email, password: $password } }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect `200`. Then disconnect `linked-demo`:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg tenant "$ORG_A_ID" '{
+           query: "mutation ($input: ShopifyDisconnectShopInput!) { shopifyDisconnectShop(input: $input) { ok } }",
+           variables: { input: { tenantId: $tenant, shopDomain: "linked-demo.myshopify.com" } }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect `200`, with `"ok": true`. **Prove** it's gone from your list:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg tenant "$ORG_A_ID" '{
+           query: "query ($tenant: ID!) { shopifyShops(tenantId: $tenant) { shopDomain scopes installedAt uninstalledAt needsReinstall } }",
+           variables: { tenant: $tenant }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect no `linked-demo.myshopify.com`. **Prove** its record still exists, with no organization:
+
+   ```shell
+   docker compose exec -T backend python manage.py shell \
+     -c "from apps.shopify.models import ShopifyShop; print(list(ShopifyShop.objects.filter(shop_domain='linked-demo.myshopify.com').values('shop_domain', 'tenant_id', 'installed_at', 'uninstalled_at', 'needs_reinstall')))"
+   ```
+
+   Expect one record with `'tenant_id': None`. (The token columns are left out of this one on purpose:
+   they're encrypted, and check 10 shows them.)
+
+9. **A real install from Shopify ends on the link page, and linking lists the store.**
+
+   **Why:** this is the path a merchant takes. Shopify sends them to the install link, they approve the
+   scopes, and the store must end up linked to the organization they choose.
+
+   **Acts on:** your dev store (`$STORE`).
+
+   Shopify's admin has no API we can call here, so this one is done in the browser. If the app is
+   already installed on your dev store, uninstall it first: Shopify admin → Settings → Apps and sales
+   channels → the app → Uninstall. Then, in the Shopify Partners dashboard, open the app → Test on store
+   → your dev store → approve the scopes.
+
+   **Expect:** you land on the web app's link page, naming your store. Click "Connect to this
+   organization" → "Store connected!". Then log in as yourself:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+           query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+           variables: { input: { email: $email, password: $password } }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect `200`. **Prove** the store is linked and active:
+
+   ```shell
+   curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+     -H 'Content-Type: application/json' \
+     -d "$(jq -n --arg tenant "$ORG_A_ID" '{
+           query: "query ($tenant: ID!) { shopifyShops(tenantId: $tenant) { shopDomain scopes installedAt uninstalledAt needsReinstall } }",
+           variables: { tenant: $tenant }
+         }')" | python3 -m json.tool
+   ```
+
+   Expect your dev store with `"scopes": ["read_products"]`, a recent `installedAt`,
+   `"uninstalledAt": null` and `"needsReinstall": false`.
+
+10. **The store's tokens are stored encrypted, with Shopify's expiry times.**
+
+    **Why:** an access token opens the merchant's store, so it's never stored readable. Shopify's tokens
+    expire (access after about an hour, refresh after about 90 days), and the expiry times decide when
+    the backend refreshes.
+
+    **Acts on:** your dev store's record (`$STORE`).
+
+    ```shell
+    docker compose exec -T backend python manage.py shell \
+      -c "from apps.shopify.models import ShopifyShop; print(list(ShopifyShop.objects.filter(shop_domain='$STORE').values()))"
+    ```
+
+    Expect one whole record: `access_token_encrypted` and `refresh_token_encrypted` are long scrambled
+    strings (starting `gAAAAA`, the encryption library's format), never a token starting `shpat_` or
+    `shprt_`; `access_token_expires_at` about an hour after `installed_at`, and `refresh_token_expires_at`
+    about 90 days after it; `scopes` `read_products`.
+
+11. **Connecting from the web app refuses a bad domain, and sends a good one to Shopify's approval
+    page.**
+
+    **Why:** the domain is checked before anything is sent to Shopify, so a typo or a foreign domain
+    never leaves the app. A good domain gets Shopify's signed approval address, which the browser opens.
+
+    **Acts on:** the domains `not-a-shop.example` and your dev store (`$STORE`), for your organization.
+
+    Log in as yourself:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+            query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+            variables: { input: { email: $email, password: $password } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`. Then ask to connect `not-a-shop.example`:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" --arg shop "not-a-shop.example" '{
+            query: "mutation ($input: ShopifyStartInstallInput!) { shopifyStartInstall(input: $input) { authorizeUrl } }",
+            variables: { input: { tenantId: $tenant, shopDomain: $shop } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`, with `"message": "Invalid shop domain."` and no `authorizeUrl`. Then the same for your
+    dev store (only the domain changes):
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" --arg shop "$STORE" '{
+            query: "mutation ($input: ShopifyStartInstallInput!) { shopifyStartInstall(input: $input) { authorizeUrl } }",
+            variables: { input: { tenantId: $tenant, shopDomain: $shop } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`, with an `authorizeUrl` starting `https://` and your store's domain, then
+    `/admin/oauth/authorize?client_id=`. Open it in the browser: Shopify shows the approval screen (or
+    goes straight through, if the app is already approved), then you land on the web app's Shopify page
+    with your store listed.
+
+12. **Uninstalling the app wipes the store's tokens but keeps its organization; reinstalling brings it
+    back.**
+
+    **Why:** when a merchant uninstalls, Shopify sends `app/uninstalled`, and the app must stop using the
+    store's tokens at once. The link to the organization stays, so a reinstall needs no new claim.
+
+    **Acts on:** your dev store (`$STORE`).
+
+    In the browser: Shopify admin → Settings → Apps and sales channels → the app → Uninstall. Wait a
+    minute for the webhook. **Prove** the store is uninstalled and its tokens are gone:
+
+    ```shell
+    docker compose exec -T backend python manage.py shell \
+      -c "from apps.shopify.models import ShopifyShop; print(list(ShopifyShop.objects.filter(shop_domain='$STORE').values()))"
+    ```
+
+    Expect one whole record: `uninstalled_at` set, `access_token_encrypted` and `refresh_token_encrypted`
+    empty (`''`), and `tenant_id` still set. Then reinstall, as in check 9: Shopify Partners dashboard →
+    the app → Test on store → your dev store → approve. **Prove** it's back:
+
+    ```shell
+    docker compose exec -T backend python manage.py shell \
+      -c "from apps.shopify.models import ShopifyShop; print(list(ShopifyShop.objects.filter(shop_domain='$STORE').values()))"
+    ```
+
+    Expect `uninstalled_at` back to `None`, new encrypted tokens, and the same `tenant_id` as before.
+
+13. **The seed command refuses to run in production.**
+
+    **Why:** it creates fake stores and a user with a published password, which must never reach a real
+    deployment.
+
+    **Acts on:** nothing: the command stops before it writes anything.
+
+    ```shell
+    docker compose exec -T -e ENVIRONMENT_NAME=production backend python manage.py shopify_seed_demo --email "$OWNER_EMAIL"
+    ```
+
+    Expect `CommandError: Cannot run shopify_seed_demo in production!`.
+
+#### Checks added after the live install (section 5.1)
+
+14. ✅ (2026-10-07) **The link page renders.**
+
+    **Why:** it used to be blank (section 5.1, rows 1 to 3).
+
+    **Acts on:** `unlinked-demo.myshopify.com`. Reset the demo data and print the link page's address:
+
+    ```shell
+    CLAIM=$(docker compose exec -T backend python manage.py shopify_seed_demo --email "$OWNER_EMAIL" --organization "$ORG_A" \
+      | grep -o 'claim=[^ ]*' | cut -d= -f2-)
+    echo "Link page: http://localhost:3000/en/shopify/link?claim=$CLAIM"
+    ```
+
+    Open the printed address in the browser, logged in as yourself. **Expect:** "Connect Shopify Store",
+    the domain `unlinked-demo.myshopify.com`, and "This store will be connected to" your organization's
+    name; not a blank page.
+
+15. ✅ (2026-10-07) **Linking works for an organization created before migration `0003`.** Recorded as
+    passed; it can't be repeated, because it needs an organization that existed before that migration
+    ran. `test_permissions.py` covers the migration's backfill.
+
+16. Merged into check 22 on 2026-10-15 (reopening a linked store from Shopify).
+
+#### Products page (step 11, 6.2.0)
+
+Who can do what: any member of an organization with `shopify.view` (Owner, Admin and Member all have it
+by default) can list the products of a store linked to **that** organization. A store linked to another
+organization, or to none, is "Store not found", the same answer as a store that doesn't exist. Checks 17
+to 20 look at the page in the browser, logged in as yourself; their starting state is proved with
+commands first.
+
+Result, 2026-10-15: the human maintainer ran checks 17 to 21 against their dev store, with the
+`pnpm saas up` stack and the ngrok tunnel, and all passed:
+
+- 17: the store's products (17 of them) loaded live from Shopify with images, titles, prices and
+  status; the Store picker listed the dev store and the seeded stores; "Products per page" switched
+  sizes. Prices showed as Shopify sends them (`USD 600.0`), now a roadmap item
+  (`0-production-readiness-roadmap.md`, P1).
+- 18 and 19: Next, Previous and a refresh behaved as expected (reported as "went fine").
+- 20: `uninstalled-demo` and `reinstall-demo` both showed "This store needs to be reconnected";
+  `linked-demo`, with its fake token, showed "Couldn't load the products", as expected and not part of
+  the check.
+- 21: as the organization the store is linked to, `200` with 2 whole products and
+  `"hasNextPage": true`; as `Shopify check B`, and for `no-such-store.myshopify.com`, the identical
+  answer: `200`, `"data": null`, `GraphQlValidationError` with `store_not_found`.
+
+Found while running them: the seed command crashed (fixed, see step 11); the switcher can't return to
+a personal organization (upstream, roadmap P1); and `packages/backend/apps/shopify/shopify.app.toml`,
+which holds a personal tunnel address and the app's client id, sits inside the repository although
+the setup says to keep it outside. Whether git tracks it is still to be checked; the fix either way is
+in the roadmap (P0).
+
+17. **The products page opens on the first page of your store, 12 per page, and the page size can be
+    changed.**
+
+    **Why:** anyone with `shopify.view` can reach the page, and the first page needs no cursor. The page
+    shows 12 products by default; 24 and 48 can be chosen, all under the backend's cap of 50.
+
+    **Acts on:** your dev store (`$STORE`), in your organization (`$ORG_A_ID`).
+
+    Log in as yourself:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+            query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+            variables: { input: { email: $email, password: $password } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`. **Prove** your store has more than 12 products, so a second page exists (`jq` counts
+    the products in one request for 50):
+
+    ```shell
+    curl -s -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" --arg store "$STORE" '{
+            query: "query ($tenant: ID!, $store: String!) { shopifyProducts(tenantId: $tenant, shopDomain: $store, first: 50) { products { id } } }",
+            variables: { tenant: $tenant, store: $store }
+          }')" | jq '.data.shopifyProducts.products | length'
+    ```
+
+    Expect a number above 12. (If it's 12 or less, add products in Shopify admin → Products, or use 12
+    per page with fewer products and expect no second page in checks 18 and 19.) Print the page's
+    address for your store:
+
+    ```shell
+    echo "http://localhost:3000/en/$ORG_A_ID/shopify/products?shop=$STORE"
+    ```
+
+    Open it. **Expect:** 12 cards with your products' images, titles, prices and status (Active, Draft,
+    …); Previous disabled; Next enabled; "Products per page" showing 12. Then choose 24 in "Products per
+    page". **Expect:** up to 24 cards, starting again from your first product, Previous disabled, and the
+    address ending in `perPage=24`.
+
+18. **Next and Previous page through the store, forwards and backwards.**
+
+    **Why:** Shopify pages with cursors, not page numbers: Next asks for the products after the last one
+    shown, Previous for the ones before the first one shown (backwards is `last` + `before`, section 5.2).
+
+    **Acts on:** your dev store (`$STORE`). Print the first page's address at 12 per page:
+
+    ```shell
+    echo "http://localhost:3000/en/$ORG_A_ID/shopify/products?shop=$STORE&perPage=12"
+    ```
+
+    Open it and note the first product's title. Click Next. **Expect:** different products, Previous
+    enabled, and `&after=` in the address. Click Previous. **Expect:** the same first product as before,
+    Previous disabled, and `&before=` in the address.
+
+19. **A refresh stays on the same page.**
+
+    **Why:** the store, the page size and the cursor live in the address, so a refresh or the browser's
+    back button keeps the place.
+
+    **Acts on:** your dev store (`$STORE`). Print the first page's address at 12 per page:
+
+    ```shell
+    echo "http://localhost:3000/en/$ORG_A_ID/shopify/products?shop=$STORE&perPage=12"
+    ```
+
+    Open it, click Next, note the first product's title, then press F5. **Expect:** the same page,
+    starting with the same product, Previous still enabled, and "Products per page" still 12.
+
+20. **A store that must be reconnected says so, without calling Shopify.**
+
+    **Why:** an uninstalled store, or one flagged "needs reinstall" after Shopify rejected its refresh
+    token, can't work again until it's reconnected. The page explains that instead of showing a broken
+    list, and the backend stops before calling Shopify (these demo stores have no working token).
+
+    **Acts on:** `uninstalled-demo.myshopify.com` and `reinstall-demo.myshopify.com`, in your
+    organization. Log in as yourself:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+            query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+            variables: { input: { email: $email, password: $password } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`. **Prove** their states:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" '{
+            query: "query ($tenant: ID!) { shopifyShops(tenantId: $tenant) { shopDomain scopes installedAt uninstalledAt needsReinstall } }",
+            variables: { tenant: $tenant }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `uninstalled-demo.myshopify.com` with an `uninstalledAt` time, and
+    `reinstall-demo.myshopify.com` with `"needsReinstall": true`. Ask for the first one's products:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" --arg store "uninstalled-demo.myshopify.com" '{
+            query: "query ($tenant: ID!, $store: String!) { shopifyProducts(tenantId: $tenant, shopDomain: $store, first: 2) { products { id title } } }",
+            variables: { tenant: $tenant, store: $store }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`, `"data": null`, and `"code": "reconnect_required"` with the message "This store needs
+    to be reconnected. Open the Shopify page and connect it again.". The same for the second one (only
+    the store changes):
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" --arg store "reinstall-demo.myshopify.com" '{
+            query: "query ($tenant: ID!, $store: String!) { shopifyProducts(tenantId: $tenant, shopDomain: $store, first: 2) { products { id title } } }",
+            variables: { tenant: $tenant, store: $store }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect the same `reconnect_required` answer. Then print the page's address for each:
+
+    ```shell
+    echo "http://localhost:3000/en/$ORG_A_ID/shopify/products?shop=uninstalled-demo.myshopify.com"
+    echo "http://localhost:3000/en/$ORG_A_ID/shopify/products?shop=reinstall-demo.myshopify.com"
+    ```
+
+    Open each. **Expect:** "This store needs to be reconnected", and an "Open the Shopify page" link that
+    opens the Shopify page.
+
+21. **A store of another organization is "Store not found", the same as a missing one.**
+
+    **Why:** the store is looked up only within the organization the request is for, so one organization
+    can't list another's products, nor learn which stores it has. Both answers must be identical, or the
+    difference would reveal that the store exists.
+
+    **The second organization** is created with the API below, not in the browser: the web app switches
+    to a new organization when it's added there, and its switcher can't switch back to a personal
+    organization (upstream has the "Personal account" entry commented out in
+    [`tenantSwitchSidebar.component.tsx`](../../../packages/webapp-libs/webapp-tenants/src/components/tenantSwitch/tenantSwitchSidebar.component.tsx)).
+    You are its Owner, so the only difference between the requests below is which organization they
+    name.
+
+    **Acts on:** your organization (`$ORG_A`, its id kept as `$ORG_A_ID`), `Shopify check B` (its id
+    kept as `$ORG_B_ID`), and your dev store (`$STORE`, linked to your organization only).
+
+    Every request goes to the GraphQL API with its body built by `jq -n`, which writes JSON from the
+    variables passed with `--arg`, so no quote needs a backslash. A GraphQL error comes back with status
+    `200` and the error in the body; only a malformed request gets `400`.
+
+    Log in as yourself (the cookie file goes in the gitignored `logs/` folder):
+
+    ```shell
+    mkdir -p logs
+    curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+            query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+            variables: { input: { email: $email, password: $password } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`, with `"otpAuthToken": null` and no `errors`. **Prove** which organizations you belong
+    to:
+
+    ```shell
+    curl -s -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d '{"query": "{ allTenants { edges { node { id name type } } } }"}' | python3 -m json.tool
+    ```
+
+    Expect your organization's name, with its `id`. If the list has no `Shopify check B` yet, create it
+    (skip this block if it's already listed, or you'd get a second one with the same name):
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg name "Shopify check B" '{
+            query: "mutation ($input: CreateTenantMutationInput!) { createTenant(input: $input) { tenant { id name type } } }",
+            variables: { input: { name: $name } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`, with the new organization: `"name": "Shopify check B"`, `"type": "organization"` and its
+    `id`. **Prove** you now belong to both:
+
+    ```shell
+    curl -s -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d '{"query": "{ allTenants { edges { node { id name type } } } }"}' | python3 -m json.tool
+    ```
+
+    Expect both your organization's name and `Shopify check B`, each with its `id`. Then keep the two
+    ids, looked up by name (`jq -r` prints the matching `id` alone):
+
+    ```shell
+    ORG_A_ID=$(curl -s -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d '{"query": "{ allTenants { edges { node { id name } } } }"}' \
+      | jq -r --arg name "$ORG_A" '.data.allTenants.edges[].node | select(.name == $name) | .id')
+    ORG_B_ID=$(curl -s -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d '{"query": "{ allTenants { edges { node { id name } } } }"}' \
+      | jq -r --arg name "Shopify check B" '.data.allTenants.edges[].node | select(.name == $name) | .id')
+    echo "ORG_A_ID=$ORG_A_ID"
+    echo "ORG_B_ID=$ORG_B_ID"
+    echo "Your organization in the browser: http://localhost:3000/en/$ORG_A_ID/"
+    ```
+
+    Expect the same two ids as in the list above, and the browser address of your organization: open it
+    if the browser shows another organization, since the switcher can't go back to a personal one. Then, as yourself, ask **as your organization** for
+    your store:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" --arg store "$STORE" '{
+            query: "query ($tenant: ID!, $store: String!) { shopifyProducts(tenantId: $tenant, shopDomain: $store, first: 2) { products { id title status priceMin priceMax currencyCode } pageInfo { hasNextPage hasPreviousPage } } }",
+            variables: { tenant: $tenant, store: $store }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`, with 2 whole products and their `pageInfo`, and no `errors`. Then ask **as
+    `Shopify check B`** for the same store (only the organization changes):
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_B_ID" --arg store "$STORE" '{
+            query: "query ($tenant: ID!, $store: String!) { shopifyProducts(tenantId: $tenant, shopDomain: $store, first: 2) { products { id title status priceMin priceMax currencyCode } pageInfo { hasNextPage hasPreviousPage } } }",
+            variables: { tenant: $tenant, store: $store }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`, with `"data": null` and this error:
+
+    ```json
+    "message": "GraphQlValidationError",
+    "extensions": { "non_field_errors": [{ "message": "Store not found.", "code": "store_not_found" }] }
+    ```
+
+    Then ask **as your organization** for a store that doesn't exist (only the store changes):
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" --arg store "no-such-store.myshopify.com" '{
+            query: "query ($tenant: ID!, $store: String!) { shopifyProducts(tenantId: $tenant, shopDomain: $store, first: 2) { products { id title status priceMin priceMax currencyCode } pageInfo { hasNextPage hasPreviousPage } } }",
+            variables: { tenant: $tenant, store: $store }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect exactly the same answer as for `Shopify check B`: `200`, `"data": null` and the
+    `store_not_found` error. The two can't be told apart, so `Shopify check B` learns nothing about your
+    store.
+
+#### Step 9 checks (6.1.2)
+
+They cover decisions B, D and E (section 4.2), and reopening a linked store (the former check 16).
 Decision A (a failed load) can't be caused safely by hand: stopping the backend also fails the
 configuration query, so the page shows "not configured" instead. Its component test covers it.
 
-22. Reopening a linked store (repeats check 16): Shopify admin → Apps → the app → you land on
-    `/en/<org id>/shopify?connected=<store>.myshopify.com`, the Shopify Stores page, with the store
-    marked Active.
-23. Decision B, the link page names the organization: Shopify Stores page → Disconnect your store →
-    confirm → it disappears. Shopify admin → Apps → the app → you land on
-    `/en/shopify/link?claim=…`, which shows "This store will be connected to **<your organization>**."
-    and the hint to switch organization first. Click **Connect to this organization** → "Store connected!"
-    → the Stores page lists it as Active.
-24. Decision E, the link survives logging in: Stores page → Disconnect the store again. Log out of the web
-    app (avatar menu → Log out). Shopify admin → Apps → the app → you land on the login page, and its URL
-    contains `redirect=` with `claim` in it (encoded as `%3Fclaim%3D`). Log in → you land on the link
-    page showing your store's domain, **not** "No link provided". Connect it again.
-25. Decision D, a missing permission in plain words (optional: needs a second user who is a Member,
-    not an Owner or Admin, of the organization): disconnect the store, then as the Member open the app
-    from Shopify and click **Connect to this organization** → the red box says "You need permission to
-    manage Shopify stores in this organization.", not `permission_denied`. Reconnect as the Owner
-    afterwards.
-
 Result, 2026-10-12: the human maintainer reported checks 22 to 25 as passed ("human checks went fine"),
-with the dev store and ngrok tunnel. Check 25 is optional and wasn't confirmed separately.
+with the dev store and ngrok tunnel, in their earlier wording. Check 25 was optional then and wasn't
+confirmed separately; it now runs against the seeded Member.
+
+22. **Reopening a linked store from Shopify lands on its organization's Shopify page.**
+
+    **Why:** a merchant who opens the app from Shopify's admin again must land on their store's page in
+    the right organization, not on the dashboard or a blank page (section 5.1, row 7).
+
+    **Acts on:** your dev store (`$STORE`), linked to your organization (`$ORG_A_ID`).
+
+    Log in as yourself:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+            query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+            variables: { input: { email: $email, password: $password } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`. **Prove** your store is linked and active:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" '{
+            query: "query ($tenant: ID!) { shopifyShops(tenantId: $tenant) { shopDomain scopes installedAt uninstalledAt needsReinstall } }",
+            variables: { tenant: $tenant }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect your dev store, with `"uninstalledAt": null` and `"needsReinstall": false`. Print the address
+    you should land on:
+
+    ```shell
+    echo "Expected: http://localhost:3000/en/$ORG_A_ID/shopify?connected=$STORE"
+    ```
+
+    In the browser, logged in as yourself: Shopify admin → Apps → the app. **Expect:** that address, on
+    the Shopify Stores page, with your store marked Active.
+
+23. **The link page names the organization the store will be connected to (decision B).**
+
+    **Why:** the store is linked to the organization you're in, so the page says which one before you
+    confirm, and tells you to switch first if it's the wrong one.
+
+    **Acts on:** your dev store (`$STORE`), and your organization (`$ORG_A`, `$ORG_A_ID`).
+
+    Log in as yourself:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+            query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+            variables: { input: { email: $email, password: $password } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`. Disconnect your store, so opening the app from Shopify leads to the link page:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" --arg shop "$STORE" '{
+            query: "mutation ($input: ShopifyDisconnectShopInput!) { shopifyDisconnectShop(input: $input) { ok } }",
+            variables: { input: { tenantId: $tenant, shopDomain: $shop } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`, with `"ok": true`. **Prove** it's no longer in your list:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" '{
+            query: "query ($tenant: ID!) { shopifyShops(tenantId: $tenant) { shopDomain scopes installedAt uninstalledAt needsReinstall } }",
+            variables: { tenant: $tenant }
+          }')" | python3 -m json.tool
+    echo "The link page should name: $ORG_A"
+    ```
+
+    Expect no `$STORE` in the list, then the name the link page should show. In the browser, logged in as
+    yourself and in your organization: Shopify admin → Apps → the app. **Expect:** the link page, with
+    "This store will be connected to" followed by that name, and the hint to switch organization first.
+    Click "Connect to this organization". **Expect:** "Store connected!". **Prove** it's linked again:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" '{
+            query: "query ($tenant: ID!) { shopifyShops(tenantId: $tenant) { shopDomain scopes installedAt uninstalledAt needsReinstall } }",
+            variables: { tenant: $tenant }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect your dev store back in the list, with `"uninstalledAt": null`.
+
+24. **The claim link survives logging in (decision E).**
+
+    **Why:** a merchant who opens the app from Shopify while logged out of the web app is sent to the
+    login page. The claim is in the link's query string, so the login page must keep it in its
+    `redirect` and bring them back to the link page, or they'd see "No link provided".
+
+    **Acts on:** your dev store (`$STORE`), and your organization (`$ORG_A_ID`).
+
+    Log in as yourself:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -c logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg email "$OWNER_EMAIL" --arg password "$OWNER_PASSWORD" '{
+            query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+            variables: { input: { email: $email, password: $password } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`. Disconnect your store:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" --arg shop "$STORE" '{
+            query: "mutation ($input: ShopifyDisconnectShopInput!) { shopifyDisconnectShop(input: $input) { ok } }",
+            variables: { input: { tenantId: $tenant, shopDomain: $shop } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`, with `"ok": true`. In the browser, log out of the web app (avatar menu → Log out), then
+    Shopify admin → Apps → the app. **Expect:** the login page, with `redirect=` in its address and
+    `%3Fclaim%3D` inside it (the encoded `?claim=`). Log in as yourself. **Expect:** the link page,
+    showing your store's domain, not "No link provided". Click "Connect to this organization", then
+    **prove** it's linked again:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-owner.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" '{
+            query: "query ($tenant: ID!) { shopifyShops(tenantId: $tenant) { shopDomain scopes installedAt uninstalledAt needsReinstall } }",
+            variables: { tenant: $tenant }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect your dev store in the list, with `"uninstalledAt": null`.
+
+25. **A Member can't link a store, and the page says why in plain words (decision D): `permission_denied`
+    from the API, a readable message on the page.**
+
+    **Why:** linking needs `shopify.manage`, which a Member doesn't have. The API answers with the code
+    `permission_denied`; the link page turns it into a sentence instead of showing the code.
+
+    **Acts on:** the seeded Member `shopify-member@example.com`, the seeded `unlinked-demo.myshopify.com`
+    and your organization (`$ORG_A_ID`). Your real store isn't touched.
+
+    Reset the demo data and keep a fresh claim for `unlinked-demo`:
+
+    ```shell
+    CLAIM=$(docker compose exec -T backend python manage.py shopify_seed_demo --email "$OWNER_EMAIL" --organization "$ORG_A" \
+      | grep -o 'claim=[^ ]*' | cut -d= -f2-)
+    echo "CLAIM=$CLAIM"
+    ```
+
+    Expect a claim like `3:1xH6…`. Log in as the Member:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -c logs/check-member.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n '{
+            query: "mutation ($input: ObtainTokenMutationInput!) { tokenAuth(input: $input) { otpAuthToken } }",
+            variables: { input: { email: "shopify-member@example.com", password: "ShopifyMember123!" } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`. **Prove** they're a Member of your organization:
+
+    ```shell
+    curl -s -b logs/check-member.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d '{"query": "{ allTenants { edges { node { id name type membership { role invitationAccepted } } } } }"}' \
+      | python3 -m json.tool
+    ```
+
+    Expect your organization's name and id, with `"role": "MEMBER"` and `"invitationAccepted": true`.
+    Then, as the Member, try to link `unlinked-demo` to it:
+
+    ```shell
+    curl -s -w '%{stderr}%{http_code}\n' -b logs/check-member.cookies -X POST http://localhost:5001/api/graphql/ \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg tenant "$ORG_A_ID" --arg claim "$CLAIM" '{
+            query: "mutation ($input: ShopifyLinkShopInput!) { shopifyLinkShop(input: $input) { shop { shopDomain } } }",
+            variables: { input: { tenantId: $tenant, claim: $claim } }
+          }')" | python3 -m json.tool
+    ```
+
+    Expect `200`, with `"message": "permission_denied"` and no shop. **Prove** the store is still unlinked:
+
+    ```shell
+    docker compose exec -T backend python manage.py shell \
+      -c "from apps.shopify.models import ShopifyShop; print(list(ShopifyShop.objects.filter(shop_domain='unlinked-demo.myshopify.com').values('shop_domain', 'tenant_id', 'installed_at', 'uninstalled_at', 'needs_reinstall')))"
+    echo "Link page: http://localhost:3000/en/shopify/link?claim=$CLAIM"
+    ```
+
+    Expect one record with `'tenant_id': None`, then the link page's address. In the browser: log out,
+    log in as `shopify-member@example.com` (password `ShopifyMember123!`), open that address and click
+    "Connect to this organization". **Expect:** the red box says "You need permission to manage Shopify
+    stores in this organization.", not `permission_denied`. Log out, and log back in as yourself.

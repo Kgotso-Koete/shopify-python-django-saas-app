@@ -20,6 +20,30 @@ export const shopifyShopsQuery = gql(/* GraphQL */ `
   }
 `);
 
+export const shopifyProductsQuery = gql(/* GraphQL */ `
+  query shopifyProductsQuery($tenantId: ID!, $shopDomain: String!, $first: Int!, $after: String, $before: String) {
+    shopifyProducts(tenantId: $tenantId, shopDomain: $shopDomain, first: $first, after: $after, before: $before) {
+      products {
+        id
+        title
+        handle
+        status
+        imageUrl
+        imageAlt
+        priceMin
+        priceMax
+        currencyCode
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+    }
+  }
+`);
+
 export const shopifyClaimQuery = gql(/* GraphQL */ `
   query shopifyClaimQuery($claim: String!) {
     shopifyClaim(claim: $claim) {

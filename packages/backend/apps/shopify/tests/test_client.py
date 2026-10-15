@@ -163,6 +163,58 @@ def test_graphql_response_errors(mocker, shopify_client):
         shopify_client.graphql("{ shop { name } }")
 
 
+THROTTLED_RESPONSE = {
+    "errors": [
+        {
+            "message": "Throttled",
+            "extensions": {
+                "code": "THROTTLED",
+                "documentation": "https://shopify.dev/api/usage/rate-limits",
+            },
+        }
+    ],
+    "extensions": {
+        "cost": {
+            "requestedQueryCost": 152,
+            "actualQueryCost": None,
+            "throttleStatus": {"maximumAvailable": 2000.0, "currentlyAvailable": 30, "restoreRate": 100.0},
+        }
+    },
+}
+
+
+def test_graphql_throttled_raises_throttled_error(mocker, shopify_client):
+    # Read from the module, not imported by name, so a missing class fails this test only.
+    from apps.shopify import client as client_module
+
+    mock_response = mocker.Mock()
+    mock_response.ok = True
+    mock_response.json.return_value = THROTTLED_RESPONSE
+    mocker.patch("requests.post", return_value=mock_response)
+
+    with pytest.raises(client_module.ShopifyThrottledError):
+        shopify_client.graphql("{ shop { name } }")
+
+    # Callers that catch ShopifyAPIError keep catching a throttle.
+    assert issubclass(client_module.ShopifyThrottledError, ShopifyAPIError)
+
+
+def test_graphql_other_errors_are_not_throttled_errors(mocker, shopify_client):
+    from apps.shopify import client as client_module
+
+    mock_response = mocker.Mock()
+    mock_response.ok = True
+    mock_response.json.return_value = {
+        "errors": [{"message": "Access denied", "extensions": {"code": "ACCESS_DENIED"}}],
+    }
+    mocker.patch("requests.post", return_value=mock_response)
+
+    with pytest.raises(ShopifyAPIError) as raised:
+        shopify_client.graphql("{ shop { name } }")
+
+    assert not isinstance(raised.value, client_module.ShopifyThrottledError)
+
+
 def test_graphql_requires_access_token():
     client = ShopifyAdminClient("test.myshopify.com")
     with pytest.raises(ValueError, match="access_token is required"):
@@ -248,3 +300,39 @@ def test_admin_client_for_null_expiry(mocker):
     assert client.shop_domain == "admin-client-null.myshopify.com"
     assert client.access_token == "acc_null_expiry"
     mock_refresh.assert_not_called()
+
+
+def test_admin_client_for_marks_needs_reinstall_when_refresh_token_rejected(mocker):
+    # A rejected refresh token can't recover without the merchant reinstalling, so the store is
+    # flagged for every later caller (plan step 11, decided 2026-10-12).
+    shop = ShopifyShop.objects.create(
+        shop_domain="admin-client-rejected.myshopify.com",
+        access_token="acc_expiring",
+        refresh_token="ref_revoked",
+        access_token_expires_at=timezone.now() + timedelta(minutes=2),
+    )
+    rejected = ShopifyRefreshTokenRejected("Refresh token rejected")
+    mocker.patch.object(ShopifyAdminClient, "refresh", side_effect=rejected)
+
+    with pytest.raises(ShopifyRefreshTokenRejected):
+        admin_client_for(shop)
+
+    shop.refresh_from_db()
+    assert shop.needs_reinstall is True
+
+
+def test_admin_client_for_keeps_the_flag_off_on_a_temporary_refresh_failure(mocker):
+    # A 5xx from Shopify may pass, so the store is not flagged.
+    shop = ShopifyShop.objects.create(
+        shop_domain="admin-client-transient.myshopify.com",
+        access_token="acc_expiring",
+        refresh_token="ref_valid",
+        access_token_expires_at=timezone.now() + timedelta(minutes=2),
+    )
+    mocker.patch.object(ShopifyAdminClient, "refresh", side_effect=ShopifyAuthError("Failed to refresh token: 500"))
+
+    with pytest.raises(ShopifyAuthError):
+        admin_client_for(shop)
+
+    shop.refresh_from_db()
+    assert shop.needs_reinstall is False

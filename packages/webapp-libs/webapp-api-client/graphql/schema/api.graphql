@@ -39,6 +39,7 @@ type Query {
   shopifyConfig: ShopifyConfigType!
   shopifyShops(tenantId: ID!): [ShopifyShopType!]!
   shopifyClaim(claim: String!): ShopifyClaimType
+  shopifyProducts(tenantId: ID!, shopDomain: String!, first: Int!, after: String, before: String): ShopifyProductsType!
   "Get backup configuration for a tenant"
   backupConfig(tenantId: ID!): BackupConfigType
   "Get backup records for a tenant"
@@ -129,6 +130,27 @@ type ShopifyShopType {
 }
 type ShopifyClaimType {
   shopDomain: String!
+}
+type ShopifyProductsType {
+  products: [ShopifyProductType!]!
+  pageInfo: ShopifyProductsPageInfoType!
+}
+type ShopifyProductType {
+  id: ID!
+  title: String!
+  handle: String!
+  status: String!
+  imageUrl: String
+  imageAlt: String
+  priceMin: String!
+  priceMax: String!
+  currencyCode: String!
+}
+type ShopifyProductsPageInfoType {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
 }
 "GraphQL type for BackupConfig."
 type BackupConfigType implements Node {
