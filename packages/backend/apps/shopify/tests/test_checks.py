@@ -1,5 +1,8 @@
 """
 Tests for the apps.shopify system checks.
+
+Kind of test: sanity (agents.md section 2.5). Why: they prove a misconfigured deployment fails at
+startup; nothing is faked.
 """
 
 import pytest

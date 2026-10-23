@@ -1,3 +1,11 @@
+"""
+Tests for the Shopify install and OAuth callback views in apps/shopify/views.py.
+
+Kind of test: integration (agents.md section 2.5). Why: requests go through the real routes with
+Django's test client, against the test database; complete_install, which exchanges the code with
+Shopify, is patched in the callback tests.
+"""
+
 import hmac
 import hashlib
 from urllib.parse import urlencode

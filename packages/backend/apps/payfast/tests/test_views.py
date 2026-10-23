@@ -5,6 +5,9 @@ Real URL routing, real request parsing, real signature check and a real database
 calls that would leave the machine are replaced: PayFast's /eng/query/validate confirmation and
 the DNS lookup of PayFast's hosts. The request comes from an IP in PayFast's published range
 (https://developers.payfast.co.za/docs#ports-ips).
+
+Kind of test: integration (agents.md section 2.5). Why: posts go through the real route with
+Django's test client, against the test database; PayFast's validate endpoint and DNS are faked.
 """
 
 from unittest import mock

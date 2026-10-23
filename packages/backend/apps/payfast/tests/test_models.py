@@ -2,6 +2,9 @@
 Tests for apps/payfast/models.py, mainly PayFastSubscription.effective_plan: the plan a tenant
 actually has right now. It is computed on read, so a cancelled subscription downgrades to the free
 plan at the end of its paid period without a scheduled job having to run first (plan section 2).
+
+Kind of test: integration (agents.md section 2.5). Why: the plan is computed from rows in the test
+database; nothing is faked.
 """
 
 import datetime

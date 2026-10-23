@@ -9,6 +9,10 @@ Covers:
 - customers/redact and customers/data_request: answer 200 and record
 - Unknown topic: answer 200 with a warning logged
 - GET → 405
+
+Kind of test: integration (agents.md section 2.5). Why: posts go through the real route with
+Django's test client, against the test database; nothing is faked, and Shopify is simulated by
+HMAC-signed posts.
 """
 
 import base64

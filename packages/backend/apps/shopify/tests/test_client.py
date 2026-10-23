@@ -1,3 +1,12 @@
+"""
+Tests for apps/shopify/client.py: the Shopify Admin API client, and admin_client_for, which
+refreshes a store's expiring token.
+
+Kind of test: unit (agents.md section 2.5). Why: the client on its own, with Shopify's HTTP mocked.
+The exception is the admin_client_for tests, which are integration: they save refreshed tokens on a
+store row in the test database.
+"""
+
 import pytest
 import requests
 from django.conf import settings

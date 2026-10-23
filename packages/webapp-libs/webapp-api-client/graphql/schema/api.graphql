@@ -36,6 +36,9 @@ that will be handled by the multipart request spec
 """
 scalar Upload
 type Query {
+  whatsAppLinks: [WhatsAppLinkType!]!
+  whatsAppNumberStatus(tenantId: ID!, accountId: ID!): WhatsAppNumberStatusType!
+  whatsAppAccounts(tenantId: ID!): [WhatsAppAccountType!]!
   shopifyConfig: ShopifyConfigType!
   shopifyShops(tenantId: ID!): [ShopifyShopType!]!
   shopifyClaim(claim: String!): ShopifyClaimType
@@ -117,6 +120,42 @@ type Query {
     "The ID of the object"
     id: ID!
   ): Node
+}
+"""
+The logged-in user's link on one organization's internal number, with their phone masked to its
+last four digits.
+"""
+type WhatsAppLinkType {
+  tenantId: ID!
+  organizationName: String!
+  internalNumber: String!
+  linked: Boolean!
+  maskedNumber: String
+  conversationMode: ConversationMode
+  linkedAt: DateTime
+}
+"Meta's own view of a number, its values exactly as Meta sends them."
+type WhatsAppNumberStatusType {
+  status: String
+  codeVerificationStatus: String
+  qualityRating: String
+  nameStatus: String
+  verifiedName: String
+  displayPhoneNumber: String
+}
+"One of the organization's WhatsApp numbers, with the form's three proofs (user story 11)."
+type WhatsAppAccountType {
+  id: ID!
+  purpose: AccountPurpose!
+  phoneNumberId: String!
+  wabaId: String!
+  displayPhoneNumber: String!
+  verifiedName: String!
+  connectionMethod: ConnectionMethod!
+  isActive: Boolean!
+  credentialsVerifiedAt: DateTime
+  subscribedAt: DateTime
+  lastMessageReceivedAt: DateTime
 }
 type ShopifyConfigType {
   enabled: Boolean!
@@ -1412,6 +1451,31 @@ type FileFieldType {
   name: String
 }
 type ApiMutation {
+  "Issue a link code for the logged-in user's number; it works only when sent from that number."
+  startWhatsAppLink(input: StartWhatsAppLinkInput!): StartWhatsAppLink
+  """
+  Save how the logged-in user wants to talk to one organization's number: menus and forms, or the
+  AI assistant.
+  """
+  updateWhatsAppConversationMode(input: UpdateWhatsAppConversationModeInput!): UpdateWhatsAppConversationMode
+  """
+  Remove the logged-in user's link on one organization's number. Their WhatsApp contact stays; its
+  conversation is forgotten, the assistant's history included (Step 1.13).
+  """
+  disconnectWhatsApp(input: DisconnectWhatsAppInput!): DisconnectWhatsApp
+  """
+  Connect a number with the form. Meta checks the id and token, and our app is subscribed to the
+  number's WhatsApp Business account, before anything is saved (Step 1.18).
+  """
+  connectWhatsAppAccount(input: ConnectWhatsAppAccountInput!): ConnectWhatsAppAccount
+  "Send Meta's hello_world template from the number, directly, so Meta's answer shows in the form."
+  sendWhatsAppTestMessage(input: SendWhatsAppTestMessageInput!): SendWhatsAppTestMessage
+  "Wipe the number's secrets and mark it inactive; its history stays (maintainer's decision)."
+  disconnectWhatsAppAccount(input: DisconnectWhatsAppAccountInput!): DisconnectWhatsAppAccount
+  requestWhatsAppVerificationCode(input: RequestWhatsAppVerificationCodeInput!): RequestWhatsAppVerificationCode
+  verifyWhatsAppNumber(input: VerifyWhatsAppNumberInput!): VerifyWhatsAppNumber
+  registerWhatsAppNumber(input: RegisterWhatsAppNumberInput!): RegisterWhatsAppNumber
+  subscribeWhatsAppApp(input: SubscribeWhatsAppAppInput!): SubscribeWhatsAppApp
   shopifyStartInstall(input: ShopifyStartInstallInput!): ShopifyStartInstall
   shopifyLinkShop(input: ShopifyLinkShopInput!): ShopifyLinkShop
   shopifyDisconnectShop(input: ShopifyDisconnectShopInput!): ShopifyDisconnectShop
@@ -1587,6 +1651,54 @@ type ApiMutation {
   deleteDocumentDemoItem(input: DeleteDocumentDemoItemMutationInput!): DeleteDocumentDemoItemMutationPayload
   createFavoriteContentfulDemoItem(input: CreateFavoriteContentfulDemoItemMutationInput!): CreateFavoriteContentfulDemoItemMutationPayload
   deleteFavoriteContentfulDemoItem(input: DeleteFavoriteContentfulDemoItemMutationInput!): DeleteFavoriteContentfulDemoItemMutationPayload
+}
+"Issue a link code for the logged-in user's number; it works only when sent from that number."
+type StartWhatsAppLink {
+  code: String!
+  link: String!
+  maskedNumber: String!
+  expiresAt: DateTime!
+}
+"""
+Save how the logged-in user wants to talk to one organization's number: menus and forms, or the
+AI assistant.
+"""
+type UpdateWhatsAppConversationMode {
+  link: WhatsAppLinkType!
+}
+"""
+Remove the logged-in user's link on one organization's number. Their WhatsApp contact stays; its
+conversation is forgotten, the assistant's history included (Step 1.13).
+"""
+type DisconnectWhatsApp {
+  link: WhatsAppLinkType!
+}
+"""
+Connect a number with the form. Meta checks the id and token, and our app is subscribed to the
+number's WhatsApp Business account, before anything is saved (Step 1.18).
+"""
+type ConnectWhatsAppAccount {
+  account: WhatsAppAccountType!
+}
+"Send Meta's hello_world template from the number, directly, so Meta's answer shows in the form."
+type SendWhatsAppTestMessage {
+  messageId: String!
+}
+"Wipe the number's secrets and mark it inactive; its history stays (maintainer's decision)."
+type DisconnectWhatsAppAccount {
+  account: WhatsAppAccountType!
+}
+type RequestWhatsAppVerificationCode {
+  ok: Boolean!
+}
+type VerifyWhatsAppNumber {
+  ok: Boolean!
+}
+type RegisterWhatsAppNumber {
+  ok: Boolean!
+}
+type SubscribeWhatsAppApp {
+  ok: Boolean!
 }
 type ShopifyStartInstall {
   authorizeUrl: String!
@@ -2234,6 +2346,22 @@ type NotificationCreatedSubscription {
 interface Node {
   "The ID of the object"
   id: ID!
+}
+"How a conversation is driven (plan section 8.5)."
+enum ConversationMode {
+  WHATSAPP_FORM
+  AGENTIC
+}
+"Who texts a WhatsApp number (plan decision D2, renamed in Step 1.16), which decides its handler."
+enum AccountPurpose {
+  INTERNAL_COMMUNICATIONS
+  EXTERNAL_COMMUNICATIONS
+}
+"How an account's number was connected (plan section 8.2)."
+enum ConnectionMethod {
+  SEED
+  MANUAL
+  EMBEDDED_SIGNUP
 }
 """
 
@@ -2932,6 +3060,52 @@ enum UsersUserProfileLanguageChoices {
   FR
   "Spanish"
   ES
+}
+input StartWhatsAppLinkInput {
+  tenantId: ID!
+  phoneNumber: String!
+}
+input UpdateWhatsAppConversationModeInput {
+  tenantId: ID!
+  mode: ConversationMode!
+}
+input DisconnectWhatsAppInput {
+  tenantId: ID!
+}
+input ConnectWhatsAppAccountInput {
+  tenantId: ID!
+  purpose: AccountPurpose!
+  phoneNumberId: String!
+  wabaId: String!
+  accessToken: String!
+}
+input SendWhatsAppTestMessageInput {
+  tenantId: ID!
+  accountId: ID!
+  to: String!
+}
+input DisconnectWhatsAppAccountInput {
+  tenantId: ID!
+  accountId: ID!
+}
+input RequestWhatsAppVerificationCodeInput {
+  tenantId: ID!
+  accountId: ID!
+  method: String!
+}
+input VerifyWhatsAppNumberInput {
+  tenantId: ID!
+  accountId: ID!
+  code: String!
+}
+input RegisterWhatsAppNumberInput {
+  tenantId: ID!
+  accountId: ID!
+  pin: String!
+}
+input SubscribeWhatsAppAppInput {
+  tenantId: ID!
+  accountId: ID!
 }
 input ShopifyStartInstallInput {
   tenantId: ID!

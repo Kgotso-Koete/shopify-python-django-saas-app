@@ -606,16 +606,16 @@ commands one after another from the repository root, in this order, never side b
   (0 = passed). Read counts with `sed 's/\x1b\[[0-9;]*m//g' logs/<file>.log | grep -E "^(Test Suites|Tests):"`.
 - Docker must be running for the last two (backend and workers).
 
-1. Lint and type-check, 15 frontend projects (30 lines):
+1. Lint and type-check, 16 frontend projects (32 lines; `webapp-whatsapp` added on 2026-10-23):
 
 ```shell
-mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do for t in lint type-check; do pnpm nx run $p:$t --skip-nx-cache > logs/$p-$t.log 2>&1; echo "$p $t exit code: $?"; done; done
+mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify webapp-whatsapp; do for t in lint type-check; do pnpm nx run $p:$t --skip-nx-cache > logs/$p-$t.log 2>&1; echo "$p $t exit code: $?"; done; done
 ```
 
-2. Tests, all 15 frontend projects (`webapp-shopify` has tests since 2026-10-11):
+2. Tests, all 16 frontend projects (`webapp-shopify` has tests since 2026-10-11, `webapp-whatsapp` since 2026-10-20):
 
 ```shell
-for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1; echo "$p test exit code: $?"; done
+for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify webapp-whatsapp; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1; echo "$p test exit code: $?"; done
 ```
 
 3. Backend (formatter, migrations check, about 1,000 tests; about 15 to 20 minutes) and workers:

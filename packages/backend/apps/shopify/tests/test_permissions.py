@@ -1,3 +1,11 @@
+"""
+Tests for apps/shopify/permissions.py: what shopify.view and shopify.manage each system role gets,
+and the data migration that grants them to existing organizations.
+
+Kind of test: integration (agents.md section 2.5). Why: permissions and role grants are rows in the
+test database, and the migration runs against them; nothing is faked.
+"""
+
 import importlib
 
 import pytest

@@ -1,6 +1,6 @@
 {
   "name": "@sb/infra-core",
-  "version": "6.2.0",
+  "version": "6.3.0",
   "type": "commonjs",
   "scripts": {
     "build": "tsc --project tsconfig.lib.json"

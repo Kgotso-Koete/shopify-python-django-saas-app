@@ -1,3 +1,10 @@
+"""
+Tests for the install services in apps/shopify/services.py: start_install and complete_install.
+
+Kind of test: integration (agents.md section 2.5). Why: they write OAuth states and stores in the
+test database; Shopify's OAuth code exchange is mocked.
+"""
+
 import pytest
 import datetime
 from django.conf import settings

@@ -1,0 +1,47 @@
+{
+  "version": "7.2",
+  "screens": [
+    {
+      "id": "ITEM",
+      "title": "Item",
+      "terminal": true,
+      "data": {
+        "heading": {
+          "type": "string",
+          "__example__": "Create an item in Acme"
+        },
+        "name": {
+          "type": "string",
+          "__example__": "Monthly report"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "${data.heading}"
+          },
+          {
+            "type": "TextInput",
+            "label": "Name",
+            "name": "name",
+            "input-type": "text",
+            "init-value": "${data.name}",
+            "required": true
+          },
+          {
+            "type": "Footer",
+            "label": "Continue",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "name": "${form.name}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

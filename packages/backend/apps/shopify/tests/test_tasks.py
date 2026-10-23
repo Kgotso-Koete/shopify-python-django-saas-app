@@ -4,6 +4,9 @@ Tests for the Shopify Celery task: process_shopify_webhook.
 Covers:
 - The task calls the correct handler from TOPIC_HANDLERS
 - A missing delivery row is logged and doesn't crash
+
+Kind of test: integration (agents.md section 2.5). Why: the task runs against delivery rows in the
+test database; only one test patches the topic handlers.
 """
 
 import pytest

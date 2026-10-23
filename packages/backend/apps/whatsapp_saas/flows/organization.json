@@ -1,0 +1,47 @@
+{
+  "version": "7.2",
+  "screens": [
+    {
+      "id": "ORGANIZATION",
+      "title": "Organization",
+      "terminal": true,
+      "data": {
+        "heading": {
+          "type": "string",
+          "__example__": "Rename Acme"
+        },
+        "name": {
+          "type": "string",
+          "__example__": "Acme"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "${data.heading}"
+          },
+          {
+            "type": "TextInput",
+            "label": "Organization name",
+            "name": "name",
+            "input-type": "text",
+            "init-value": "${data.name}",
+            "required": true
+          },
+          {
+            "type": "Footer",
+            "label": "Continue",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "name": "${form.name}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -8,12 +8,14 @@ import { Separator } from '@sb/webapp-core/components/ui/separator';
 import { cn } from '@sb/webapp-core/lib/utils';
 import { useCurrentTenant } from '@sb/webapp-tenants/providers';
 import { currentUserOrganizationRolesQuery } from '@sb/webapp-tenants/routes/tenantSettings/tenantRoles/tenantRoles.graphql';
+import { WhatsAppProfileSection } from '@sb/webapp-whatsapp';
 import {
   ChevronDown,
   Crown,
   Fingerprint,
   Lock,
   Mail,
+  MessageCircle,
   Monitor,
   Shield,
   ShieldCheck,
@@ -354,6 +356,25 @@ export const Profile = () => {
           </CardHeader>
           <CardContent>
             <PasskeysForm />
+          </CardContent>
+        </Card>
+
+        {/* WhatsApp Card, from @sb/webapp-whatsapp (WhatsApp plan Step 1.14) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5" />
+              <FormattedMessage defaultMessage="WhatsApp" id="Auth / Profile details / WhatsApp header" />
+            </CardTitle>
+            <CardDescription>
+              <FormattedMessage
+                defaultMessage="Link your WhatsApp number, and choose menus or the AI assistant"
+                id="Auth / Profile details / WhatsApp label"
+              />
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <WhatsAppProfileSection />
           </CardContent>
         </Card>
 

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.3.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.2.0...6.3.0) (2026-10-23)
+
+### Features
+
+- WhatsApp for an organization's team: every WhatsApp number belongs to an organization. **Organization settings → WhatsApp** has two forms, each with examples, its own **Connect number** button and its own list: the internal communications number the team texts (one per organization), and external communications numbers for store customers. Every number is connected to the service's one Meta app, whose App secret and webhook verify token are set once in `.env` (`WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`); organizations never make a Meta app
+- A team member links their phone once per organization, from the profile page; a code sent from that phone proves it. They then use the organization from its internal number: CRUD items and Shopify products in menus, 7 to a page with Previous, Next and Main menu, and every screen has a way back. Creating and renaming items, and renaming the organization, opens a pre-filled WhatsApp Flow form, published when the number is connected. Every write waits for the user's own press on Confirm. Anyone else texting the number gets no reply
+- WhatsApp AI assistant: `mode ai` switches to an assistant that answers in plain words and calls a fixed list of tools, the same operations as the menus. Its writes go through the same Confirm, and it's told what really happened. OpenAI's Responses API is called with plain HTTP requests (`store: false`), and the history is kept in the app's database, the last 20 turns. `mode menu` switches back
+- WhatsApp products: a connected Shopify store's products, newest first, with a typed search and each product's picture, price and status
+- WhatsApp number forms: three values (Phone number ID, WhatsApp Business Account ID, access token). Meta checks the number, and the service's app is subscribed to the number's WhatsApp Business account so its messages arrive, before anything is saved. Each number shows its proofs (credentials verified, app subscribed, message received), sends a test message, and disconnects. A troubleshooting panel shows Meta's status, requests and verifies a code, registers the number with its PIN, and re-subscribes the app. Viewing needs `whatsapp.view`; changing needs `whatsapp.manage`
+- Backend: one webhook for every number, checking Meta's signature with the service's App secret, storing each message once and answering in the worker; an ordered send queue per contact; `whatsapp_seed_demo`, `whatsapp_publish_flows` and `whatsapp_send_queued` commands; startup checks for the WhatsApp settings; and the `apps.phone_verification` code store
+- Enums are stored with exactly their member names (`INTERNAL_COMMUNICATIONS`, `OUTBOUND`, `SENT`, …), in the database and in settings (`WHATSAPP_SEND_BACKEND=META`), with data migrations for existing rows
+- Shopify: `fetch_products` takes an optional search and an optional newest-first order, for the WhatsApp menus. The website's products page sends exactly what it sent before
+
+### Documentation
+
+- WhatsApp operator guide (`packages/internal/docs/docs/features/whatsapp/index.mdx`): the service's Meta app and test number, the environment variables, the webhook set once over a tunnel, connecting a number on the WhatsApp tab, linking a phone, the forms, sending for real, costs and the 24-hour rule, and repairing a stuck number
+- WhatsApp plan (`docs/superpowers/plans/2026-10-06-whatsapp-first-channel-plan.md`): every step's RED and GREEN with its command, and the human checks, rewritten as the fast path to a real message on an organization's own number
+- `agents.md`: every test file says what kind of test it is (section 2.5), no `transaction=True` backend tests (section 2.6), providers' HTTP APIs are called directly, not through their SDKs (section 5.3a), enums are stored with their names (section 5.3b), and every design starts from the product's use case (section 4.5a). The PayFast and Shopify test files got their "Kind of test" lines too
+- README: points AI agents to `docs/superpowers/agents.md` first, and its Testing commands include the WhatsApp backend modules and `webapp-whatsapp`
+
 ## [6.2.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.1.2...6.2.0) (2026-10-14)
 
 ### Features

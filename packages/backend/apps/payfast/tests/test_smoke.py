@@ -5,6 +5,9 @@ change -> cancellation -> a donation in the transaction history.
 
 Only PayFast's servers are replaced: the /eng/query/validate confirmation, DNS, and the REST API.
 Everything else (URL routing, signatures, permissions, database) is real.
+
+Kind of test: smoke (agents.md section 2.5). Why: one whole journey across GraphQL and the ITN
+webhook, through the real stack; only PayFast's servers are faked, as above.
 """
 
 from unittest import mock

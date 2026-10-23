@@ -1,808 +1,2263 @@
 # WhatsApp-First Channel — Implementation Plan
 
-**Date:** 2026-10-06  
-**Status:** Draft for maintainer review  
-**Goal:** Shape this codebase into a WhatsApp-first SaaS application. WhatsApp is the primary client for supported account, organization, generic CRUD demo item, subscription, and payment use cases after the user links an account. The existing website remains a second client with the same underlying capabilities and data, and keeps the current account sign-up flow. Both clients call channel-neutral application use cases. Native WhatsApp-only account creation is deferred so this first slice can focus on linking existing accounts and day-to-day use. Shopify storefront commerce is a separate, later secondary goal after the current Shopify feature is stable. For payment steps PayFast must host, WhatsApp hands off to a secure checkout link.
+**Date:** 2026-10-06, rewritten 2026-10-15 after research  
+**Status:** Research done. Phase 1 is detailed and ready for TDD; phases 2 to 6 are outlined and get their detailed steps when they start.  
+**Goal:** Make WhatsApp a first-class client of this SaaS app, for two kinds of user. A **SaaS user** manages their organizations, CRUD items, Shopify products and subscription by texting the platform's WhatsApp number. A **store customer** (shopper) browses, searches and buys from an organization's Shopify store by texting that organization's own WhatsApp number. Both can use deterministic WhatsApp menus and forms (`whatsapp_form` mode) or talk to an AI assistant that calls the same backend operations (`agentic` mode). The website stays a full second client with the same data and rules.
 
-## 0. Approach and boundaries
+## 1. Who's who
 
-Build one self-contained backend capability, `packages/backend/apps/whatsapp`, and make application use cases available to two clients: WhatsApp first and the React website second. Once linked, WhatsApp is a complete client for the supported SaaS actions, not a thin proxy to website screens. The React client continues to use GraphQL, keeps the current sign-up flow, and can perform the same supported actions. Both adapters call the same channel-neutral use cases and preserve the same persistence, validation, tenant isolation, permissions, and audit events.
+- **SaaS user:** has an account from the existing website sign-up, and memberships in organizations. WhatsApp knows them only after they link their number (user story 1), through a `WhatsAppIdentity` row.
+- **Organization member:** a SaaS user acting inside one organization. Their roles decide what they may do, with the same permission codes the website checks (`features.crud.view`, `features.crud.manage`, `shopify.view`, `billing.view`, `billing.manage`, and the new `whatsapp.view` / `whatsapp.manage`).
+- **Organization admin:** an organization member with `whatsapp.manage`, who connects the organization's own WhatsApp number with the credentials form (user story 11).
+- **Store customer (shopper):** someone texting an organization's WhatsApp number to buy from its Shopify store. Known as a `StoreCustomer` (phase 2) built on that number's `WhatsAppContact`: never a SaaS user, never a member, and scoped to that one organization. Named "store customer" rather than plain "customer" because `Customer` already means the paying organization in dj-stripe, and a customer record in Shopify's API (maintainer's choice, 2026-10-15).
+- **Support member:** an organization member who answers store customers that asked for a human (phase 5).
+- **Operator:** whoever runs the deployment and owns the platform's Meta app and platform number.
+  - **Changed on 2026-10-22:** the operator owns no WhatsApp number and no Meta app. This line had been added after the maintainer's first review, and was never discussed. They deploy the app and set `WHATSAPP_ENABLED` and the encryption key, as for any other feature; every number belongs to an organization (Step 1.17).
 
-For WhatsApp-first SaaS use, a signed inbound Meta message plus an active `WhatsAppIdentity` resolves the sender to a SaaS user. The user first creates an account through the existing website sign-up flow, then links WhatsApp from the profile page or starts linking in WhatsApp and verifies an email challenge. After linking, the user can perform supported day-to-day actions in WhatsApp without returning to the website; the website remains a full second client. Native WhatsApp-only sign-up is deferred. A shopper interacting with a tenant's Shopify store is a separate, deferred principal and does not need a SaaS account or tenant membership. Shopify product/order work and per-tenant shopper routing are not part of this plan's initial delivery.
+## 2. User stories
 
-The Flask reference is [`python-flask-whatsapp-store`](../../../../python-flask-whatsapp-store) in the maintainer's sibling workspace (its files are outside this repository). The patterns worth carrying over are:
+| Story                                                                | As a                        | I want                                                                    | So that                                                                  | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Link my WhatsApp number (Steps 1.7, 1.14)                         | SaaS user                   | to link my WhatsApp number to my account                                  | the platform number knows it's me                                        | I enter my WhatsApp number on my profile in any common format, such as `083 123-4567` or `+27 (0)83 123 4567`, and it's saved as `27831234567` (D19)<br>I get a one-time code and a `wa.me` link, and the code works only when sent from that number<br>Sending it links the number; the signed webhook proves the number, my web session proves the account<br>Codes expire after 10 minutes, work once and are rate-limited<br>A number already linked to another account is refused<br>I can disconnect from the profile page or by sending `unlink`                                                                                                              |
+| 2. Strangers learn nothing (Step 1.7)                                | SaaS user                   | an unlinked number to get only linking instructions                       | nobody can see my data by texting the platform                           | An unlinked sender gets a short "link your account at …" reply and nothing else<br>The reply is the same whether or not the number belongs to a registered person                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 3. Choose how I talk to the app (Steps 1.8, 1.14)                    | SaaS user                   | to choose menus and forms, or the AI assistant                            | the experience suits me                                                  | The choice is saved on my `WhatsAppIdentity` and shown on my profile<br>`mode menu` and `mode ai` switch it in chat<br>With no choice saved, `WHATSAPP_DEFAULT_CONVERSATION_MODE` applies<br>Switching discards half-finished forms and unconfirmed actions                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 4. See and pick my organizations (Steps 1.9, 1.10)                   | SaaS user                   | to list my organizations and pick one to work in                          | later actions apply to the right organization                            | Only organizations where my membership is accepted are listed<br>Picking one stores it for the conversation; every later action rechecks the membership                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 5. Create and rename an organization in chat (Steps 1.9, 1.10, 1.11) | SaaS user                   | to create an organization, or rename one I manage                         | I can run my workspace from my phone                                     | Create opens a WhatsApp form; rename opens it pre-filled with the current name<br>Nothing is saved until I press Confirm<br>Validation is the same as the website's; rename needs the same permission as on the website                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 6. Manage CRUD items with paging (Steps 1.9, 1.10, 1.11)             | organization member         | to list, view, create, update and delete CRUD items                       | I can maintain organization data in chat                                 | Lists show 7 items per page, with Previous, Next and Main menu<br>Create and update use forms pre-filled with the organization and current values<br>Delete always asks for a separate confirmation<br>Reads need `features.crud.view`, writes need `features.crud.manage`                                                                                                                                                                                                                                                                                                                                                                                           |
+| 7. See my store's products (Step 1.12)                               | organization member         | to browse and search my organization's Shopify products                   | I can check my catalog from my phone                                     | Needs `shopify.view`, like the website's products page<br>Products are paged 7 at a time, newest first, with a free-text search<br>A store that must be reconnected gives a clear message, not an error                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 8. Ask the assistant (Step 1.13)                                     | SaaS user                   | to ask in plain words, such as "add an item called Monthly report"        | I don't have to learn the menus                                          | The assistant can only call the fixed list of tools, which run the same operations as the menus<br>Every write is shown back with Confirm and Cancel buttons, and only my press runs it<br>The assistant reports success only from the saved result                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 9. Never more than the website allows (Steps 1.9, 1.13)              | organization member         | WhatsApp to grant me exactly what the website grants me                   | chat is never a back door                                                | Every operation checks the same permission code as the matching GraphQL field<br>An action on another organization's item reads as "not found"<br>Organization ids never come from message text or from the AI                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 10. Try it without Meta (Steps 1.4, 1.15)                            | operator                    | to run the whole flow locally without a Meta account                      | development and demos cost nothing                                       | `WHATSAPP_SEND_BACKEND=log` (the default) stores replies without calling Meta<br>Seed data and signed sample webhooks drive every human check                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 11. Connect my organization's number with a form (Steps 1.5, 1.6)    | organization admin          | to enter my WhatsApp Business API details in a simple form                | the app can send and receive on my number, proven before anyone texts it | Needs `whatsapp.manage`; members with `whatsapp.view` see the status only<br>I enter the phone number id, the WhatsApp Business account id, the access token and my Meta app's secret<br>Saving checks the id and token with Meta first, then stores them encrypted; secrets are never shown again<br>The page shows the webhook URL and verify token to paste into my Meta app, and marks the webhook verified when Meta calls it<br>"Send test message" sends Meta's `hello_world` template to a number I enter in any common format (D19), and the page shows the last message received on my number<br>I can disconnect the number                               |
+| 12. Browse and search a store (Steps 2.2, 2.3)                       | store customer              | to text "hi, show me your products" or search for something               | I can shop without opening a website                                     | Products come from that organization's store, 7 per page, with Previous, Next and Main menu<br>Only products published to the store and available for sale are shown                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 13. See a product's details (Step 2.4)                               | store customer              | to tap a product and see its picture, price and options                   | I can decide as I would on the web page                                  | The reply shows the image, title, price and variants<br>Buttons offer Add to cart, Buy now and Back to results                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 14. A store customer stays inside one store (Steps 2.1, 2.2)         | store customer              | my chat with a store to be only about that store                          | other businesses never see or use my chat                                | A store customer belongs to exactly one organization's number<br>The same phone texting two stores is two separate store customers<br>Store data is redacted when Shopify asks (`customers/redact`, `shop/redact`)                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 15. Buy a subscription in chat (Step 3.1)                            | organization member         | to pick a plan and pay from WhatsApp                                      | upgrading doesn't need the website menus                                 | Needs `billing.manage`<br>I get a single-use link to a page on this site that submits the PayFast form<br>"Paid" is only reported after PayFast's ITN confirms it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 16. Pay for my cart (Steps 3.2, 3.3)                                 | store customer              | to pay for what I picked                                                  | I can finish the purchase from the chat                                  | I get a button to the store's own Shopify checkout<br>Which payment provider takes the money is between the store and Shopify; this app never handles payment for store orders<br>When Shopify reports the order paid, I get a WhatsApp confirmation                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 17. Get my invoices on WhatsApp (Steps 3.4, 3.5)                     | organization member         | my subscription invoices as PDFs in chat                                  | I have them for my records                                               | Needs `billing.view`<br>Each successful subscription payment creates an invoice with the next number in the organization's sequence<br>The PDF holds what SARS lists for a tax invoice                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 18. Connect with Facebook instead (Phase 4)                          | organization admin          | to connect my number through a Facebook popup                             | I don't have to copy ids and tokens                                      | The popup's result is exchanged on the server<br>The number is subscribed and registered automatically                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 19. Ask for a human (Step 5.1)                                       | store customer              | to tap "Talk to a person"                                                 | someone real answers when the bot can't                                  | The bot stops replying until a person closes the conversation<br>The members who answer store customers see that it's waiting                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 20. Answer waiting store customers (Steps 5.2, 5.3)                  | support member              | to see the chats waiting for a person, answer from the web and close them | store customers get answers                                              | Needs `whatsapp.inbox`<br>My reply is sent through WhatsApp<br>Free text is refused 24 hours after the store customer's last message, with the reason shown                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 21. Never stuck (Steps 1.4, 1.10, 2.3, 2.4)                          | SaaS user or store customer | every reply to offer a way back                                           | I can always return to the main menu, whatever I'm looking at            | Every interactive reply carries a Back or Main menu option<br>Lists hold at most 7 items, so Previous, Next and Main menu always fit<br>Every footer says `Send *menu* at any time`, and `menu` works in both modes, even mid-form<br>Plain text replies, the assistant's included, come with a Main menu button<br>An expired button leads to the main menu, never to an error                                                                                                                                                                                                                                                                                      |
+| 22. Get my order receipt on WhatsApp (Step 3.3)                      | store customer              | my order's receipt in the chat after I pay                                | I have proof of what I bought without checking email                     | When Shopify reports the order paid, I get the order number, the total and a button to the order status page Shopify keeps for that order<br>The link is Shopify's own (`Order.statusPageUrl`); this app issues no tax invoice for store orders                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 23. Fix my number's registration myself (Steps 1.5b, 1.6b)           | organization admin          | tools to check and repair my number's registration with Meta              | a stuck number doesn't stop my business, and I don't need Meta's support | Needs `whatsapp.manage`<br>The WhatsApp tab shows Meta's own status for my number: `status`, `code_verification_status`, `quality_rating`, `name_status`, `verified_name`<br>I can request a verification code by SMS or voice, enter it, register the number with its 6-digit PIN, and re-subscribe the app to my account's webhooks<br>Before registering, I'm warned that Meta allows 10 attempts per 72 hours<br>Meta's errors are shown with their code, a plain explanation and a link to Meta's page<br>The PIN is never stored, and every action is written to the action log<br>The operator has the same tools for the platform number in the Django admin |
+| 24. Verify my number by receiving a code (Phase 6)                   | SaaS user                   | to receive a code on my number and type it on the website                 | I can prove my number even if I can't send a message first               | The code arrives as a WhatsApp authentication template with a copy-code button, or later by SMS, as `PHONE_VERIFICATION_CHANNEL` chooses (D20)<br>It uses the same code store as linking (user story 1): hashed, expiring, single-use and rate-limited<br>The default stays inbound linking, which needs no template and no SMS provider                                                                                                                                                                                                                                                                                                                             |
 
-- `app/api/chatbot.py`: separate webhook verification, inbound webhook processing, and encrypted Flow data exchange; acknowledge statuses without treating them as user messages.
-- `app/services/whatsapp.py`: normalize inbound messages, select a per-user conversation mode, dispatch interactive menu replies separately from text, queue outbound messages, and support explicit handoff.
-- `app/services/agent.py`: expose named tools with JSON schemas, map only known tool names to Python functions, cap tool-call turns, preserve multi-turn tool-call history, and tell the agent to confirm consequential actions.
-- `app/services/llm_provider.py`: keep provider selection and tool-call response formatting behind an interface.
-- `app/services/conversation_state.py`: keep recent conversation context and pending multi-step data with expiry. Its local `shelve` store is not suitable here; use shared persistent state so multiple Django/Celery processes see the same conversation.
-- `config.py` and the reference `User.conversation_mode`: a deployment default may exist, but the user's saved profile preference decides the actual mode unless a deliberate administrator override is configured.
+## 3. Deliberately out of scope
 
-The reference application's reservation tools, listing models, FAQ content, and invoice workflows are specific to its accommodation product and do not belong in this generic template. This plan instead exposes the template's generic SaaS use cases in WhatsApp and keeps the website as a second client to those same use cases. “All actions” in the first release means the supported use cases enumerated in section 6; a website screen is not automatically an action unless the corresponding use case is shared and available in WhatsApp. Shopify commerce is explicitly secondary and deferred to step 8 in section 7, gated on the current Shopify installation/linking feature being completed and reviewed.
+- **WhatsApp-only sign-up.** Accounts are still created on the website; WhatsApp links to an existing account. A sign-up Flow can come later without changing the identity model.
+- **Taking payment for Shopify orders ourselves.** Shopify's API terms forbid it (section 6.2), so store customers always pay in Shopify Checkout.
+- **WhatsApp Pay.** Meta offers it only in India, Brazil and Singapore (section 6.1).
+- **Our own tax invoices for store orders.** The store is the seller, and Shopify keeps a status page for every order, which the store customer gets on WhatsApp instead (user story 22). No invoice or receipt PDF was found on Shopify's `Order` object (section 6.2); a store that needs formal invoices uses its own Shopify invoice app. Our invoices cover only our own SaaS billing.
+- **A ticketing system.** Phase 5 is a waiting list with an assignee and a reply box: no SLAs, priorities, teams or canned replies. If it grows past that, it's dropped.
+- **Meta catalog product messages.** They need the merchant's catalog synced to their WhatsApp Business account. Plain messages with an image and buttons work for every store without that.
+- **An encrypted Flow data-exchange endpoint in phase 1.** Phase 1's forms are sent pre-filled and their answers come back in the ordinary webhook (D9). The endpoint arrives only when a form needs live data while it's open.
 
-### 0.1 Payment handoff
+## 4. Decisions
 
-PayFast's current flow creates an HTML form with signed fields and redirects the buyer to PayFast when that form is submitted. The existing backend exposes checkout action URL and fields through `PayFastCreateCheckoutMutation`; it does not return a reusable hosted payment URL. Therefore WhatsApp should send a short-lived, single-use URL on this app's web origin. The user opens it, authenticates if necessary, reviews the amount and organization, and the page submits the existing PayFast form. The PayFast ITN remains authoritative for payment completion. Do not put merchant secrets or unsigned payment amounts in WhatsApp URLs. Source: [PayFast custom payment integration](https://developers.payfast.co.za/docs#custom-payment-integration).
+- **D1. Three backend apps, one dependency direction.** `apps.whatsapp` is the channel: Meta accounts, contacts, the webhook, signatures, messages, the send queue, conversation state, confirmations, the agent runtime and identity linking. `apps.whatsapp_saas` holds what SaaS users can do in chat. `apps.whatsapp_shop` holds what store customers can do. The channel never imports the other two: each registers a handler for its account purpose (`platform` or `storefront`) in a small registry, the way apps register permissions through `apps/<app>/permissions.py`. Deleting `apps.whatsapp_shop` leaves SaaS chat working (agents.md section 3.1). Phase 3 adds `apps.invoicing`.
+- **D2. One table for every WhatsApp number (maintainer's choice, 2026-10-15).** `WhatsAppAccount` holds the platform number (`purpose=platform`, no organization) and each organization's number (`purpose=storefront`, one organization). An inbound message picks its row by `metadata.phone_number_id`, and the row's purpose picks the handler. So one rule routes everything. Local development seeds the platform row from environment variables.
+  - **Changed on 2026-10-22 (Steps 1.16 and 1.17):** there's no platform number any more. Every number belongs to an organization and is connected on its WhatsApp tab: `INTERNAL_COMMUNICATIONS` for its team, `EXTERNAL_COMMUNICATIONS` for its customers. Nothing comes from environment variables. The platform number, owned by whoever deploys the app, served no use case: a Shopify business needs its own numbers, not the deployer's. The one table and the one routing rule stay.
+- **D3. A SaaS user's number lives in `WhatsAppIdentity`, not on `User` (maintainer's choice, 2026-10-15).** The row is one-to-one with the user and with a platform `WhatsAppContact`, and holds the conversation mode. The upstream `User` model is untouched. Linking needs both proofs at once: a code shown in a logged-in web session, sent from the phone in a webhook Meta signed. This replaces the earlier email-code design, which needed a new email template and still trusted the sender to name the account.
+  - **Changed on 2026-10-22 (Step 1.17):** a link is one per user per organization's internal communications number, not one per user on a platform number. A member of two organizations links on each. Both proofs stay the same.
+- **D4. Every sender is a `WhatsAppContact`, scoped by number; a store customer adds a `StoreCustomer` row.** Every sender to any number gets a contact row, unique per account. An account belongs to one organization, so a contact, and the store customer built on it, is organization-scoped: the same phone texting two organizations is two rows. Phase 2 adds `StoreCustomer` in `apps.whatsapp_shop`, one-to-one with a storefront contact, holding the organization and store-only data such as the open cart, so the code says "store customer" wherever it means one. Contact rows are keyed on Meta's business-scoped user id (`user_id` in webhooks), with `wa_id` (the phone, digits only, for example `27831234567`) optional. Meta now omits `wa_id` for some users with usernames (section 6.1).
+- **D5. Credentials are encrypted with Fernet,** using a new `WHATSAPP_TOKEN_ENCRYPTION_KEY`. The small `crypto.py` is copied from [`apps/shopify/crypto.py`](../../../packages/backend/apps/shopify/crypto.py) rather than imported, so neither app depends on the other (agents.md section 3.1). Encrypted: access token, app secret and (from phase 2) the Flow private key. A form-connected number's webhook verify token is generated by the app, shown once, and stored only as a hash (D6).
+- **D6. One webhook URL for every number; the body says which number an event is for (maintainer's decision, 2026-10-15).** Every connected number's events arrive at `/api/whatsapp/webhook/`, and each change in the body names its receiving number in `metadata.phone_number_id` (section 6.1).
+  - **Which secret checks the signature:**
+    - A number on the platform's own Meta app (the platform number, later Embedded Signup numbers, or a number we don't know) uses `WHATSAPP_APP_SECRET`.
+    - A number connected with the form belongs to its organization's own Meta app, which signs with that app's secret, stored encrypted on the account.
+  - **Order of work:** the view reads the raw body, parses it only far enough to collect the receiving numbers, looks up their accounts, and checks the signature over the raw bytes with the one secret they share. Nothing is stored or acted on before that passes.
+    - A body whose numbers need different secrets is refused.
+    - A forged body that names a real account gains nothing, because without that account's secret the signature fails. It's the same pattern as a token whose header names the key that verifies it.
+  - **Meta's GET subscription check:** it has no body, so its `hub.verify_token` is matched against `WHATSAPP_VERIFY_TOKEN` and against each form-connected account's verify token, looked up by its hash. A match on an account records its `webhook_verified_at`.
+  - **Why one URL:** a webhook per organization would mean creating and configuring a new one for every SaaS user, which doesn't scale. One URL that routes by the body serves every number there will ever be. A number connected with the form still has its organization paste this one URL and its verify token into their own Meta app, once. Embedded Signup (phase 4) removes even that step: the platform's Meta app subscribes each new number through the API (`POST /<WABA_ID>/subscribed_apps`), so nobody configures a webhook by hand.
+- **D7. The webhook only verifies, stores and queues.** It checks the signature over the raw body, saves each message once (unique Meta message id), queues a Celery task with `transaction.on_commit`, and returns 200. All replies, AI calls and Shopify calls happen in the worker. Meta retries for up to 7 days and may deliver duplicates (section 6.1).
+- **D8. Replies go through a stored send queue,** in order per contact. `WHATSAPP_SEND_BACKEND` chooses `log` (default: store and mark sent, no network) or `meta` (call the Cloud API). This is agents.md section 4.1: the default needs nothing new, and the real provider is switched on.
+- **D9. Phase 1 forms are WhatsApp Flows without an endpoint.** The Flow message carries its pre-filled data (`flow_action: navigate` with `flow_action_payload`), including dropdown choices such as the user's organizations. The answers come back as an `nfm_reply` webhook message, and the server validates them like any other input. The `flow_token` is a signed, expiring reference to a stored pending form, never data. Whether a Flow without an endpoint needs the number's encryption key uploaded is not stated in Meta's docs; it's checked in Step 1.11.
+- **D10. Menus, Flows and the AI call the same operations.** `apps.whatsapp_saas.use_cases` holds one function per operation, and each checks permissions with `user_has_permission` from [`apps/multitenancy/models.py`](../../../packages/backend/apps/multitenancy/models.py). They reuse the existing serializers (for example `TenantSerializer`, `CrudDemoItemSerializer`), passing a server-built context with the linked user, so validation isn't written twice and upstream code isn't edited. If a serializer turns out to need a real HTTP request, Step 1.9 stops and asks before extracting a service.
+- **D11. Every write is confirmed by the user, server-side.** A write first becomes a `WhatsAppPendingAction` holding the exact arguments, user, organization and expiry. The user gets a summary with Confirm and Cancel buttons. Only pressing Confirm runs it, after the permission is checked again. Menus and the AI share this mechanism, so the model can never confirm on the user's behalf.
+- **D12. The AI uses OpenAI's Responses API with strict function tools.** History, including tool calls and their results, is stored in our database, so a human reply or an expired conversation can rebuild it, with `store: false` sent to OpenAI. The provider sits behind a small interface with a fake for tests, so no test calls OpenAI. Tool calls per message are capped, and no agent framework is added. The `openai` package is already a backend dependency.
+  - **Changed on 2026-10-20 (the maintainer's rule, agents.md section 5.3a):** the provider calls OpenAI with plain HTTP requests through `requests`, not the `openai` SDK (Step 1.13e). Upstream's own uses of the SDK stay.
+- **D13. Store customers pay in Shopify Checkout, and that link is all this app does about payment (maintainer's decision, 2026-10-15).** We build a Storefront API cart with the store customer's phone on it and send its `checkoutUrl`. Which payment provider takes the money is between the store and Shopify; this app never asks or checks. Shopify's `orders/paid` webhook triggers the WhatsApp confirmation and the order status link (user story 22).
+- **D14. SaaS subscriptions keep our own PayFast flow,** through a single-use link to a page on this site that submits the signed form the backend already builds. PayFast's ITN stays the only proof of payment.
+- **D15. Invoices are generated with ReportLab (maintainer's choice, 2026-10-15),** in a Celery task, with no system packages added to the Docker image. Numbers come from a per-organization counter row locked with `select_for_update`, so there are no gaps. PDFs go to private storage and reach WhatsApp by uploading to Meta's media endpoint, never as a public link.
+- **D16. New permission codes.** `whatsapp.view` and `whatsapp.manage` (Step 1.5), and `whatsapp.inbox` (phase 5), are registered in `apps/whatsapp/permissions.py` and seeded by a data migration, as Shopify does (decision D7 of [the Shopify plan](2026-10-03-shopify-app-installation-plan.md)).
+- **D17. Nobody is ever stuck (maintainer's rule, 2026-10-15).** Every reply offers a way back.
+  - Lists hold at most 7 items, plus Previous, Next and Main menu rows (Meta allows 10 rows).
+  - Reply-button messages keep one of their 3 buttons for Back or Main menu.
+  - Plain text, including the assistant's replies and error messages, goes out as a one-button message with Main menu.
+  - Every interactive message's footer says `Send *menu* at any time`, and `menu` works in every state, mid-form and in `agentic` mode included.
+  - The message builders enforce this, so a screen can't be written without a way back.
 
-### 0.2 WhatsApp platform facts
+  The reference app's `_send_return_to_menu_options` did the same with an extra message after each reply. Putting the way back inside the reply itself halves the messages sent, which matters now that every message costs money (section 6.1).
 
-Use the Cloud API and current supported Graph API version from configuration. Verify GET webhook setup with the configured verification token and return the challenge. Verify POST webhook bodies using `X-Hub-Signature-256` over the raw body and Meta App Secret, with constant-time comparison. Meta's webhook setup and signature guidance: https://developers.facebook.com/docs/graph-api/webhooks/getting-started/.
+- **D18. Number troubleshooting tools are a supported last resort (maintainer's decision, 2026-10-15).** Getting a number working with Meta often fails on registration or verification. So the app wraps each of Meta's repair endpoints (section 6.1) in an explicit, permission-checked operation:
+  - status: `GET /<PHONE_NUMBER_ID>`
+  - request a code: `request_code`
+  - verify it: `verify_code`
+  - register with the PIN: `register`
+  - re-subscribe the app: `subscribed_apps`
+  - (phase 2) upload the Flow public key: `whatsapp_business_encryption`
 
-Use approved message templates where Meta requires them outside an active customer-service window; verify the current messaging rules and pricing as part of implementation rather than hardcoding assumptions in business logic. Cloud API message and template docs: https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages and https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates.
+  Organization admins reach these from the WhatsApp tab (`whatsapp.manage`), and the operator from the Django admin for the platform number. They replace the reference app's unauthenticated GET routes (`/chatbot/register-phone-number`, `/chatbot/request-code` and the rest), which anyone could call.
+  - Every call is written to the action log.
+  - The PIN passes straight through to Meta and is never stored.
+  - `register` warns about Meta's limit of 10 per 72 hours before it's sent.
+  - Each Meta error is shown with its code and a link to Meta's page, so a stuck customer and the operator see the same explanation.
 
-WhatsApp Flows use encrypted request/response data exchange when configured with an endpoint. The reference code's RSA/AES encryption and signature checks are a useful implementation lead, but the port must be validated against Meta's current Flow security and endpoint docs: https://developers.facebook.com/docs/whatsapp/flows/ and https://developers.facebook.com/docs/whatsapp/flows/guides/implementingyourflowendpoint.
+- **D19. Phone numbers are stored in one format: international digits, no `+` (maintainer's decision, 2026-10-15).** For example `27831234567`, the format Meta's `wa_id` uses. A small hand-written function in `phone_numbers.py` (maintainer's choice over the `phonenumbers` library) accepts the common ways people type a number:
+  - separators are removed: spaces, `-`, `_`, `.`, `/` and brackets
+  - a trunk `(0)` after the country code is dropped
+  - a leading `+` or `00` means the country code is already there
+  - a single leading `0` is replaced by `WHATSAPP_DEFAULT_COUNTRY_CODE` (default `27`)
+  - anything else must already start with its country code
 
-## 1. Existing capabilities and reuse
+  The result must be 8 to 15 digits, E.164's limit (https://www.itu.int/rec/T-REC-E.164); anything else is refused with a clear error. It can't tell a real number from a well-shaped wrong one; the link code (user story 1) and the test message (user story 11) prove a number is real.
 
-- **Identity and organization:** `apps.users` supplies user authentication and `apps.multitenancy` supplies tenants, memberships, role assignments, invitations, and GraphQL mutations. Creating an organization is a protected user use case; tenant context must be chosen from the sender's actual memberships.
-- **Generic CRUD:** `apps.demo` provides tenant-scoped `CrudDemoItem` GraphQL create, read, update, and delete operations with `features.crud.manage` permission checks. Its mutations use tenant-dependent mutation base classes.
-- **Billing:** `apps.finances` and `apps.payfast` expose backend-neutral billing dispatch and PayFast subscription/checkout operations. PayFast resolvers use `billing.view` or `billing.manage`; one-off donation checkout is also an existing example of payment handoff.
-- **API composition:** `config/schema.py`, `config/urls_api.py`, and `config/settings.py` are composition points. GraphQL is authenticated through `DRFAuthenticatedGraphQLView`; the public PayFast ITN is a narrowly scoped webhook.
-- **MCP precedent:** `packages/mcp-server/operations/` declares named, explicit query and mutation tools. `config.yaml` forwards authentication and tenant headers. This shows the desired allowlist shape, but the WhatsApp webhook must authenticate the actual sender and inject server-resolved identity/tenant context itself; it must not trust caller-supplied tenant IDs.
-- **Shopify connection:** the current, in-progress `apps.shopify` slice associates `ShopifyShop` with a tenant and has a `read_products` scope in `shopify.app.toml.example`. Its installation plan says product/order reading and messaging are later work. WhatsApp should depend on a narrow tenant-storefront port; the later commerce plan owns Shopify catalog/inventory/checkout implementation and any scope, API, and privacy changes.
+- **D20. Phone verification has one code store and swappable channels (maintainer's decision, 2026-10-15).** Proving a user controls a number works like the existing email confirmation (`apps/users/tokens.py`), except that a short typed code must be stored: it's too short to carry its own signature, as an email link's token does.
+  - **The code store:** a small, channel-neutral `apps.phone_verification` app, built in Step 1.7, holds `PhoneVerificationCode`:
+    - the user, the normalized number (D19) and the channel
+    - a hash of the code, never the code itself
+    - its expiry, its use, and its attempt count
+    - a service to issue and to check a code
+  - **The channels,** chosen by `PHONE_VERIFICATION_CHANNEL`, the way `PAYMENT_BACKEND` chooses Stripe or PayFast (agents.md section 4.1):
+    - **`whatsapp_inbound`** (the default, Step 1.7): the website shows the code and the user sends it from the number. Meta's signed webhook proves the number. It needs no template and no extra provider.
+    - **`whatsapp_template`** (phase 6): we send the code in a WhatsApp authentication template with a copy-code button, and the user types it on the website. Meta requires an authentication template for codes, and its text is fixed, so it carries the code, not a link (section 6.1). It needs an approved template, and each one is billed.
+    - **`sms`** (phase 6): the same, by SMS through an optional provider, switched on only when configured, since it's a paid service. It also covers numbers not on WhatsApp.
+  - **Dependency direction:** the store knows nothing about WhatsApp. WhatsApp and SMS each plug a sender into it, so deleting either leaves the other working (agents.md section 3.1).
+- **D21. Replies go out in order, one contact at a time (maintainer's decision, 2026-10-16).** The reference app sent from an in-memory list inside the webhook request, with `sleep` between messages. Order broke whenever the request was retried or slow. Here:
+  - **The queue is the message table.** Every reply is first stored as an outbound `WhatsAppMessage` with status `queued` (D8), so nothing is lost if a worker restarts, and no extra store such as Redis is needed (agents.md section 4.1).
+  - **One sender per contact.** A send task drains one contact's queued messages strictly in the order they were queued (by id). It sends one, waits for Meta to accept it and return its id, and only then sends the next.
+    - Before each send, it takes the contact's send lock, a Postgres advisory lock keyed by the contact id (`pg_try_advisory_xact_lock`), released at commit. A second task for the same contact finds it taken and leaves the work to the first, so two workers never interleave one contact's messages. Different contacts still go out in parallel. https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
+    - **Changed on 2026-10-17 (maintainer's decision),** from a lock on the contact's row (`select_for_update(skip_locked=True)`). An advisory lock blocks nothing else, so an inbound message updating the contact's name or number never waits behind a send. And a second connection can hold it without seeing any rows, so its tests run in the normal test transaction. Testing the row lock needed `transaction=True`, which empties every table when a test ends, data migrations' rows included, and `--reuse-db` carried that into the next run.
+  - **A failure stops that contact's line.**
+    - A send that fails for a passing reason (a timeout, or `130429` / `131056`, Meta's throughput and same-user pacing limits, section 6.1) is retried with backoff, while the messages after it wait.
+    - A send that fails for good is marked `failed`, and the messages queued after it are cancelled rather than sent out of context.
+  - **Strict mode, off by default.** Meta accepting messages in order doesn't guarantee the phone shows them in order; Meta's docs don't say. With `WHATSAPP_SEND_WAIT_FOR_SENT_STATUS=True`, the next message waits until Meta's webhook reports the previous one `sent`. Our status updates already land on the message rows (Step 1.3c), so this costs only a few seconds per reply.
+  - **Fewer messages per reply.** Putting the way back inside the reply itself (D17), instead of a separate message, leaves less to order in the first place.
 
-## 2. How it works (diagrams)
+## 5. Lessons from the reference application
 
-The first release has two principal types. `SaaSUserPrincipal` represents a linked account holder using WhatsApp to manage their own account, tenant, CRUD demo items, or billing. `StorefrontCustomerPrincipal` represents a shopper talking to a tenant's store; this principal is deferred and must not receive tenant membership or SaaS permissions. Keep that distinction in types and services so a linked merchant identity can never be mistaken for a shopper identity.
+The maintainer's earlier WhatsApp-first project `python-flask-whatsapp-store` (a separate, private repository) proved the product idea. This plan keeps its good patterns and fixes what it got wrong.
 
-### 2.1 System components
+**Kept:**
+
+- a formatter that enforces Meta's length and count limits in one place
+- an ordered outbound queue per contact
+- pre-filled Flows through `flow_action_payload`
+- tool results shaped as `{"success": …}`, which the model reads reliably
+- an LLM provider interface with one normalized response type
+- payment provider and invoice generator chosen behind a factory
+- a way back to the main menu after every reply (`_send_return_to_menu_options`), kept as D17
+- the number registration and verification tools (register, request and verify a code, status, subscribe the app, upload the Flow key), kept as a last resort for stuck numbers (D18)
+
+**Fixed:**
+
+- All work ran inside the webhook request, with `sleep` calls. Here the webhook only stores and queues (D7).
+- Conversation state lived in a `shelve` file, and tool calls weren't saved, so the model forgot search results between turns. Here state and the full agent history are in Postgres (D12).
+- Confirmations existed only in the system prompt. Here they're enforced by the server (D11).
+- Admin, payment and agent-reply routes had no authentication, and payment links trusted a phone number in the URL. Here every endpoint has a named authority: a Meta signature, a logged-in session, or a single-use token.
+- Flow tokens were unsigned strings that the server parsed. Here they're signed references to stored state (D9).
+- The number registration tools were unauthenticated GET routes that anyone could call. Here they're permission-checked, logged operations (D18).
+- Unknown senders crashed the handler, and the country code was hardcoded. Here unknown senders get linking instructions (user story 2), and numbers are stored as Meta sends them.
+- Invoices sat in a public S3 bucket. Here they're private and sent through Meta's media endpoint (D15).
+- There were no tests beyond four user model tests. Here every step is RED/GREEN.
+
+## 6. Platform facts this plan relies on
+
+Every fact links to the official page it comes from. Anything a page doesn't state is marked, and becomes a check in the step that relies on it (agents.md section 6.2). Meta moved its WhatsApp docs to `developers.facebook.com/documentation/business-messaging/whatsapp/` in 2026; both old and new links appear below.
+
+### 6.1 Meta WhatsApp Cloud API
+
+- **Webhook verification:** GET with `hub.mode`, `hub.verify_token` and `hub.challenge`, answered with the challenge. Every POST carries `X-Hub-Signature-256: sha256=…`, an HMAC-SHA256 of the raw body with the app secret. https://developers.facebook.com/docs/graph-api/webhooks/getting-started
+- **Retries:** "with decreasing frequency… for up to 7 days", which "can result in duplicate webhook notifications"; payloads up to 3 MB. https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/overview.md
+- **Routing:** `changes[].value.metadata.phone_number_id` names the receiving number; inbound messages are in `messages[]`, status updates in `statuses[]`. https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages.md
+- **Per-account webhook URL:** `POST /<WABA_ID>/subscribed_apps` with `override_callback_uri` and `verify_token`. https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/override/
+- **Business-scoped user ids:** an incoming message carries `from_user_id`, and its contact block `user_id` (for example `US.13491208655302741918`). `from` and `wa_id` are omitted when a user has a username, hasn't messaged the business in 30 days and isn't in its contacts. A status carries `recipient_user_id`. The id is a country code and a period followed by up to 128 alphanumeric characters, with `ENT.` added for parent ids. Subscribe to `user_id_update`. https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids
+- **Webhook field paths:**
+  - Button and list replies are `messages[].interactive.button_reply.id` and `.list_reply.id`, with `title` (and `description` for lists). https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/interactive.md
+  - Statuses are `sent`, `delivered`, `read`, `played` or `failed`, and a failure carries `errors[].code`. https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/status.md
+  - Messages the Cloud API can't handle arrive as `type: "unsupported"`. https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/unsupported.md
+- **Phone numbers:** webhook `wa_id` is digits only; the `wa_id` in a send response "may not match" the input, so store the returned one. https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages.md
+- **24-hour window:** free-form messages only within 24 hours of the user's last message; after that, approved templates only (error `131047`). https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages.md
+- **Pricing:** per message since 2025-07-01. Since 2026-10-01, replies inside the window are also charged at the utility rate. https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/non-template-messages.md. The main pricing page still says they're free (https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing.md), so the docs conflict; this plan assumes every reply costs money.
+- **Reply buttons:** at most 3; titles up to 20 characters; ids up to 256. https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/interactive-reply-buttons-messages.md
+- **List messages:** at most 10 rows across all sections; row title 24, description 72, id 200 characters; body 4096. https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/interactive-list-messages.md
+- **Link button:** `cta_url` with `display_text` up to 20 characters. https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/interactive-cta-url-messages.md
+- **Media:** upload with `POST /<PHONE_NUMBER_ID>/media`; uploaded media ids last 30 days; documents up to 100 MB. https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/media.md
+- **Read receipt and typing indicator** in one call, cleared after 25 seconds or on reply. https://developers.facebook.com/documentation/business-messaging/whatsapp/typing-indicators.md
+- **Flows:** send with `flow_action: navigate` and a non-empty `flow_action_payload.data` to pre-fill the first screen. https://developers.facebook.com/docs/whatsapp/flows/guides/sendingaflow. Dropdowns can take dynamic data such as `${data.orgs}` (1 to 200 items, titles up to 30 characters). https://developers.facebook.com/documentation/business-messaging/whatsapp/flows/guides/components.md. Completion arrives as `interactive.nfm_reply.response_json`, carrying the `flow_token` but no Flow id. https://developers.facebook.com/documentation/business-messaging/whatsapp/flows/guides/flowswebhooks.md
+- **Flow endpoint (later phases):** RSA-OAEP-SHA256 to unwrap an AES-128-GCM key, the response encrypted with the bit-flipped IV, a reply within 10 seconds, and a key uploaded per phone number. https://developers.facebook.com/documentation/business-messaging/whatsapp/flows/guides/implementingyourflowendpoint.md, https://developers.facebook.com/docs/whatsapp/flows/reference/error-codes, https://developers.facebook.com/documentation/business-messaging/whatsapp/flows/guides/whatsapp-business-encryption.md
+- **Throughput:** 80 messages per second per number by default; about one message every 6 seconds to the same user (error `131056`). https://developers.facebook.com/documentation/business-messaging/whatsapp/throughput.md, https://developers.facebook.com/docs/whatsapp/cloud-api/overview
+- **Payments:** documented only for India, Brazil and Singapore. https://developers.facebook.com/documentation/business-messaging/whatsapp/payments/payments-in/overview.md, https://developers.facebook.com/documentation/business-messaging/whatsapp/payments/payments-br/overview.md
+- **Embedded Signup (phase 4):** v4 is current and v2 is deprecated from 2026-10-15. https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/versions.md. The popup's code lives 30 seconds and is exchanged at `/oauth/access_token`; the app is then subscribed with `POST /<WABA_ID>/subscribed_apps` and the number registered with `POST /<PHONE_NUMBER_ID>/register`. https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/implementation.md, https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-customers-as-a-tech-provider.md. Onboarding other businesses needs Tech Provider status: business verification, App Review and Advanced access. https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers.md
+- **Number registration and verification (D18):**
+  - Register: `POST /<PHONE_NUMBER_ID>/register` with `messaging_product` and a 6-digit `pin`; the existing two-step PIN if one is set, otherwise it becomes the PIN. Register is limited to 10 calls per number in a 72-hour moving window; going over returns `133016` and blocks registration for 72 hours. Registration is needed again after a display name change is approved. https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/registration.md
+  - Request a code: `POST /<PHONE_NUMBER_ID>/request_code` with `code_method` (`SMS` or `VOICE`) and `language`; an already-verified number returns `136024`, so check `code_verification_status` first. Verify it: `POST /<PHONE_NUMBER_ID>/verify_code` with `code`.
+  - Status: `GET /<PHONE_NUMBER_ID>` returns fields including `status` (a number must be connected to send and receive), `code_verification_status`, `quality_rating`, `name_status` and `verified_name`.
+  - Two-step PIN: set or change it with `POST /<PHONE_NUMBER_ID>` and `pin`; the API can't turn two-step verification off.
+
+  All from https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/phone-numbers.md
+
+- **Authentication templates (phase 6, D20):**
+  - The text is fixed and can't be customized, apart from the code, an optional "For your security, do not share this code." and an optional expiry line.
+  - The button is copy-code, one-tap autofill (which needs an Android app) or zero-tap.
+  - `code_expiration_minutes` runs from 1 to 90.
+  - A WhatsApp one-time code must use an authentication template. Whether one can carry a link is not stated in docs, and the fixed text leaves no room for one.
+
+  https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/authentication-templates/authentication-templates.md, https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/authentication-templates/copy-code-button-authentication-templates.md
+
+- **Human handoff:** Meta documents no handover protocol for the Cloud API, so it's built in the app (phase 5). Not stated in docs.
+
+### 6.2 Shopify
+
+- **Storefront API access:** a private token from `storefrontAccessTokenCreate`, which delegates the app's `unauthenticated_*` scopes. https://shopify.dev/docs/api/admin-graphql/latest/mutations/storefrontAccessTokenCreate, https://shopify.dev/docs/api/usage/access-scopes#unauthenticated-access-scopes. Server requests should send `Shopify-Storefront-Buyer-IP`; how WhatsApp-proxied traffic is treated is not stated in docs. https://shopify.dev/docs/api/storefront/latest
+- **Search:** `search(query:, types: [PRODUCT])`, sorted by relevance. https://shopify.dev/docs/api/storefront/latest/queries/search. Cursor paging with `first`/`after`. https://shopify.dev/docs/api/usage/pagination-graphql
+- **Cart checkout:** `cartCreate` with `buyerIdentity.phone`, then `cart.checkoutUrl` sends the buyer to Shopify's web checkout. https://shopify.dev/docs/api/storefront/latest/objects/Cart, https://shopify.dev/docs/api/storefront/latest/input-objects/CartBuyerIdentityInput
+- **No payment outside Shopify Checkout:** API Terms section 2.3.18 prohibits "an alternative to Shopify Checkout for checkout or payment processing for Shopify Merchants", and registering such transactions through the API. https://www.shopify.com/legal/api-terms
+- **Order receipt:** the Admin API `Order` object has `statusPageUrl`, "The URL where customers can check their order's current status, including tracking information and delivery updates", and `confirmationNumber`, "A customer-facing order identifier". No invoice or receipt PDF field was found on it. https://shopify.dev/docs/api/admin-graphql/latest/objects/Order
+- **Order webhooks:** `ORDERS_PAID` needs `read_orders`. https://shopify.dev/docs/api/admin-graphql/latest/enums/WebhookSubscriptionTopic. A buyer's name, email and phone in order data need protected customer data approval for public apps. https://shopify.dev/docs/apps/launch/protected-customer-data
+- **Privacy webhooks:** `customers/redact` and `shop/redact` must be acted on within 30 days. https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance
+
+### 6.3 PayFast
+
+- The developer docs site returned HTTP 502 on 2026-10-15; these facts were read from its archived copy, and the links point at the live anchors.
+- **Checkout** is a signed form posted to `/eng/process`; subscriptions add `subscription_type=1`, `frequency` and `recurring_amount`. https://developers.payfast.co.za/docs#step_1_form_fields, https://developers.payfast.co.za/docs#subscriptions
+- **ITN:** return 200, check the signature, the source, the amount and `/eng/query/validate`. https://developers.payfast.co.za/docs#step_4_confirm_payment
+- **No payment-link API** is documented; the dashboard's "Request Money" only emails a link. https://payfast.io/request-money. Hence the single-use page on this site (D14).
+- Whether PayFast issues VAT tax invoices is not stated in docs, so we issue our own (D15).
+
+### 6.4 OpenAI
+
+- "Responses is recommended for all new projects", and the Assistants API was retired on 2026-08-26. https://developers.openai.com/api/docs/guides/migrate-to-responses
+- **Strict function tools:** `additionalProperties: false`, every property required, optional values typed as null; results go back as `function_call_output` with the same `call_id`. https://developers.openai.com/api/docs/guides/function-calling
+- **State:** responses are stored 30 days by default, and `store: false` turns that off. https://developers.openai.com/api/docs/guides/conversation-state
+
+### 6.5 SARS tax invoices
+
+- **Full tax invoice:** the words "Tax Invoice", supplier name, address and VAT number, recipient details, serial number and date, description, quantity, and value with tax. An abridged invoice for small amounts drops the recipient details and quantity. https://www.sars.gov.za/wp-content/uploads/Docs/Government/Tax-Invoice-Checklist-Version-2-29032016.pdf
+- The checklist asks for a serial number, but doesn't say "no gaps"; gap-free numbering is chosen here as good practice (D15).
+
+## 7. What exists today and what we reuse
+
+- **Users:** [`apps/users/models.py`](../../../packages/backend/apps/users/models.py) has no phone field. The profile mutation edits only first name, last name, avatar and language. Not changed by this plan (D3).
+- **Organizations:** `Tenant` and `TenantMembership` (the default manager returns only accepted memberships) are in [`apps/multitenancy/models.py`](../../../packages/backend/apps/multitenancy/models.py), with `user_has_permission(user, tenant, code)` in plain Python. Organizations are created in `TenantSerializer.create` in [`apps/multitenancy/serializers.py`](../../../packages/backend/apps/multitenancy/serializers.py). Permission codes are registered per app, as in [`apps/shopify/permissions.py`](../../../packages/backend/apps/shopify/permissions.py).
+- **CRUD items:** `CrudDemoItem` in [`apps/demo/models.py`](../../../packages/backend/apps/demo/models.py), with `CrudDemoItemSerializer` and the `features.crud.*` checks in [`apps/demo/schema.py`](../../../packages/backend/apps/demo/schema.py).
+- **Shopify:** a store belongs to an organization (`ShopifyShop.tenant`, and one organization may have several stores) in [`apps/shopify/models.py`](../../../packages/backend/apps/shopify/models.py). `fetch_products(shop, first, after=None, before=None)` in [`apps/shopify/products.py`](../../../packages/backend/apps/shopify/products.py) pages products through the Admin API, with `read_products` as the only scope today.
+- **PayFast:** `create_subscription_checkout(...)` returns a `CheckoutForm` (action URL and signed fields) in [`apps/payfast/services.py`](../../../packages/backend/apps/payfast/services.py). The ITN is processed in the same module.
+- **Invoicing:** none exists. No invoice model and no PDF library; the upstream `invoice*` email templates have nothing behind them.
+- **Audit log:** `log_action(...)` in [`common/action_logging/service.py`](../../../packages/backend/common/action_logging/service.py); `ActionLog` already has an `AI_AGENT` actor type.
+- **Rate limiting:** [`common/ratelimiting/`](../../../packages/backend/common/ratelimiting/), which already has `AUTH_OTP` and `AI_CHAT_MESSAGE` categories.
+- **Background tasks:** Celery in the backend ([`config/celery.py`](../../../packages/backend/config/celery.py)), with tasks written as `@shared_task` as in `apps/payfast/tasks.py`.
+- **Frontend:** the profile page is [`packages/webapp/src/routes/profile/profile.component.tsx`](../../../packages/webapp/src/routes/profile/profile.component.tsx). Organization settings are tabs in [`packages/webapp-libs/webapp-tenants`](../../../packages/webapp-libs/webapp-tenants), and `webapp-backup` already adds its own tab there, the model for the WhatsApp tab in Step 1.6.
+
+## 8. Architecture
+
+### 8.1 Components
 
 ```mermaid
 flowchart TD
-    WA[WhatsApp Cloud API]
-    WH[apps.whatsapp webhook]
-    SIG[Verify Meta signature]
-    IN[Persist inbound event / deduplicate]
-    Q[Celery task queue]
-    ROUTER[InboundRouter]
-    ID[Resolve linked SaaS identity]
-    MODE[ConversationModeResolver]
-    MENU[MenuRouter / FlowService]
-    AGENT[AgentService / explicit ToolRegistry]
-    UC[Authorized application use cases]
-    GQL[Existing Django domain services and permission rules]
-    SEND[WhatsApp Outbox / Meta client]
-    USER[Linked SaaS user]
-    SHOPPER[Storefront shopper identity<br/>deferred]
-    STOREFRONT[Tenant StorefrontProvider<br/>deferred Shopify adapter]
+    META[WhatsApp Cloud API]
+    HOOK[apps.whatsapp webhook<br/>verify signature, store once, queue]
+    TASK[Celery worker: process inbound<br/>woken via Redis, the Celery broker]
+    ROUTE{WhatsAppAccount.purpose}
+    SAAS[apps.whatsapp_saas<br/>identity, menus, Flows, AI tools]
+    SHOP[apps.whatsapp_shop<br/>store customer menus, cart, AI tools]
+    UC[Use cases<br/>same permission checks as GraphQL]
+    DOMAIN[Existing apps<br/>multitenancy, demo, shopify, payfast]
+    OUT[Send queue: queued outbound rows in Postgres<br/>drained in order, per contact, by a Celery task<br/>log or meta backend]
 
-    WA --> WH --> SIG --> IN --> Q --> ROUTER
-    ROUTER --> ID --> MODE
-    MODE --> MENU
-    MODE --> AGENT
-    MENU --> UC
-    AGENT --> UC
-    UC --> GQL
-    GQL --> SEND --> WA
-    ID -. account-management principal .-> USER
-    ROUTER -. future store-channel routing .-> SHOPPER
-    SHOPPER -. storefront only .-> STOREFRONT
-    STOREFRONT --> SEND
+    META --> HOOK --> TASK --> ROUTE
+    ROUTE -->|platform| SAAS
+    ROUTE -->|storefront, phase 2| SHOP
+    SAAS --> UC --> DOMAIN
+    SHOP --> DOMAIN
+    SAAS --> OUT
+    SHOP --> OUT
+    OUT --> META
 ```
 
-### 2.2 SaaS administration request path
+**Where things are kept.**
+
+- **Postgres** holds everything that matters: inbound messages, the send queue (outbound rows with status `queued`, D21), and conversation state.
+- **Redis** is used only as Celery's broker. It carries the small "process message 42" or "drain contact 7's queue" notes that wake a worker, never a message's content or the order messages go out in. If Redis lost a note, the rows would still be in Postgres, waiting.
+
+### 8.2 Data model (phase 1)
+
+All in `apps.whatsapp`. Field names follow local conventions at implementation; the invariants are what tests pin. Since Step 1.16, every choice field stores its enum member names (agents.md section 5.3b); the values below are those names.
+
+- **`WhatsAppAccount`:** `purpose` (`INTERNAL_COMMUNICATIONS` or `EXTERNAL_COMMUNICATIONS`), `tenant` (null exactly when the purpose is `INTERNAL_COMMUNICATIONS`, enforced by a check constraint, until Step 1.17 gives every account an organization), `display_phone_number`, `phone_number_id` (unique), `waba_id`, encrypted `access_token`, encrypted `app_secret` (empty means "the platform's Meta app"), a hash of the app-generated `webhook_verify_token` (D6), `connection_method` (`SEED`, `MANUAL`, `EMBEDDED_SIGNUP`), `verified_name` (the business name Meta returns), `credentials_verified_at` and `webhook_verified_at` (the form's proof, user story 11), `is_active`, timestamps.
+- **`WhatsAppContact`:** `account`, `bsuid` (Meta's `user_id`, unique per account), `wa_id` (optional, unique per account when present), `profile_name` (for display only, never for authority), `last_inbound_at` (drives the 24-hour rule).
+- **`WhatsAppIdentity`:** `user` (one-to-one), `contact` (one-to-one, platform account only), `conversation_mode` (`WHATSAPP_FORM`, `AGENTIC` or empty), `linked_at`.
+- **`PhoneVerificationCode`** (in `apps.phone_verification`, D20): `user`, `phone_number` (normalized, D19), `channel`, a hash of the code, `expires_at`, `consumed_at`, `attempts`. Issuing a new code voids the user's unused ones. Linking (user story 1) uses it with the `WHATSAPP_INBOUND` channel.
+- **`WhatsAppMessage`:** `contact` (and, through it, the account), `direction` (`INBOUND` or `OUTBOUND`), `wamid` (Meta's message id, unique when present), `kind`, `payload` (only what processing needs), `status` (inbound: `RECEIVED`, `PROCESSED`, `FAILED`; outbound: `QUEUED`, `ACCEPTED`, `SENT`, `DELIVERED`, `READ`, `FAILED`, `CANCELLED`), `error_code`, timestamps. Inbound and outbound share one table, so phase 5's transcript is a query rather than a new model.
+- **`WhatsAppConversation`:** one per contact. Holds the selected organization, the menu state (opaque choice ids mapped to real ids, paging cursors), and `state_expires_at`. Phase 5 adds `status`, `assignee` and `waiting_since`.
+- **`WhatsAppPendingAction`:** `conversation`, `action`, `arguments` (validated JSON), `tenant`, `expires_at`, `consumed_at`. One use only, and the permission is checked again when it runs (D11).
+- **`WhatsAppAgentItem`:** `conversation`, `sequence`, `item` (one Responses API input or output item, tool calls included). The agent's history is rebuilt from these rows (D12).
+
+### 8.3 Inbound path
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant U as Linked SaaS user
-    participant M as WhatsApp / Meta
-    participant W as apps.whatsapp webhook
+    participant M as Meta
+    participant W as Webhook view
     participant DB as Postgres
-    participant C as Celery worker
-    participant R as InboundRouter
-    participant H as Menu or Agent handler
-    participant A as Authorized use case
-    participant D as Existing domain service
+    participant C as Celery worker (woken via Redis)
+    participant H as Purpose handler
+    participant Q as Send queue (Postgres rows, D21)
 
-    U->>M: Send text, button reply, or Flow response
-    M->>W: POST signed webhook event
-    W->>W: Verify X-Hub-Signature-256 against raw body
-    W->>DB: Insert InboundMessage by unique provider message ID
-    W-->>M: 200 after durable insert / duplicate acknowledged
-    W->>C: Enqueue process_inbound_message(message_id)
-    C->>DB: Load event, identity, conversation, user preference
-    C->>R: Route by sender identity and message type
-    R->>H: Menu/Flow route or selected AI agent
-    H->>A: Call fixed use case with principal + server tenant context
-    A->>D: Validate permission, input, tenant, and state change
-    D-->>A: Result or domain error
-    A-->>H: Typed result
-    H->>DB: Save conversation/outbox message
-    H-->>M: Send queued reply through Cloud API
+    M->>W: POST signed body
+    W->>W: HMAC over raw body, constant-time compare
+    W->>DB: Save each message, unique on wamid (duplicates skipped)
+    W-->>M: 200
+    W->>C: on_commit: process(message id)
+    C->>DB: Load message, account, contact, conversation
+    C->>H: Platform handler (phase 1) or storefront handler (phase 2)
+    H->>H: Linked? Mode? Escape word? Button id? Flow reply? Free text?
+    H->>Q: Store replies as queued outbound rows, in order
+    Q->>M: Drain one contact at a time: send (meta backend) or only mark sent (log backend)
+    M->>W: Later: status updates, recorded on the outbound rows
 ```
 
-### 2.3 AI confirmation path
+### 8.3a The reply queue (D21, Step 1.4c)
 
-The model proposes an allowlisted action; server code validates it, creates a pending confirmation, and returns a preview. The model does not get to treat its own response as confirmation or success.
+The queue is the `WhatsAppMessage` table in Postgres. Redis only carries Celery's "drain contact 7" note that wakes a worker, never a message or its place in line. The code is [`services/outbox.py`](../../../packages/backend/apps/whatsapp/services/outbox.py) and the `send_queued_messages` task in [`tasks.py`](../../../packages/backend/apps/whatsapp/tasks.py).
+
+**An outbound message's statuses:**
+
+```mermaid
+stateDiagram-v2
+    [*] --> QUEUED: queue_messages(), in the same transaction as the work
+    QUEUED --> QUEUED: passing failure (timeout, 130429, 131056), retried later
+    QUEUED --> ACCEPTED: META backend, Meta returned the id
+    QUEUED --> SENT: LOG backend (no webhook will ever come)
+    QUEUED --> FAILED: permanent failure, or every retry failed
+    QUEUED --> CANCELLED: a message ahead of it failed
+    ACCEPTED --> SENT: Meta's status webhook
+    ACCEPTED --> FAILED: Meta's status webhook
+    SENT --> DELIVERED: Meta's status webhook
+    DELIVERED --> READ: Meta's status webhook
+```
+
+**A normal send.** A handler deletes an item and replies with three messages: a long text split by `text_reply` into two parts, then a final part with the Main menu button.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant U as User
-    participant A as AgentService
-    participant L as LLM provider
-    participant T as ToolRegistry
-    participant C as ConfirmationService
-    participant D as Authorized domain use case
+    participant H as Handler (Celery worker)
+    participant DB as Postgres (send queue)
+    participant R as Redis (Celery broker)
+    participant S as send_queued_messages (Celery worker)
+    participant M as Meta
 
-    U->>A: "Add an item called Monthly report"
-    A->>L: Conversation + tool schemas + server context
-    L-->>A: create_item(name="Monthly report")
-    A->>T: Validate tool name and JSON arguments
-    T->>C: Store pending action bound to user, tenant, args, expiry
-    C-->>A: Confirmation ID + preview
-    A-->>U: "Create Monthly report in Acme? Reply Confirm or Cancel."
-    U->>A: "Confirm"
-    A->>C: Consume one-time confirmation for this sender
-    C->>D: Execute exact stored action, rechecking permission
-    D-->>C: Persisted item result
-    C-->>A: Confirmed result
-    A-->>U: Report success from persisted result
-```
-
-### 2.4 Provider checkout handoff
-
-A WhatsApp message contains only an opaque handoff URL. The checkout record keeps the provider payload server-side and is consumed once by the web route.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant U as WhatsApp user
-    participant W as WhatsApp channel
-    participant B as Django backend
-    participant DB as PayFastCheckout + WhatsApp handoff
-    participant Web as Webapp handoff route
-    participant P as PayFast
-    participant ITN as Existing PayFast ITN
-
-    U->>W: Request a plan or payment
-    W->>B: Authorized use case creates provider checkout
-    B->>DB: Store checkout + opaque expiring handoff token
-    B-->>W: Return app-origin handoff URL
-    W-->>U: Send link with amount/purpose summary
-    U->>Web: Open URL, sign in if needed
-    Web->>B: Redeem token; recheck user, tenant, permission, expiry
-    B-->>Web: Single-use provider checkout fields
-    Web->>P: Submit existing PayFast form
-    P-->>U: Hosted checkout experience
-    P->>ITN: Notify existing backend endpoint
-    ITN->>DB: Verify and persist provider outcome
-    DB-->>B: Checkout status becomes complete/failed/cancelled
-    B-->>W: Subsequent status query uses persisted provider state
-```
-
-### 2.5 Deferred Shopify shopper path
-
-Routing must happen before product tools are available. A chat number or validated entry context identifies exactly one tenant; the shopper principal then remains scoped to that store and does not pass through SaaS membership authorization.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Buyer as Store shopper
-    participant Meta as WhatsApp / Meta
-    participant WA as WhatsApp webhook
-    participant Channel as Tenant WhatsApp channel registry
-    participant Store as Tenant StorefrontProvider
-    participant Shopify as Shopify Storefront API
-
-    Buyer->>Meta: Open tenant's WhatsApp channel and ask for a product
-    Meta->>WA: Signed inbound event with receiving phone number ID
-    WA->>Channel: Resolve receiving channel to one tenant + active shop
-    Channel-->>WA: Tenant context and storefront config
-    WA->>Store: Search products as StorefrontCustomerPrincipal
-    Store->>Shopify: Storefront API product query
-    Shopify-->>Store: Products / availableForSale / cursor
-    Store-->>WA: Tenant-scoped result
-    WA-->>Buyer: Product choices and current availability wording
-    Buyer->>WA: Select variant and request checkout
-    WA->>Store: Create/update cart; retrieve checkoutUrl
-    Store-->>WA: Validated Shopify-hosted checkout URL
-    WA-->>Buyer: Send checkout link
-```
-
-The future shopper diagram requires tenant WhatsApp channel onboarding or an equally strong routing mechanism. A single shared SaaS support number does not imply which tenant's store the shopper intends to use.
-
-### 2.6 Link a WhatsApp identity to a SaaS user
-
-The user can start linking from the website profile or by sending `LINK` to the configured WhatsApp number. Linking verifies both control of the WhatsApp sender through Meta's signed event and access to the existing SaaS account through a one-time email challenge. It does not change website sign-up or authenticate future website sessions.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant User as Existing SaaS user
-    participant Web as Optional profile page
-    participant API as Link API
-    participant DB as WhatsAppLinkChallenge
-    participant Mail as Account email
-    participant Meta as WhatsApp / Meta
-    participant Hook as Signed webhook
-
-    alt Start from website
-        User->>Web: Choose Link WhatsApp
-        Web->>API: startWhatsAppLink()
-        API->>DB: Store random nonce + short expiry
-        API-->>Web: Return wa.me URL with LINK nonce
-        Web-->>User: Open WhatsApp and send prefilled message
-    else Start in WhatsApp
-        User->>Meta: Send LINK
+    H->>DB: One transaction: delete the item, queue rows 41, 42, 43
+    H->>R: On commit: "drain contact 7"
+    R->>S: Wake a worker
+    loop One short transaction per message
+        S->>DB: Take contact 7's send lock (advisory, or give up if taken), take its oldest queued row
+        S->>M: Send it
+        M-->>S: Meta's id (wamid)
+        S->>DB: Save the wamid and "accepted", commit
     end
-    Meta->>Hook: Signed inbound event with wa_id + message ID
-    Hook-->>User: Ask for existing account email
-    User->>Meta: Reply with account email
-    Hook->>DB: Create rate-limited email challenge; do not reveal account existence
-    DB->>Mail: Send one-time code to matching account email
-    Mail-->>User: One-time verification code
-    User->>Meta: Reply with code
-    Meta->>Hook: Signed inbound event with wa_id + code
-    Hook->>DB: Validate and consume email challenge once
-    DB-->>Hook: Existing SaaS user + verified wa_id
-    Hook->>DB: Create active WhatsAppIdentity
-    Hook-->>Meta: Acknowledge delivery
-    Web->>API: Refresh WhatsApp settings
-    API-->>Web: Linked status (masked number)
+    S->>DB: No queued row left: done
+    M->>DB: Later, through the webhook: sent, delivered, read
 ```
 
-### 2.7 Menu and Flow dispatch
-
-Menu and AI modes share use cases; the route differs only in how the user's intent is gathered. A Flow endpoint responds synchronously to the encrypted exchange, while longer-running use cases return a short acknowledgement and continue via a WhatsApp message.
+**A passing failure.** Meta's same-user pacing limit (`131056`) refuses row 42. The rows behind it wait, and only the send is repeated, never the work that produced the reply.
 
 ```mermaid
-flowchart LR
-    In[Inbound interactive event] --> Mode{Saved mode}
-    Mode -->|whatsapp_form| Router[MenuRouter]
-    Mode -->|whatsapp_ai_agent + text| Agent[AgentService]
-    Mode -->|any mode + signed Flow data| Flow[FlowService]
-    Router --> Decode[Resolve stable action ID from stored state]
-    Flow --> Validate[Decrypt, validate screen/action/data]
-    Agent --> Allow[Validate tool name + argument schema]
-    Decode --> Classify{Read or write?}
-    Validate --> Classify
-    Allow --> Classify
-    Classify -->|read| UC[Shared authorized use case]
-    Classify -->|write| Pending[Persist preview + one-time confirmation]
-    Pending -->|explicit user confirms| Recheck[Recheck user, tenant, permission]
-    Recheck --> UC
-    UC --> Out[Persist result and outbound message]
+sequenceDiagram
+    autonumber
+    participant S as send_queued_messages
+    participant DB as Postgres
+    participant M as Meta
+
+    S->>DB: Take contact 7's send lock, take row 42
+    S->>M: Send row 42
+    M-->>S: Error 131056
+    S->>DB: Roll back: row 42 stays queued, row 43 waits behind it
+    Note over S: Retry in 5 s, then 10, 20, 40 and 80 s.<br/>After the last one: row 42 failed, row 43 cancelled.
+    S->>DB: Take contact 7's send lock, take row 42 again
+    S->>M: Send row 42
+    M-->>S: wamid
+    S->>DB: Row 42 accepted, then row 43 as normal
 ```
 
-## 3. Backend design
+**Strict mode** (`WHATSAPP_SEND_WAIT_FOR_SENT_STATUS=True`). Each message also waits for Meta's `sent` on the one before it, at most `STRICT_MODE_MAX_WAIT_SECONDS` (30 seconds).
 
-### 3.1 Proposed backend package layout
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as send_queued_messages
+    participant DB as Postgres
+    participant M as Meta
+    participant W as Webhook
 
-The tree below is the target shape, not a claim that these files already exist. Keep modules narrow and follow the repository's current Django app/test conventions. `storefront/` is only an interface in this plan; the Shopify adapter is deliberately deferred.
+    S->>M: Send row 41
+    M-->>S: wamid
+    S->>DB: Row 41 accepted
+    S->>DB: Row 42's previous message is still "accepted": stop (waiting)
+    M->>W: Status "sent" for row 41
+    W->>DB: Row 41 sent
+    W->>S: On commit: "drain contact 7"
+    S->>M: Send row 42
+    Note over W,DB: A "failed" status instead marks row 41 failed<br/>and cancels rows 42 and 43.
+```
+
+**The worked example, row by row:**
 
 ```text
-packages/backend/apps/whatsapp/
-├── __init__.py
-├── apps.py
-├── admin.py
-├── checks.py
-├── constants.py                 # modes, message states, tool/action names
-├── models.py                    # WhatsAppIdentity, Conversation, Message, PendingAction, CheckoutHandoff
-├── serializers.py               # validate link requests and user preference inputs
-├── schema.py                    # authenticated preference/link status GraphQL fields and mutations
-├── urls.py                      # webhook, flow endpoint, handoff endpoints
-├── views.py                     # thin HTTP adapters only
-├── verification.py              # Meta signature and Flow request validation
-├── client.py                    # Meta Cloud API HTTP client
-├── tasks.py                     # process webhook event and send outbox messages
-├── services/
-│   ├── __init__.py
-│   ├── identity.py              # SaaS account linking and identity resolution
-│   ├── conversations.py         # state, expiry, mode selection, message history
-│   ├── inbound.py               # normalize/deduplicate/dispatch incoming events
-│   ├── outbound.py              # outbox, retries, status correlation
-│   ├── menus.py                 # stable menu action IDs and deterministic routes
-│   ├── flows.py                 # encrypted Flow exchange and input validation
-│   ├── confirmations.py         # preview, bind, expire, consume one-time actions
-│   ├── checkout_handoff.py      # create/redeem expiring provider handoff
-│   ├── use_cases.py             # WhatsApp principal/context and channel facade
-│   └── storefront.py            # StorefrontProvider protocol only; no Shopify code here
-├── agent/
-│   ├── __init__.py
-│   ├── provider.py              # LLMProvider protocol + concrete provider adapter
-│   ├── service.py               # bounded tool loop and WhatsApp-safe answer formatting
-│   ├── tools.py                 # explicit names/schemas to use-case mapping
-│   └── prompts.py               # concise prompts; no authorization rules live only here
-├── migrations/
-└── tests/
-    ├── test_settings.py
-    ├── test_models.py
-    ├── test_identity.py
-    ├── test_verification.py
-    ├── test_views.py
-    ├── test_inbound.py
-    ├── test_outbound.py
-    ├── test_menu_router.py
-    ├── test_flows.py
-    ├── test_use_cases.py
-    ├── test_confirmations.py
-    ├── test_checkout_handoff.py
-    ├── test_agent.py
-    └── test_smoke.py
+                                 row 41 (part 1)   row 42 (part 2)   row 43 (Main menu)
+the handler queues the reply     queued            queued            queued
+the drain sends row 41           accepted          queued            queued
+row 42 hits 131056               accepted          queued            queued     (rolled back, retry in 5 s)
+the retry sends row 42           accepted          accepted          queued
+then row 43                      accepted          accepted          accepted
+Meta's status webhooks           read              delivered         sent
 ```
 
-Composition changes stay in existing roots: add app/settings to `packages/backend/config/settings.py`, URLs to `config/urls_api.py`, GraphQL fields to `config/schema.py`, and `WhatsAppProcessInboundMessage` to the existing Celery task discovery. No generic business logic belongs in `views.py`, `schema.py`, `client.py`, or `agent/tools.py`; those are adapters to services/use cases.
+- **If row 42 had failed for good** (say `131026`, undeliverable): row 42 `failed`, row 43 `cancelled`. Row 43 made sense only after row 42. A reply queued later, as row 44, is sent normally.
+- **Two workers wake for contact 7 at once:** the first takes contact 7's send lock. The second's `pg_try_advisory_xact_lock` finds it taken, returns `busy` and sends nothing, so the two never interleave. Meanwhile contact 8's queue drains in parallel on another worker.
 
-### 3.2 Settings and startup checks
+### 8.4 Linking a number
 
-Use Django settings, not reads from `os.environ` inside app code. Defaults keep the feature disabled for a fresh clone; deployment values are required only when enabled. Keep the Graph API version explicit and upgrade it deliberately after checking Meta's current supported versions.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as SaaS user
+    participant Web as Profile page (logged in)
+    participant API as GraphQL
+    participant WA as WhatsApp
+    participant Hook as Webhook + worker
+
+    U->>Web: Link WhatsApp
+    Web->>API: startWhatsAppLink
+    API-->>Web: 6-digit code + wa.me link with "link 123456"
+    U->>WA: Send "link 123456" to the platform number
+    WA->>Hook: Signed message from this number
+    Hook->>Hook: Code matches an unused, unexpired code? Number not linked elsewhere?
+    Hook-->>U: "Linked to your account" + main menu
+```
+
+A user who texts first gets a reply with the profile page address, and the flow continues from step 1.
+
+### 8.5 Conversation modes, escape words and buttons
+
+- **Order of handling:**
+  1. A button or list press is resolved through the conversation's stored choice map, whatever the mode.
+  2. A Flow reply is matched to its pending form through the signed `flow_token`.
+  3. An escape word (`menu`, `help`, `cancel`, `mode menu`, `mode ai`, `unlink`) is handled directly.
+  4. Any other text goes to the main menu in `whatsapp_form` mode, or to the assistant in `agentic` mode.
+- **Button ids are opaque,** such as `c7`, and map to real ids in the conversation's state. An expired or unknown id gets "that menu has expired" and the main menu.
+
+### 8.6 Paging and the way back
+
+A list message holds at most 10 rows (section 6.1), so a page is 7 items plus Previous, Next and Main menu rows (D17). The body text says "Page 2 of 5" when a total is known; Shopify cursors give no total, so they show only Previous and Next. The cursor for each page stays in the conversation state, never in the button id.
+
+### 8.7 Settings (phase 1)
+
+Each setting gets a loader test (agents.md section 2.3) and a safe default (section 5.4), and is added to `packages/backend/.env.shared` with placeholder values.
 
 ```python
-# config/settings.py — proposed additions; values are placeholders/defaults, not secrets.
 WHATSAPP_ENABLED = env.bool("WHATSAPP_ENABLED", default=False)
-WHATSAPP_GRAPH_API_VERSION = env("WHATSAPP_GRAPH_API_VERSION", default="")
-WHATSAPP_ACCESS_TOKEN = env("WHATSAPP_ACCESS_TOKEN", default="")
-WHATSAPP_PHONE_NUMBER_ID = env("WHATSAPP_PHONE_NUMBER_ID", default="")
-WHATSAPP_BUSINESS_ACCOUNT_ID = env("WHATSAPP_BUSINESS_ACCOUNT_ID", default="")
+WHATSAPP_GRAPH_API_VERSION = env("WHATSAPP_GRAPH_API_VERSION", default="v26.0")
 WHATSAPP_APP_SECRET = env("WHATSAPP_APP_SECRET", default="")
 WHATSAPP_VERIFY_TOKEN = env("WHATSAPP_VERIFY_TOKEN", default="")
-WHATSAPP_PUBLIC_BASE_URL = env("WHATSAPP_PUBLIC_BASE_URL", default="")
-WHATSAPP_DEFAULT_CONVERSATION_MODE = env(
-    "WHATSAPP_DEFAULT_CONVERSATION_MODE", default="whatsapp_form"
-)
-WHATSAPP_FLOW_PRIVATE_KEY = env("WHATSAPP_FLOW_PRIVATE_KEY", default="")
-WHATSAPP_FLOW_PASSPHRASE = env("WHATSAPP_FLOW_PASSPHRASE", default="")
-WHATSAPP_CONVERSATION_TTL_SECONDS = env.int(
-    "WHATSAPP_CONVERSATION_TTL_SECONDS", default=1800
-)
-WHATSAPP_AI_PROVIDER = env("WHATSAPP_AI_PROVIDER", default="openai")
+WHATSAPP_TOKEN_ENCRYPTION_KEY = env("WHATSAPP_TOKEN_ENCRYPTION_KEY", default="")
+WHATSAPP_SEND_BACKEND = env("WHATSAPP_SEND_BACKEND", default="LOG")  # member names since Step 1.16
+WHATSAPP_DEFAULT_CONVERSATION_MODE = env("WHATSAPP_DEFAULT_CONVERSATION_MODE", default="WHATSAPP_FORM")
+WHATSAPP_LINK_CODE_TTL_SECONDS = env.int("WHATSAPP_LINK_CODE_TTL_SECONDS", default=600)
+WHATSAPP_CONVERSATION_TTL_SECONDS = env.int("WHATSAPP_CONVERSATION_TTL_SECONDS", default=1800)
 WHATSAPP_AI_MODEL = env("WHATSAPP_AI_MODEL", default="")
 WHATSAPP_AI_MAX_TOOL_CALLS = env.int("WHATSAPP_AI_MAX_TOOL_CALLS", default=5)
+WHATSAPP_DEFAULT_COUNTRY_CODE = env("WHATSAPP_DEFAULT_COUNTRY_CODE", default="27")  # added in Step 1.5 (D19)
+WHATSAPP_SEND_WAIT_FOR_SENT_STATUS = env.bool("WHATSAPP_SEND_WAIT_FOR_SENT_STATUS", default=False)  # added in Step 1.4c (D21)
 ```
 
-`apps.whatsapp.checks` reports one actionable `whatsapp.E001` per missing required production setting, an unsupported `WHATSAPP_DEFAULT_CONVERSATION_MODE`, an invalid API version shape, and an invalid enabled/provider combination. It must not require Meta/LLM secrets when `WHATSAPP_ENABLED=False` or during the test setting. Add matching safe placeholders/comments in `packages/backend/.env.shared`; never commit real credentials. Use the existing encryption/key management pattern for Flow private keys rather than assuming `.env` is a production secret store.
-
-### 3.3 HTTP and GraphQL contracts
-
-Keep public provider callbacks narrow, and keep account settings behind the existing authenticated GraphQL request context.
-
-| Endpoint/field                   | Method and auth                                                         | Purpose and contract                                                                                                                                                                                                                  |
-| -------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/api/whatsapp/webhook/`         | GET, Meta verify token                                                  | Verify subscription and return exactly the supplied challenge on a match.                                                                                                                                                             |
-| `/api/whatsapp/webhook/`         | POST, Meta raw-body HMAC                                                | Accept WhatsApp messages and status events; validate signature, persist/dedupe, enqueue, then acknowledge. Never accept user/tenant identity from the body as authority.                                                              |
-| `/api/whatsapp/flows/`           | POST, Meta Flow signature + encrypted body                              | Decrypt one exchange, validate the requested screen/action and data, execute only the corresponding Flow operation, and return the encrypted response within Meta's deadline.                                                         |
-| `/api/whatsapp/flows/health/`    | GET                                                                     | Health response for Flow configuration; must not leak keys or settings.                                                                                                                                                               |
-| `whatsAppSettings`               | Authenticated GraphQL query                                             | Return current user's saved conversation mode and link status; never return raw `wa_id` unless the UI needs a masked value.                                                                                                           |
-| `updateWhatsAppConversationMode` | Authenticated GraphQL mutation                                          | Validate and persist only `whatsapp_form` or `whatsapp_ai_agent` for the current user.                                                                                                                                                |
-| `startWhatsAppLink`              | Authenticated GraphQL mutation                                          | Create a short-lived one-time nonce bound to the current user and return a `wa.me` URL with prefilled link command. It does not link an identity until a signed inbound message presents the nonce.                                   |
-| `disconnectWhatsApp`             | Authenticated GraphQL mutation                                          | Revoke current user's active WhatsApp identity and invalidate pending link challenges/conversation state.                                                                                                                             |
-| `redeemWhatsAppCheckout`         | Authenticated webapp GraphQL mutation or session-authenticated endpoint | Redeem an opaque handoff once, after login, rechecking the bound user, tenant, billing permission, provider, expiry, and current checkout state. Return provider fields only in the authenticated response needed to submit checkout. |
-
-GraphQL names above are proposed API names. Tests must pin behavior, not rely on spelling as a requirement if schema conventions require a different name. Public webhook endpoints are exempt from normal cookie JWT auth only because Meta authenticates their requests with its configured signature; they must not be listed as general anonymous APIs.
-
-### 3.4 Service and class responsibilities
-
-| Class/service                | Owns                                                                                                                                   | Must not own                                                                                |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `WhatsAppWebhookView`        | Parse HTTP method, validate headers/body shape, call verifier and durable ingestion service, return provider-appropriate HTTP response | Business rules, LLM calls, synchronous provider sends, tenant selection from untrusted JSON |
-| `MetaWebhookVerifier`        | GET verify-token comparison and POST HMAC-SHA256 raw-body verification                                                                 | JSON parsing or business decisions                                                          |
-| `WhatsAppCloudClient`        | Send text/template/interactive/Flow messages; normalize timeout/rate-limit/provider errors                                             | Pick recipient, permission checks, construct arbitrary tool replies                         |
-| `InboundEventService`        | Normalize supported Meta payloads, persist unique event, classify status vs user message, enqueue after commit                         | Call domain mutations inline in webhook request                                             |
-| `InboundRouter`              | Resolve active linked identity, normalize inbound text/button/list/Flow event, choose the route based on persisted preference          | Assume identity from WhatsApp display name or execute an unknown action ID                  |
-| `ConversationModeResolver`   | Return explicit per-user mode or configured default                                                                                    | Model choice, authorization, or global force-overrides that hide user preference            |
-| `MenuRouter` / `FlowService` | Translate stable UI action IDs and validated Flow data to use-case calls                                                               | Implement domain validation a second time                                                   |
-| `AgentService`               | Build concise context, call provider, execute bounded loop over registered tools, serialize result into answer                         | Direct model-to-database access, arbitrary GraphQL, secrets, unbounded recursion            |
-| `ToolRegistry`               | Validate tool name and JSON schema, select confirmation policy, invoke one named use case                                              | Discover functions dynamically or accept tenant/user IDs from model arguments               |
-| `WhatsAppUseCases`           | Build `WhatsAppOperationContext`, select existing application service, enforce permission/tenant context, return typed results         | Become a second implementation of billing, tenant, or CRUD rules                            |
-| `ConfirmationService`        | Create preview and one-use pending action; bind exact args/principal/tenant/expiry; reauthorize on consume                             | Trust a model-generated “confirmed” flag                                                    |
-| `CheckoutHandoffService`     | Bind secure one-time link to an existing checkout and verify at redemption                                                             | Change price, provider, tenant, or return URL from browser data                             |
-| `OutboxService`              | Persist messages, retry transient failures, correlate delivery statuses                                                                | Repeat the operation that produced the reply                                                |
-
-Use `transaction.on_commit()` when creating the Celery task after a new inbound event; otherwise the worker can race the database transaction. Keep worker tasks idempotent by event ID and operation idempotency key. For outbound sends, persist intent before the external API request, then record provider message ID/status. Exactly-once delivery is not promised by Meta; the goal is at-most-once domain mutation plus retryable message delivery.
-
-Normalize the provider payload before dispatch. One webhook body can contain multiple entries, changes, messages, or statuses; process each supported event in the batch instead of assuming `entry[0].changes[0].value.messages[0]` is the only event.
-
-```python
-@dataclass(frozen=True)
-class NormalizedInboundMessage:
-    provider_message_id: str
-    sender_wa_id: str
-    receiving_phone_number_id: str
-    sender_display_name: str | None
-    message_type: Literal["text", "button_reply", "list_reply", "flow_reply", "unsupported"]
-    text: str | None
-    action_id: str | None
-    flow_response: dict[str, object] | None
-    received_at: datetime
-
-
-@dataclass(frozen=True)
-class NormalizedDeliveryStatus:
-    provider_message_id: str
-    status: Literal["sent", "delivered", "read", "failed"]
-    provider_error_code: str | None
-    occurred_at: datetime
-```
-
-`sender_display_name` is presentation-only. A `flow_response` arriving as a normal webhook message is distinct from the synchronous encrypted Flow endpoint exchange; normalize each according to its documented provider event shape. Unknown event kinds are recorded as unsupported metadata and acknowledged after durable receipt so they do not create retry storms.
-
-## 4. Frontend design
-
-### 4.1 Proposed webapp layout
-
-The profile page is currently composed in `packages/webapp/src/routes/profile/profile.component.tsx`; keep the new account preference/link controls there or in a small colocated component. PayFast's form submission helper is `packages/webapp-libs/webapp-finances/src/payfast/submitPayfastCheckout.ts` (confirm exact export during implementation); the provider handoff route belongs with the finance routes so both PayFast and Stripe selection stays centralized.
-
-```text
-packages/webapp/src/routes/profile/
-├── profile.component.tsx                 # add WhatsApp settings section
-└── whatsappSettings/
-    ├── whatsappSettings.component.tsx    # mode preference + link status/actions
-    ├── whatsappSettings.graphql.ts       # query/mutation documents
-    ├── index.ts
-    └── __tests__/
-
-packages/webapp-libs/webapp-finances/src/
-├── payfast/                              # existing provider-specific checkout helper
-│   └── submitPayfastCheckout.ts
-└── whatsappCheckout/
-    ├── whatsappCheckout.component.tsx    # login/resume and provider handoff page
-    ├── whatsappCheckout.graphql.ts       # redeem opaque token after login
-    ├── index.ts
-    └── __tests__/
-```
-
-Register the checkout route in the finance library and root route composition. Profile preference changes use existing authenticated GraphQL patterns and generated client types. The checkout route must never put `fields`, PayFast signatures, customer email/phone, or raw provider tokens in the URL. If the existing finance library has a route ownership constraint, implementation must follow its public export and Nx boundary rather than importing private internals.
-
-## 5. Data model, service contracts, and tool API
-
-### 5.1 Core data model and class responsibilities
-
-These are the intended concepts and invariants. Final Django field types and relation names follow local conventions during implementation.
-
-| Model                                            | Important fields                                                                                                      | Invariants                                                                                                                                                                                                    |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Existing `User` profile (add one nullable field) | `whatsapp_conversation_mode` (`whatsapp_form`, `whatsapp_ai_agent`, or null)                                          | Null means use the configured default; non-null is the user's explicit choice and always wins over the ordinary deployment default. The profile mutation edits only the current authenticated user.           |
-| `WhatsAppIdentity`                               | `user` FK, `wa_id`, `verified_at`, `linked_at`, `revoked_at`                                                          | Unique active `wa_id` and one active identity per SaaS user in v1; linking is proven by a one-time challenge; number changes do not rewrite the user's login phone; no implicit account lookup grants access. |
-| `WhatsAppConversation`                           | `identity` FK, nullable `tenant` FK, `mode`, `state`, `last_message_at`, `expires_at`                                 | SaaS conversations belong to one linked user; tenant is selected from that user's memberships and revalidated on every action; expired state is not actionable.                                               |
-| `WhatsAppMessage`                                | conversation, provider message ID, direction, message type, status, payload metadata, timestamps                      | Unique provider message ID for inbound dedupe; store only minimum payload needed; sensitive bodies excluded from routine logs; statuses can be updated idempotently.                                          |
-| `WhatsAppOutboxMessage`                          | recipient identity/channel, payload, status, attempt count, next retry, provider message ID                           | Persist before sending; retries do not repeat the business mutation; provider errors and final state are observable without logging secrets.                                                                  |
-| `WhatsAppPendingAction`                          | conversation, action name, validated arguments JSON, summary, random confirmation token hash, expires at, consumed at | Binds exact arguments to sender and tenant; one-time consume; confirmation causes fresh authorization and validation; stale or changed context is rejected.                                                   |
-| `WhatsAppCheckoutHandoff`                        | user, tenant, provider, checkout reference, opaque token hash, created/expiry/consumed timestamps                     | Token is high entropy and single use; amount/provider fields are server-owned; tenant membership and billing permission are checked at creation and redemption.                                               |
-| `WhatsAppStorefrontChannel` (deferred)           | tenant, Meta phone-number ID/WABA reference, enabled state, credential reference, linked shop                         | Exactly one tenant/store per receiving phone number; credentials are isolated; no SaaS account identity is inferred from shopper number. This model is out of steps 1–7.                                      |
-| `StorefrontCustomer` (deferred)                  | tenant/shop, WhatsApp ID, optional Shopify customer reference, consent/retention timestamps                           | Scoped to one tenant's shop; no tenant membership; customer data follows Shopify and Meta privacy obligations.                                                                                                |
-
-`whatsapp_conversation_mode` belongs on the existing `User` model because this is a profile preference that should survive new conversations and devices. `WhatsAppConversation` may record the mode used for its most recent turn for support/audit, but it must not be the preference source. When a preference changes, discard unsafe pending actions and incomplete form state, keep the durable audit trail, and use the new mode on the next inbound message. For storefront shoppers, a later plan must decide whether mode is a shop default, a shopper preference, or both; do not automatically reuse the merchant's profile mode for shoppers.
-
-Proposed service contracts:
-
-```python
-@dataclass(frozen=True)
-class SaaSUserPrincipal:
-    user_id: int
-    wa_id: str
-
-
-@dataclass(frozen=True)
-class StorefrontCustomerPrincipal:
-    tenant_id: int
-    shop_id: int
-    wa_id: str
-    customer_id: int | None
-
-
-@dataclass(frozen=True)
-class WhatsAppOperationContext:
-    principal: SaaSUserPrincipal | StorefrontCustomerPrincipal
-    tenant_id: int | None
-    conversation_id: int
-    idempotency_key: str
-
-
-class WhatsAppUseCases(Protocol):
-    def list_organizations(self, ctx: WhatsAppOperationContext) -> list[OrganizationSummary]: ...
-    def create_organization(self, ctx: WhatsAppOperationContext, name: str) -> OrganizationSummary: ...
-    def list_crud_items(self, ctx: WhatsAppOperationContext, cursor: str | None = None) -> ItemPage: ...
-    def create_crud_item(self, ctx: WhatsAppOperationContext, name: str) -> ItemSummary: ...
-    def update_crud_item(self, ctx: WhatsAppOperationContext, item_id: str, name: str) -> ItemSummary: ...
-    def delete_crud_item(self, ctx: WhatsAppOperationContext, item_id: str) -> None: ...
-
-
-class StorefrontProvider(Protocol):
-    def search_products(self, ctx: WhatsAppOperationContext, query: str, cursor: str | None = None) -> ProductPage: ...
-    def get_product(self, ctx: WhatsAppOperationContext, product_id: str) -> ProductDetails: ...
-    def create_checkout(self, ctx: WhatsAppOperationContext, lines: list[CartLineInput]) -> CheckoutLink: ...
-```
-
-The concrete `WhatsAppUseCases` adapter must call existing domain services or carefully extracted shared services, never GraphQL over HTTP with a superuser/service token. `StorefrontProvider` has no concrete implementation until the later Shopify plan. A protocol is useful only if the first feature actually has a second consumer; if the code review finds it speculative overhead, keep the adapter private and defer the abstraction until the Shopify slice is approved.
-
-### 5.2 Explicit tool registry
-
-Tools are a fixed application API, not arbitrary GraphQL and not Python method discovery. Every tool declares its arguments, action class, and confirmation policy in code. Principal and tenant are context, never model arguments.
-
-```python
-TOOLS = {
-    "list_organizations": ToolSpec(
-        args=EmptyArgs,
-        permission=None,
-        confirmation=ConfirmationPolicy.NEVER,
-    ),
-    "create_organization": ToolSpec(
-        args=CreateOrganizationArgs(name=str),
-        permission="organization.create",
-        confirmation=ConfirmationPolicy.ALWAYS,
-    ),
-    "list_crud_items": ToolSpec(
-        args=ListItemsArgs(cursor=str | None),
-        permission="features.crud.manage",
-        confirmation=ConfirmationPolicy.NEVER,
-    ),
-    "create_crud_item": ToolSpec(
-        args=CreateItemArgs(name=str),
-        permission="features.crud.manage",
-        confirmation=ConfirmationPolicy.ALWAYS,
-    ),
-    "delete_crud_item": ToolSpec(
-        args=ItemIdArgs(item_id=str),
-        permission="features.crud.manage",
-        confirmation=ConfirmationPolicy.ALWAYS,
-    ),
-    "create_subscription_checkout": ToolSpec(
-        args=PlanSelectionArgs(plan=str),
-        permission="billing.manage",
-        confirmation=ConfirmationPolicy.ALWAYS,
-    ),
-}
-```
-
-The initial allowlist should be concrete and intentionally short. This table describes product behavior; the exact GraphQL resolver/service names and permission codes must be copied from the current implementation only after the section 7 step 4 audit.
-
-| Tool name                                     | Required arguments from user/model     | Server context                                     | Read/write                      | Confirmation                                                                   |
-| --------------------------------------------- | -------------------------------------- | -------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------ |
-| `list_organizations`                          | none                                   | linked SaaS user                                   | Read                            | None; return only that user's memberships.                                     |
-| `select_organization`                         | opaque choice ID from a prior list     | linked SaaS user + membership recheck              | Write conversation context only | Confirm selection in reply; never accepts an arbitrary tenant ID as authority. |
-| `create_organization`                         | name                                   | linked SaaS user                                   | Write                           | Show exact name and ask the user to confirm.                                   |
-| `list_crud_items`                             | optional cursor                        | selected tenant + linked user                      | Read                            | None.                                                                          |
-| `get_crud_item`                               | opaque item choice from prior list     | selected tenant + linked user                      | Read                            | None.                                                                          |
-| `create_crud_item`                            | name                                   | selected tenant + linked user                      | Write                           | Preview exact name and confirm.                                                |
-| `update_crud_item`                            | opaque item choice + changed fields    | selected tenant + linked user                      | Write                           | Preview old/new values and confirm.                                            |
-| `delete_crud_item`                            | opaque item choice                     | selected tenant + linked user                      | Destructive write               | Separate explicit confirmation.                                                |
-| `get_billing_summary`                         | none                                   | selected tenant + linked user                      | Read                            | None; requires current billing read permission.                                |
-| `create_subscription_checkout`                | plan choice from server-provided plans | selected tenant + linked user                      | External payment initiation     | Confirm plan/amount/interval, then create one-time checkout handoff.           |
-| `cancel_subscription` / `change_subscription` | target operation                       | selected tenant + linked user                      | Billing write                   | Explicit confirmation; only expose if active backend supports it.              |
-| `create_donation_checkout`                    | amount from server-provided choices    | selected tenant + linked user                      | External payment initiation     | Confirm exact amount and purpose before creating handoff.                      |
-| `search_storefront_products` (deferred)       | query + optional cursor                | `StorefrontCustomerPrincipal` + routed tenant/shop | Read                            | None.                                                                          |
-| `create_storefront_checkout` (deferred)       | variant choice + quantity              | `StorefrontCustomerPrincipal` + routed tenant/shop | External purchase flow          | Summarize cart and total, then provide validated Shopify checkout URL.         |
+The platform number's own values (`WHATSAPP_PLATFORM_PHONE_NUMBER_ID`, `WHATSAPP_PLATFORM_WABA_ID`, `WHATSAPP_PLATFORM_ACCESS_TOKEN`, `WHATSAPP_PLATFORM_DISPLAY_NUMBER`) are read only by the seed command, which writes them into the platform `WhatsAppAccount` row (D2). `WHATSAPP_GRAPH_API_VERSION` defaults to v26.0, the latest version on 2026-10-15 (introduced 2026-07-29; v25.0 is available until 2028-07-29). https://developers.facebook.com/docs/graph-api/changelog
+
+### 8.8 Endpoints (phase 1)
+
+- `GET /api/whatsapp/webhook/`: Meta's subscription check. It answers with the challenge only when the verify token matches the platform's or a form-connected account's; a match on an account records its `webhook_verified_at` (D6).
+- `POST /api/whatsapp/webhook/`: Meta's events for every number, accepted only with a valid signature from the secret of the numbers the body names (D6). No cookie authentication; the signature is the authority (agents.md section 3.5).
+- GraphQL, for organization members with `whatsapp.view` (read) or `whatsapp.manage` (write): `whatsAppAccounts(tenantId)`, `connectWhatsAppAccount`, `sendWhatsAppTestMessage`, `disconnectWhatsAppAccount`.
+- GraphQL, logged-in user only: `whatsAppIdentity` (masked number, mode, linked date), `startWhatsAppLink`, `updateWhatsAppConversationMode`, `disconnectWhatsApp`.
 
-`Opaque choice ID` means a server-issued short-lived reference to a result in the current conversation, not the database primary key copied into a tool call. The tool handler resolves it from stored conversation context and then rechecks ownership/tenant membership before it acts.
+## 9. Proposed Changes
 
-This is illustrative; permission identifiers must be checked against the actual multitenancy permission registry before implementation. Read tools can return a result immediately. Every write first produces a confirmation preview and only the confirmation endpoint executes it. Add organization membership, invitation, subscription cancel/change, and donation tools only after their exact existing permission and service behavior has been audited. A tool has one operation; avoid broad names such as `execute_graphql`, `update_any_model`, or `run_admin_query`.
+Every step is strict TDD (agents.md section 2.1): the listed tests first, a RED observed, then the production code, then a GREEN observed. A step that makes something reachable by a human adds its seed data and writes its human checks into section 13 in that same step (agents.md section 1.3).
 
-## 6. User stories and acceptance criteria
+### Phase 1 — Use case 1: connecting a number, and SaaS users on the platform number
 
-| Story                                | As a                                 | I want                                                                                              | So that                                                 | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------ | ------------------------------------ | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Sign up and link WhatsApp         | new or existing SaaS user            | use the current website sign-up, then link WhatsApp from my profile or chat                         | I can use WhatsApp as my primary client after setup     | Existing website sign-up remains unchanged; linking proves control of the WhatsApp sender and the account email with a one-time challenge; responses avoid account enumeration and are rate-limited; one number cannot silently take over another account; disconnect/relink is supported; native WhatsApp-only sign-up is deferred.                                                                                                                                   |
-| 2. Pick an interaction mode          | user                                 | choose WhatsApp menus/Flows or conversational AI in my profile                                      | the experience fits my preference                       | Persist enum-like `whatsapp_form` / `whatsapp_ai_agent` preference; show it in profile settings; new inbound messages use the saved choice; a deployment default applies only when the user has no explicit choice; no global env setting silently overrides an explicit user choice.                                                                                                                                                                                  |
-| 3. Use menus and Flows               | user                                 | browse supported actions and complete structured forms                                              | I can use WhatsApp without composing prompts            | Menu/list/button replies route by stable action IDs; Flows collect structured values; each Flow result is validated server-side; menus and AI share the same authorized application use cases.                                                                                                                                                                                                                                                                         |
-| 4. Create and manage an organization | authenticated user                   | create an organization, list/select organizations, and manage supported membership actions          | I can administer my workspace in chat                   | Create requires an explicit organization name and confirmation; list/select only returns memberships the sender owns; invitations and membership/role changes require their matching permissions and confirmation; ambiguous organization selection asks instead of guessing.                                                                                                                                                                                          |
-| 5. Manage CRUD demo items            | organization member                  | list, create, view, update, and delete generic CRUD demo items                                      | I can maintain tenant data in chat                      | Tools map to existing operations and `features.crud.manage`; all reads/writes are tenant-scoped; create/update confirm the intended values and delete has a clear confirmation; unknown item identifiers fail closed.                                                                                                                                                                                                                                                  |
-| 6. Manage subscription and payment   | billing-authorized organization user | see plan/status, start or change a subscription, cancel where supported, and make a one-off payment | I can handle billing without navigating the whole site  | `billing.view` protects billing reads and `billing.manage` protects changes; active `PAYMENT_BACKEND` determines available options; payment/plan checkout returns a short-lived web URL; payment success is reported only after the existing provider confirmation updates backend state.                                                                                                                                                                              |
-| 7. Use the AI agent safely           | user                                 | ask naturally for supported tasks                                                                   | I can describe what I need conversationally             | Agent tools are explicit and schema-validated; authenticated user and selected tenant are injected by the server; permissions are checked for every action; consequential writes are previewed and confirmed; tool execution has a turn limit and idempotency protection; the agent cannot invent arbitrary GraphQL or Django access.                                                                                                                                  |
-| 8. Recover or get help               | user                                 | return to menu, restart an expired flow, or reach a human/support path                              | mistakes and uncertainty do not strand me               | `menu`/`help` escape works in either mode; stale state is expired safely; failures return a concise retry/support response; unsupported actions are named clearly.                                                                                                                                                                                                                                                                                                     |
-| 9. Shop through WhatsApp (follow-on) | customer of a tenant                 | browse that tenant's Shopify products and inventory and complete supported storefront actions       | I can shop through the business's WhatsApp conversation | Shopper does not need a SaaS account or tenant membership; incoming chat is routed to exactly one tenant/store by an explicitly configured business channel or signed storefront entry context; customer data is scoped to that tenant's shop; product/availability data comes from its connected Shopify store; checkout uses Shopify's supported checkout; menus and AI share the same allowlisted operations; no Shopify files change in this WhatsApp-first slice. |
+#### Step 1.1 — Settings and the app skeleton
 
-## 7. Proposed Changes
+- **Tests first:**
+  - `apps/whatsapp/tests/test_settings.py`, in the style of `apps/shopify/tests/test_settings.py`: one test proving every setting in section 8.7 (the platform seed variables included) is read from its environment variable, and one proving every safe default when the variables are unset. Both import `config.settings` in a fresh subprocess through a `read_settings()` helper in `apps/whatsapp/tests/utils.py`, copied from the Shopify tests.
+  - `apps/whatsapp/tests/test_checks.py`, in the style of `apps/payfast/tests/test_checks.py`:
+    - `WHATSAPP_ENABLED=False` needs nothing
+    - a complete configuration passes
+    - with `WHATSAPP_ENABLED=True`, an empty app secret, an empty verify token, and a missing or malformed encryption key each report their own error
+    - so do an unknown send backend, an unknown conversation mode and a malformed Graph API version
+  - The empty package files `apps/whatsapp/__init__.py` and `apps/whatsapp/tests/__init__.py` come with the tests, so the RED is the missing settings and checks rather than a test-collection error.
+- **Then add:** `apps/whatsapp/apps.py`, `checks.py` and `constants.py` (the `ConversationMode` and `SendBackend` choices), the settings, `INSTALLED_APPS`, and commented placeholders in `packages/backend/.env.shared`.
+- **RED confirmed on 2026-10-15:**
+  - Settings: 2 failed with `subprocess.CalledProcessError`, because the settings don't exist yet. Command:
 
-Each step stays additive. Write the listed tests first, observe RED, then add production code and observe GREEN. No production code is written before its test.
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_settings.py 2>&1 | tee logs/backend-whatsapp-settings.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-### Step 1 — Identity linking, profile preference, and conversation records
+  - Checks: a collection error, `ModuleNotFoundError: No module named 'apps.whatsapp.checks'`, exit code 2. Command:
 
-Create durable identity and conversation primitives before exposing business actions. Preserve the existing website sign-up flow. Let a user start linking from the authenticated profile page or by messaging `LINK`; in either case, require a one-time challenge delivered to the existing account email and a signed inbound WhatsApp message before binding identities. The inbound sender ID alone is not proof that the sender owns an existing user account. Rate-limit challenges and avoid revealing whether an email is registered. Keep one active WhatsApp identity per user unless product review chooses otherwise. Store provider identity separately from user email/phone fields so existing login and phone verification behavior is not changed. Do not add native WhatsApp account creation in this slice.
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_checks.py 2>&1 | tee logs/backend-whatsapp-checks.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-Add a per-user conversation preference with `whatsapp_form` and `whatsapp_ai_agent` values. The application default is `WHATSAPP_DEFAULT_CONVERSATION_MODE=whatsapp_form`. An explicit profile selection always wins; an administrator override, if retained at all, must be separate, clearly named, and never be the ordinary deployment default. Persist conversation state and inbound/outbound message IDs in the database; use expiry and deduplication constraints so multiple web processes/workers behave consistently. Keep message bodies/history retention minimal and document deletion/retention behavior.
+- **GREEN confirmed on 2026-10-15:**
+  - WhatsApp module: 17 passed, exit code 0. Command:
 
-**Tests first:**
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp 2>&1 | tee logs/backend-whatsapp.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-- `packages/backend/apps/whatsapp/tests/test_identity.py`: linking proof, already-linked number, number reassignment denied, unlink, unlinked inbound sender.
-- `packages/backend/apps/whatsapp/tests/test_conversation_mode.py`: preference validation, saved preference versus deployment default, default on unset preference, invalid setting rejected by system check.
-- `packages/backend/apps/users/tests/` profile mutation tests: only the authenticated user can read/update their saved WhatsApp mode; null preference uses configured default.
-- `packages/backend/apps/whatsapp/tests/test_models.py`: message dedupe uniqueness, status updates, conversation expiry, tenant/user association.
-- `packages/backend/apps/whatsapp/tests/test_settings.py`: setting defaults and allowed modes.
-- Webapp profile preference specs in the new `webapp-whatsapp` Nx project (or the existing profile library, after locating its established ownership): display, save, reload, and server validation errors.
+  - Whole backend, with ruff, black and the missing-migrations check: `backend: 1050 tests | 1050 passed, 1505 warnings in 753.40s (0:12:33)`. Command:
+
+    `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; f=logs/backend-test.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "backend: $n tests |${r:- no test results, see $f}"` Appending to `config/settings.py` is a touch to an upstream composition point (agents.md section 3.1).
+
+#### Step 1.2 — Accounts, contacts and encrypted credentials
+
+- **Tests first:** `test_crypto.py` (round trip; the stored value isn't the plain text). `test_models.py`:
+  - a platform account has no organization and a storefront account has one
+  - `phone_number_id` is unique
+  - the token property encrypts and decrypts
+  - a contact is unique per account on `bsuid`, and on `wa_id` when present
+  - the same `wa_id` may exist on two accounts
+- **Also tested:**
+  - a value encrypted under another key raises a clear error rather than reading as "no token", unlike `apps/shopify`, so a wrong or rotated key is obvious
+  - an empty app secret means the platform's Meta app (`uses_platform_app`)
+  - deleting an organization deletes its numbers, and deleting a number deletes its contacts
+- **Then add:** `crypto.py`, the `AccountPurpose` choices in `constants.py`, `models.py` (`WhatsAppAccount`, `WhatsAppContact`) and the migration.
+- **Test support, written directly:** `tests/factories.py`, and `tests/conftest.py` giving each test a fresh encryption key.
+- **Moved out of this step, so each arrives with the first test that needs it (agents.md section 2.1):**
+  - the verify-token hash goes to Step 1.3, which first looks an account up by it
+  - the idempotent `seed_whatsapp` command also goes to Step 1.3, the first step a human can reach. It creates the platform account from the section 8.7 platform variables, or from obviously fake values (phone number id `100000000000001`, display number `27000000000`) so local checks work without Meta
+  - the admin page, with its secrets hidden and tested, goes to Step 1.5b
+- **RED confirmed on 2026-10-15:** `collected 0 items / 2 errors`, exit code 2.
+  - `test_crypto.py`: `ModuleNotFoundError: No module named 'apps.whatsapp.crypto'`
+  - `test_models.py`: `ImportError: cannot import name 'AccountPurpose' from 'apps.whatsapp.constants'`
 
-**Then add:** `apps/whatsapp/{apps.py,models.py,admin.py,checks.py,services/identity.py,services/conversations.py,migrations/}`; additive settings and `INSTALLED_APPS` composition in `config/settings.py`; nullable `User.whatsapp_conversation_mode` migration plus authenticated GraphQL preference/link fields in `apps/users` or the WhatsApp schema (choose the existing API ownership convention after tracing it); a small preference control under `packages/webapp/src/routes/profile/`. Preserve existing sign-in and phone verification contracts.
+  Command:
 
-### Step 2 — Meta webhook, message client, deduplication, and outbound delivery
+  `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_crypto.py apps/whatsapp/tests/test_models.py 2>&1 | tee logs/backend-whatsapp-step-1-2.log; echo "exit code: ${PIPESTATUS[0]}"`
+
+- **Migration:** `apps/whatsapp/migrations/0001_initial.py`, generated with `pnpm saas backend makemigrations`. The first run said "No changes detected", because `makemigrations` without an app name skips an app with no `migrations` package. Adding the empty `migrations/__init__.py` fixed it; the rule is now in agents.md section 4.2.
+- **GREEN confirmed on 2026-10-15:**
+  - Step 1.2 tests: 22 passed (6 crypto, 16 models), exit code 0. Command: the same as the RED above.
+  - Whole backend, with ruff, black and the missing-migrations check: `backend: 1072 tests | 1072 passed, 1512 warnings in 796.74s (0:13:16)`. Command:
+
+    `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; f=logs/backend-test.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "backend: $n tests |${r:- no test results, see $f}"`
 
-Add a public GET/POST webhook route under `/api/whatsapp/`. GET verifies subscription challenge. POST verifies the raw-body signature before parsing, accepts message/status/Flow updates, records provider message IDs idempotently, and acknowledges only after durable acceptance. Dispatch business processing asynchronously through the existing Celery task backend; acknowledge duplicate retries without repeating side effects. Do not log access tokens, message content, Flow secrets, or full phone numbers. Put Meta network calls behind a small client and queue outbound messages so one provider failure does not block webhook acknowledgement.
+#### Step 1.3 — Signed webhook and inbound storage
+
+Split into two RED/GREEN cycles on 2026-10-15 (agents.md section 2.4): plain functions first, then the webhook that uses them.
 
-Keep status updates separate from inbound customer messages. Support text and interactive replies needed by the feature; reject or provide a safe fallback for unsupported message types. Implement delivery status recording for messages the app sends. Configure API version, access token, app secret, verify token, phone number ID, WABA ID, and public app URL through settings, with safe empty defaults plus Django system checks in non-test deployments.
+##### Step 1.3a — Signature checks and payload normalization (no database, no HTTP)
 
-**Tests first:**
+- **Tests first:**
+  - `test_verification.py`:
+    - a signature is valid only as `sha256=` plus the HMAC-SHA256 of the raw bytes
+    - a wrong secret, a body changed by one byte, a missing header or a header without the prefix all fail
+    - an empty secret refuses everything (the reference app accepted everything when its secret was unset)
+    - verify tokens are generated long and random, and hashed the same way every time (D6)
+  - `test_normalize.py`, using payloads built from the field paths in Meta's webhook reference (section 6.1):
+    - several entries, changes and messages in one body all come out, in order
+    - text, button reply, list reply and a Flow's `nfm_reply`, whose `response_json` is parsed
+    - status updates, including a failed one with its error code
+    - the business-scoped user id (`from_user_id`) with and without the phone number (`from`)
+    - a message type we don't handle becomes an "unsupported" event; a change for another field is ignored
+    - every receiving `phone_number_id` in a body is collected
+    - a malformed body raises a clear error
+  - `test_models.py` gains a test that a maximum-length business-scoped user id fits. Meta's ids run to 128 characters after their prefix, and Step 1.2's 64-character column is too short.
+- **Then add:** `verification.py`, `normalize.py`, the `MessageKind` choices in `constants.py`, and a wider `bsuid` column with its migration.
+- **RED confirmed on 2026-10-15:**
+  - Signature and normalization tests: `collected 0 items / 2 errors`, exit code 2.
+    - `test_verification.py`: `ModuleNotFoundError: No module named 'apps.whatsapp.verification'`
+    - `test_normalize.py`: `ImportError: cannot import name 'MessageKind' from 'apps.whatsapp.constants'`
 
-- `apps/whatsapp/tests/test_signature.py`: valid/invalid/missing signature, altered raw body, constant-time comparison wrapper behavior.
-- `apps/whatsapp/tests/test_views.py`: GET challenge, POST validation, status-only event, supported inbound event, malformed event, and no side effects on invalid signatures.
-- `apps/whatsapp/tests/test_webhooks.py`: duplicate delivery, processing task dispatch, status correlation, retry-safe behavior.
-- `apps/whatsapp/tests/test_client.py`: text, template, interactive menu, Flow CTA payloads, provider errors and timeouts.
-- `apps/whatsapp/tests/test_tasks.py`: task retries and failure recording.
-- `apps/whatsapp/tests/test_settings.py` / `test_checks.py`: required production config and optional local setup.
+    Command:
 
-**Then add:** `apps/whatsapp/{views.py,urls.py,webhooks.py,client.py,tasks.py,services/inbound.py}` and tests; include URL and settings at the existing composition points; register task using current Celery conventions. No dependency is needed unless the standard library and existing HTTP stack cannot meet a verified requirement.
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_verification.py apps/whatsapp/tests/test_normalize.py 2>&1 | tee logs/backend-whatsapp-step-1-3a.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-### Step 3 — Deterministic menus and WhatsApp Flows
+  - Model tests: 16 passed, 1 failed, `test_a_maximum_length_business_scoped_user_id_fits` with `DataError: value too long for type character varying(64)`, exit code 1. Command:
 
-Implement a deterministic interaction router. It handles menu IDs and structured Flow submissions and calls the same application-use-case boundary used by the AI agent. Keep menu labels and actions generic (organization, items, billing, help); never make list content itself an authorization check. Build Flows for organization creation, CRUD item create/update confirmation, subscription choice, and payment handoff only where a Flow materially improves data entry. Validate all Flow input on the server. If encryption/signature requirements apply to a Flow endpoint, implement and test the current Meta protocol rather than copying the reference encryption code without verification.
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_models.py 2>&1 | tee logs/backend-whatsapp-models.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-Use stable opaque action IDs; resolve them against stored user/conversation state instead of encoding trusted object permissions in client-visible IDs. For multi-step tasks, store only pending action parameters and expiry. A user can type `menu`, `help`, or `cancel` to exit a flow. Avoid duplicating business rules in a Flow handler.
+- **Migration:** `apps/whatsapp/migrations/0002_alter_whatsappcontact_bsuid.py`, from `pnpm saas backend makemigrations`.
+- **GREEN confirmed on 2026-10-15:**
+  - Every WhatsApp test: 67 passed, exit code 0. Command:
 
-**Tests first:**
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp 2>&1 | tee logs/backend-whatsapp.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-- `apps/whatsapp/tests/test_menu_router.py`: known actions, unknown action, invalid/stale action, menu escape, deterministic mode routing.
-- `apps/whatsapp/tests/test_flows.py`: encrypted request verification/decryption vectors from Meta documentation, valid input, bad signature, invalid fields, expired flow state, and response encryption.
-- `apps/whatsapp/tests/test_use_cases.py`: the same operation can be invoked from menu dispatch with user and tenant context.
-- Webapp/Nx tests only if a browser link/selection surface is added in this step.
+  - Whole backend, with ruff, black and the missing-migrations check: `backend: 1100 tests | 1100 passed, 1512 warnings in 836.80s (0:13:56)`. Command:
 
-**Then add:** `apps/whatsapp/services/menu.py`, `services/flows.py`, Flow definitions under `apps/whatsapp/flows/`, and any minimal webapp route for secure handoff. Document Flow publishing and endpoint health checks. Do not add accommodation-specific listings, bookings, FAQ data, or invoice models from the reference store.
+    `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; f=logs/backend-test.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "backend: $n tests |${r:- no test results, see $f}"`
 
-### Step 4 — Shared application-use-case boundary and permission audit
+##### Step 1.3b — Message storage and the verify-token lookup (models only)
 
-Before exposing write tools, define the narrow use cases available to both menu and agent dispatch. Where current behavior exists only inside a GraphQL resolver, extract the smallest service that preserves its serializer, validation, audit logging, tenant scoping, and transaction semantics; let the existing resolver and WhatsApp adapter call that same service. Do not call GraphQL over localhost with a privileged service account as a shortcut.
+Split from the webhook view on 2026-10-15, so storage is proven before HTTP is involved.
 
-Create explicit use cases for:
+- **Tests first,** in `test_models.py`:
+  - **Messages:**
+    - a `WhatsAppMessage` stores its direction, kind, payload, status, Meta's time and error code
+    - Meta's message id is unique when present, which is how a retried webhook is stored once
+    - several outbound messages may wait without one, because Meta assigns it on send
+    - deleting a contact deletes its messages
+  - **Verify tokens:**
+    - setting an account's verify token stores only its hash
+    - `WhatsAppAccount.objects.find_by_verify_token` finds the account by the token
+    - an unknown or empty token finds nothing, and an empty token never matches an account that has no token
+    - two accounts can't share a hash
+- **Then add:**
+  - `MessageDirection` and `MessageStatus`, and `MessageKind.UNSUPPORTED`, in `constants.py`
+  - `WhatsAppMessage`
+  - the `webhook_verify_token_hash` column
+  - `managers.py`, with `find_by_verify_token`
+  - the migration
+- **RED confirmed on 2026-10-16:** `collected 0 items / 1 error`, `ImportError: cannot import name 'MessageDirection' from 'apps.whatsapp.constants'`, exit code 2. Command:
 
-- Organization: list memberships, select current tenant, create organization; invitation and membership actions only after each matching GraphQL mutation's access rules have been audited and wrapped.
-- CRUD demo item: list, create, view, update, delete using `apps.demo` serializers/tenant-dependent mutation rules and `features.crud.manage`.
-- Billing: read current plan/subscription and transaction status with `billing.view`; create/choose subscription checkout, cancel/change subscription, and create one-off donation checkout only with `billing.manage` and any stricter existing action-level permission. Expose only operations supported by the active backend.
+  `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_models.py 2>&1 | tee logs/backend-whatsapp-models.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-For each use case, audit the WhatsApp entrypoint separately under [`agents.md` section 3.5](../agents.md): identify the authenticated principal, tenant source, role/permission needed, data boundaries, and audit event. Treat unlinked users as unauthenticated. Never infer authority from a WhatsApp profile name, phone number alone, LLM response, or tenant ID in a message.
+- **Migration:** `apps/whatsapp/migrations/0003_whatsappmessage_and_more.py`, from `pnpm saas backend makemigrations`.
+- **GREEN confirmed on 2026-10-16:**
+  - Every WhatsApp test: 77 passed, exit code 0. Command:
 
-**Tests first:**
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp 2>&1 | tee logs/backend-whatsapp.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-- `apps/whatsapp/tests/test_use_cases_organization.py`: org creation, memberships, cross-tenant denial, role/permission denial.
-- `apps/whatsapp/tests/test_use_cases_crud.py`: complete CRUD happy paths, cross-tenant item ID, missing permission, validation errors, action log.
-- `apps/whatsapp/tests/test_use_cases_billing.py`: view/manage permission split, backend selection, checkout status, disallowed operation, no client-controlled tenant/amount.
-- Regression tests in `apps/multitenancy/tests/`, `apps/demo/tests/`, and `apps/payfast/tests/` only when extracting behavior from their existing resolvers.
+  - Whole backend, with ruff, black and the missing-migrations check: `backend: 1110 tests | 1110 passed, 1517 warnings in 883.95s (0:14:43)`. Command:
 
-**Then add:** `apps/whatsapp/services/use_cases.py` or focused service modules, plus the smallest additive changes to `apps/multitenancy`, `apps/demo`, `apps/finances`, and `apps/payfast` needed to share their established service logic. Keep GraphQL schemas as public web contracts and update them only if the preference or handoff needs a new authenticated field.
+    `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; f=logs/backend-test.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "backend: $n tests |${r:- no test results, see $f}"`
 
-### Step 5 — Secure PayFast and Stripe checkout handoff
+##### Step 1.3c — The webhook view and seed data
 
-Add an expiring, single-use checkout handoff record bound to the requesting user, tenant, intended checkout, and payment purpose. Creating the record requires the existing billing permission and uses the current backend checkout service. The URL contains only a high-entropy opaque token; store a hash, enforce expiry and one-time consumption, prevent open redirects, and do not allow the browser to change the amount, plan, tenant, or return path. Require login when the chat user is not already authenticated in the browser, then confirm the user still has the required tenant permission before submitting the checkout.
+- **Tests first:**
+  - `test_webhook_views.py`:
+    - the GET challenge with the platform's verify token, and with a form-connected account's token, which also sets that account's `webhook_verified_at`; a wrong token gets 403
+    - a body naming a form-connected number is checked with that account's own secret; the platform's secret, or another account's, fails (D6)
+    - a body naming numbers that need different secrets is refused
+    - a forged body naming a real account stores nothing: the signature is checked before anything is saved
+    - a bad signature gives 403 with no rows and no task
+    - a valid message gives 200, one row and one task queued on commit
+    - the same `wamid` twice gives one row
+    - an unknown `phone_number_id` signed with the platform's secret gives 200 and is logged as unroutable, without its contents; there's no account to store it under. With any other signature, 403
+    - a status update marks the matching outbound row
+- **Then add:** `views.py`, `urls.py`, the `tasks.py` entry point (processing is a no-op until Step 1.8), and the route in `config/urls_api.py`.
+- **RED confirmed on 2026-10-16:**
+  - Task tests: `collected 0 items / 1 error`, `ModuleNotFoundError: No module named 'apps.whatsapp.tasks'`, exit code 2. Command:
 
-For PayFast, the web route renders/submits the server-created `action_url` and signed `fields` already used by `PayFastCreateCheckoutMutation`; payment state remains pending until a verified ITN changes it. For Stripe, use the existing Stripe checkout flow and never construct a second payment path. The WhatsApp reply states that payment is pending until the provider confirms it. Return and cancel routes offer a safe way back to WhatsApp/web app without exposing payment data.
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_tasks.py 2>&1 | tee logs/backend-whatsapp-tasks.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-**Tests first:**
+  - Webhook tests: 19 collected, exit code 1.
+    - 5 failed: the subscription checks got `404` from the unmounted URL.
+    - 14 errors in setup: `AttributeError: module 'apps.whatsapp' has no attribute 'views'`, from the `delay` fixture patching the missing views module.
 
-- `apps/whatsapp/tests/test_checkout_handoff.py`: opaque token, hash-at-rest, expiry, replay, user/tenant mismatch, changed permissions, open redirect, amount/plan tampering.
-- `apps/payfast/tests/` and `apps/finances/tests/`: existing checkout service integration remains correct and ITN-only confirmation is preserved.
-- New webapp checkout route specs in the Nx project that owns billing/PayFast form submission: valid link, expired link, login required, duplicate submit, provider return/cancel.
+    Command:
 
-**Then add:** `apps/whatsapp` handoff model/service/view and URL; narrowly scoped webapp handoff route reusing the PayFast form submission helper and Stripe checkout page; safe copy/return links. Do not expose raw signed checkout fields in logs or persistent WhatsApp conversation history.
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_webhook_views.py 2>&1 | tee logs/backend-whatsapp-webhook.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-### Step 6 — AI mode, provider boundary, explicit tools, and confirmations
+- **Migration:** `apps/whatsapp/migrations/0004_whatsappaccount_webhook_verified_at.py`, from `pnpm saas backend makemigrations`.
+- **GREEN confirmed on 2026-10-16:**
+  - Every WhatsApp test: 98 passed, exit code 0. Command:
 
-Build agent mode using a provider interface similar to the reference `llm_provider.py`, with configuration for a supported provider/model and bounded request timeout. Use durable conversation turns that preserve assistant tool-call and tool-result messages; cap history and tool calls per message; handle malformed model output, provider outages, duplicate webhook delivery, and expired context. A new setting such as `WHATSAPP_AI_PROVIDER`, `WHATSAPP_AI_MODEL`, and `WHATSAPP_AI_MAX_TOOL_CALLS` must have safe defaults and setting/system-check tests. No global setting may erase a saved user mode.
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp 2>&1 | tee logs/backend-whatsapp.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-The allowlist is fixed in code and maps names to the shared application-use-case layer. Initial tools: list/select/create organization; list/create/view/update/delete CRUD demo item; read plan/subscription/payment status; create subscription checkout; cancel or change plan only when the existing billing use case supports it; create one-off donation checkout. Tools receive the verified user and server-selected tenant as context, not LLM arguments. Parse/validate arguments with schemas and backend serializers. For create/update, present a concise preview and require the user's explicit confirmation in a later inbound message before committing. Delete, cancel subscription, invitations, and role changes always require a separate explicit confirmation. A tool result is data for the model to summarize, never authority to claim success; confirmations derive from persisted backend state.
+  - Whole backend, run because `config/urls_api.py` changed (agents.md section 1.3): `backend: 1131 tests | 1131 passed, 1520 warnings in 838.85s (0:13:58)`. Command:
 
-Conversation mode routing happens before model invocation. In `whatsapp_form`, free text maps to a help/menu response unless it is a direct supported Flow/menu continuation. In `whatsapp_ai_agent`, free text reaches the agent; interactive replies still route through their stable deterministic IDs. A user can switch modes from profile settings and through a small explicit WhatsApp preference action after identity is linked.
+    `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; f=logs/backend-test.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "backend: $n tests |${r:- no test results, see $f}"`
 
-**Tests first:**
+- **Human checks,** in section 13:
+  - setup ran on 2026-10-16: `seed_whatsapp` created the platform account
+  - check 1 passed on 2026-10-16: `1158201444` and `200` with the platform's token, `403` with a wrong one
+  - check 3 passed on 2026-10-16: both posts `200`, and exactly one `wamid.HUMANCHECK3` row, with `direction` `in`, `kind` `text`, `status` `received` and payload `{"text": "Hi", "action_id": "", "flow_response": {}}`. Its contact query showed exactly one contact, with `bsuid` `ZA.1000000000000000001`, `wa_id` `27000001001` and `profile_name` `Thandi`.
+  - **Step 1.3c is complete:** GREEN, and all three human checks passed.
+  - check 2 passed on 2026-10-16: `403`, and no `wamid.HUMANCHECK2` row stored
+  - check 2 was run after check 3, so its old unfiltered proof showed check 3's row instead of `[]`. Every query in these checks now filters to the check's own id, so the checks work in any order.
+- **Seed:** the `seed_whatsapp` command (moved here from Step 1.2), so the human checks for the webhook have a platform account to post to.
 
-- `apps/whatsapp/tests/test_agent.py`: tool loop, tool allowlist, turn cap, provider errors, malformed arguments, profile-context isolation, help/menu escape.
-- `apps/whatsapp/tests/test_confirmations.py`: preview/confirm/cancel, changed arguments invalidate confirmation, one-time confirmation, stale confirmation, deletion/cancellation explicit confirmation.
-- `apps/whatsapp/tests/test_conversations.py`: tool-call history shape, expiry, concurrent messages, no cross-user conversation reuse.
-- `apps/whatsapp/tests/test_conversation_mode.py`: saved mode determines dispatch; switching modes does not expose another user's state.
-- LLM/provider tests use a fake provider; no live model key or external call is required in automated tests.
+#### Step 1.4 — Outbound messages and the send backends
 
-**Then add:** `apps/whatsapp/agent/{provider.py,tools.py,service.py,prompts.py}`, narrow provider configuration, confirmation state/service, and deterministic fake-provider tests. Define the tool registry against use-case/provider interfaces, including a storefront port that has no Shopify implementation in this plan. Add no agent framework dependency unless a verified feature cannot be implemented safely with the existing stack.
+Split into three RED/GREEN cycles on 2026-10-17 (agents.md section 2.4).
 
-### Step 7 — Webapp preference, onboarding, operational setup, and seed data
+##### Step 1.4a — Message builders and the way back (no database, no HTTP)
 
-Finish the reachable user journey: profile control for conversation mode; WhatsApp identity linking/disconnecting; clear connection state and test instructions; a secure login-resume page for checkout links; and safe confirmation/status copy. Add an idempotent development seed command for linked and unlinked users, both modes, multiple tenant memberships with different roles, and CRUD items in more than one tenant. Ensure the seeded phone numbers are documentation placeholders and cannot be mistaken for live customer identities.
+The builders in `builders.py` (named so as not to be confused with Django's own `messages` framework) return the message part of a Meta send request; the client adds the envelope (`messaging_product`, `to`) in Step 1.4b.
 
-Add operator documentation for Meta app/webhook setup, production secrets, Graph API version upgrades, approved templates, Flow publishing, public HTTPS callback URLs, webhook replay/debugging without PII, AI provider configuration/cost controls, message retention, consent, and human escalation. Keep all credentials out of tracked files. Mention Meta service/template costs and current message window behavior with a link to the official pricing/policy pages that are verified during implementation.
+**Text that comes from data,** such as an item's or product's name, is cut to fit, with "…", so a long name never stops a reply. **Our own code breaking a rule is refused** with a clear error: an over-long id, too many buttons or rows, or a missing way back. That's a bug to fix, not data to squeeze.
 
-**Tests first:**
+- **Tests first:**
+  - `test_builders.py`:
+    - **Reply buttons:** at most 3, titles up to 20 characters and unique, ids up to 256, body up to 1024, footer up to 60. https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/interactive-reply-buttons-messages.md
+    - **Lists:** at most 10 rows in all; row titles 24, descriptions 72, ids 200; the section title and the button label within their limits. https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/interactive-list-messages.md
+    - **Link buttons:** `cta_url`, with `display_text` up to 20 characters. https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/interactive-cta-url-messages.md
+    - **Flow messages:** `flow_message_version` `3`, `flow_action` `navigate`, a non-empty `flow_action_payload.data`, and a call-to-action of up to 30 characters. https://developers.facebook.com/docs/whatsapp/flows/guides/sendingaflow
+    - **Long text:** a body over the limit is split into several messages, each within Meta's 4096-character limit for text and 1024 for the final message's button body, without losing or reordering any of it. https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/text-messages.md
+    - Each limit is tested at its edge, one character either side.
+  - `test_navigation.py` (D17):
+    - every interactive message's footer says `Send *menu* at any time`
+    - a list of more than 7 items is refused, and Previous, Next and Main menu rows are added as they apply
+    - a reply-button message can't be built without its Back or Main menu button, which counts as one of the 3
+    - plain text goes out as a message with a Main menu button
+- **Then add:** `builders.py`.
+- **RED confirmed on 2026-10-17:** `collected 0 items / 2 errors`, both `ModuleNotFoundError: No module named 'apps.whatsapp.builders'`, exit code 2. Command:
 
-- Webapp specs for preference, linking, disconnect, login-resume, and checkout errors.
-- `apps/whatsapp/tests/test_seed.py`: idempotence, expected representative states, safe production refusal.
-- `apps/whatsapp/tests/test_smoke.py`: one end-to-end backend path with fake Meta client and fake AI provider, from signed webhook through a permission-checked use case and queued response.
-- Nx lint/type-check/test specs for each touched webapp project.
+  `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_builders.py apps/whatsapp/tests/test_navigation.py 2>&1 | tee logs/backend-whatsapp-step-1-4a.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-**Then add:** profile UI and public exports, seed command and tests, docs under `packages/internal/docs/docs/working-with-sb/` or a feature-specific docs section following the docs package convention, `.env.shared` placeholders if required, and changelog entry per repository release rules.
+- **GREEN confirmed on 2026-10-17,** in the narrower form agents.md section 1.3 allows, since only `apps/whatsapp` files changed and no model:
+  - Every WhatsApp test: 131 passed, exit code 0. Command:
 
-### Step 8 — Deferred: tenant Shopify storefront and inventory tools
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp 2>&1 | tee logs/backend-whatsapp.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-This step is intentionally not part of the current implementation. It starts only after the maintainer has completed and reviewed the in-progress Shopify feature. The existing Shopify slice installs a shop, links it to a tenant, encrypts/refreshes its Admin API credentials, and currently requests `read_products`; the installation plan explicitly leaves product/order reading and messaging channels for later. WhatsApp work in steps 1–7 must not edit Shopify files or widen Shopify scopes.
+  - Black: `1 file reformatted, 454 files left unchanged`. The file was `builders.py`, where black joined three wrapped `raise` lines that fit within 120 characters; line breaks only. Command:
 
-Before implementation, write a focused Shopify commerce design/plan that answers which customer actions are in scope (at minimum product discovery and availability; checkout is expected to hand off to Shopify's supported storefront checkout), how inbound WhatsApp traffic selects one tenant/store (tenant-owned WhatsApp Business number versus a signed entry link/context), how a chat-only shopper is represented without a SaaS user account, how the shopper is associated with an order if needed, and which Shopify scopes/actions are needed. Audit current Shopify API support and data/privacy webhook obligations then. Do not collect a customer's Shopify password, expose Admin API tokens, or let an AI agent query arbitrary Admin API GraphQL.
+    `mkdir -p logs; pnpm saas backend black > logs/black.log 2>&1; cat logs/black.log`
 
-The extension point from this plan should accept a tenant-scoped storefront provider. The later Shopify adapter may use only an installed, active `ShopifyShop` owned by the selected tenant and the existing Shopify Admin API client/token-refresh lifecycle for data that legitimately requires Admin API access. Public product discovery should use Shopify's Storefront API rather than treating merchant Admin API access as a customer-facing storefront API ([products query](https://shopify.dev/docs/api/storefront/latest/queries/products)). Its `availableForSale` signal can support a customer-facing availability answer; exact inventory quantities require a separate scope/API review (Shopify Admin `InventoryLevel` requires `read_inventory`: https://shopify.dev/docs/api/admin-graphql/latest/objects/InventoryLevel). The current `read_products` scope alone must not be assumed to authorize every inventory quantity. Shopify's Storefront API cart exposes `checkoutUrl` for Shopify web checkout ([cart query](https://shopify.dev/docs/api/storefront/latest/queries/cart)); hand off to that URL after validating its shop host. Menus and AI share the same product search/details/cart/checkout use cases; authorization and customer-data boundaries are enforced by those use cases.
+##### Step 1.4b — The Meta client and the send backends
 
-The current WhatsApp setup in steps 1–7 assumes one configured platform number for SaaS users. It does not satisfy per-tenant shopper routing. The later commerce design must include the chosen WhatsApp Business Account/number onboarding and secret isolation, or a verifiable entry-context mechanism that cannot be forged to access another shop. This is a separate decision from the SaaS user's profile link and mode preference.
+- **Tests first:**
+  - `test_client.py`, with HTTP mocked:
+    - request shape and auth header
+    - the returned `wa_id` is stored on the contact
+    - `131047` (window closed), `130429` and `131056` (throttled), and timeouts each map to their own error
+    - the `log` backend makes no HTTP call
+- **Then add:** `client.py`.
+- **RED confirmed on 2026-10-17:** `collected 0 items / 1 error`, `ModuleNotFoundError: No module named 'apps.whatsapp.client'`, exit code 2. Command:
 
-**Tests first (in the later Shopify plan):** provider contract and tenant isolation; shopper with no SaaS account; inbound number/entry-context routing to exactly one tenant; no active shop, uninstalled shop, wrong-tenant shop; product pagination and stale/error responses; inventory display semantics; checkout URL host and tamper checks; tool schema/confirmation; Meta message and Flow rendering. Tests and production changes belong to that later plan and may touch Shopify files only when that separate work is explicitly approved.
+  `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_client.py 2>&1 | tee logs/backend-whatsapp-client.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-## 8. Risks and mitigations
+- **GREEN confirmed on 2026-10-17,** in the narrower form agents.md section 1.3 allows, since only `apps/whatsapp` files changed and no model:
+  - Every WhatsApp test: 152 passed, exit code 0. Command:
 
-| Risk                                                                            | Mitigation                                                                                                                                                                                               |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Meta retries the same webhook and a write runs twice                            | Persist unique provider message ID before enqueue; make processing idempotent; bind any domain write to a unique operation key; test duplicate and concurrent delivery.                                  |
-| Attacker forges a sender or changes a tenant in payload/action ID               | Verify Meta HMAC over raw body; treat sender as unlinked until one-time account linking succeeds; resolve tenant from saved membership and recheck every operation.                                      |
-| Linking challenge is stolen, replayed, or attached to a different SaaS account  | Use random short-lived nonce stored hashed and bound to authenticated user; consume once only after valid webhook; limit attempts; revoke previous challenge on new start.                               |
-| AI makes up a successful result or calls a dangerous tool                       | Strict name/schema allowlist; server-side use case validation; explicit write preview; one-time confirmation; success messages come from persisted domain result.                                        |
-| LLM or Graph API latency exceeds webhook/Flow deadline                          | Webhook only verifies/persists/enqueues; worker handles normal messages. Keep Flow endpoint synchronous and narrowly scoped; avoid model calls in Flow data exchange; use bounded timeouts.              |
-| Outbound message retry duplicates user-visible messages                         | Store outbox intent and provider IDs/status, use idempotency where Meta supports it, and distinguish retryable API failure from accepted send; do not claim exactly-once delivery.                       |
-| Payment handoff leaks signed fields, is replayed, or redirects to attacker site | URL carries opaque one-time token only; fields remain server-side; recheck auth/tenant/permission; allowlist provider and return paths; expiry and replay tests; ITN/provider state is authoritative.    |
-| Saved user mode is unexpectedly overridden by environment                       | Environment setting supplies only the unset preference default; mode resolver has a dedicated precedence test and no legacy global override.                                                             |
-| Shopify shopper is routed to another tenant                                     | Defer commerce until explicit per-tenant channel or signed entry-context design; isolate shopper identity by tenant/shop; reject ambiguous or disabled channel mappings.                                 |
-| More personal data is retained than needed                                      | Store minimal message content, set expiry/retention policy, redact logs, implement unlink/deletion behavior, and include the required Meta/Shopify privacy handling in the later customer-commerce plan. |
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp 2>&1 | tee logs/backend-whatsapp.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-## 9. File Summary
+  - Black: `457 files left unchanged`. Command:
 
-### New backend capability
+    `mkdir -p logs; pnpm saas backend black > logs/black.log 2>&1; cat logs/black.log`
 
-- `packages/backend/apps/whatsapp/`: settings, system checks, app config, identity/conversation/message/handoff models, migrations, admin, signature verification, Meta client, webhook views/URLs, asynchronous tasks, inbound routing, menus/Flows, AI provider/tool registry, shared use-case adapters, tests, and an idempotent seed command.
-- `packages/backend/config/settings.py`, `config/urls_api.py`, and `config/schema.py`: additive composition only.
-- Existing `apps.users`, `apps.multitenancy`, `apps.demo`, `apps.finances`, and `apps.payfast`: small service-boundary or profile-preference changes only when tests prove the existing behavior remains intact.
-- Existing user profile surface: nullable conversation-mode field and authenticated preference mutation; profile UI in `packages/webapp/src/routes/profile/`.
+##### Step 1.4c — The ordered send queue (D21)
 
-### New or extended webapp surface
+- **Tests first:**
+  - `test_outbox.py` (D21):
+    - **Order:** one contact's queued replies go out strictly in the order they were queued, and the next is sent only after Meta accepted the previous one and returned its id.
+    - **Locking:** a second send task for a contact whose queue is already being drained does nothing. Two contacts' queues drain independently.
+    - **Passing failures:** a timeout, `130429` or `131056` is retried with backoff, and the later messages wait; the work that produced the reply is never repeated.
+    - **Permanent failures:** the message is marked `failed`, and the messages queued after it for that contact are cancelled.
+    - **Strict mode:** with `WHATSAPP_SEND_WAIT_FOR_SENT_STATUS=True`, the next message waits until the previous one's status is `sent`.
+    - **The `log` backend** marks rows sent, in order, without any HTTP call.
+  - `test_settings.py` gains `WHATSAPP_SEND_WAIT_FOR_SENT_STATUS` (default `False`).
+- **Design points the tests pin** (agreed 2026-10-17):
+  - **A new `accepted` status:** Meta accepted the message and returned its id. Meta's own `sent` comes later, by webhook, so strict mode can tell the two apart. The `log` backend has no webhook, so its rows go straight to `sent`.
+  - **One short transaction per message:** lock the contact, take its oldest queued row, send it, save Meta's id, commit. A `sent` status that arrives quickly then finds the id.
+  - **A new `interactive` message kind,** for outbound rows; a queued row's kind comes from the message's own `type`.
+  - **Retries live in the Celery task,** with a growing delay up to a limit, and re-send the same stored row, so the work that produced the reply never runs again. After the last retry, the failure counts as permanent.
+  - **A failure cancels only what was queued behind it,** never a later conversation's replies.
+  - **Strict mode's wait has a limit,** because Meta's docs don't promise a `sent` status for every message. A status webhook for an outbound message wakes the contact's queue, and a `failed` status cancels the messages queued behind it.
+- **Then add:** `services/outbox.py` (rather than `outbox.py`, since business logic goes in `services/`, agents.md section 4.2), the `send_queued_messages` task, `MessageStatus.ACCEPTED` and `MessageStatus.CANCELLED`, `MessageKind.INTERACTIVE` and their migration, a `status_after_send` on each send backend, the status handling in `services/inbound.py`, and the `WHATSAPP_SEND_WAIT_FOR_SENT_STATUS` setting. The setting is in `config/settings.py`, so this GREEN needs the full backend run (agents.md section 1.3).
+- **RED confirmed on 2026-10-17:**
+  - `test_outbox.py`: `collected 0 items / 1 error`, `ImportError: cannot import name 'outbox' from 'apps.whatsapp.services'`, exit code 2. Command:
 
-- Profile preference and WhatsApp identity linking UI in the existing owning profile library or a small `webapp-whatsapp` Nx library after checking current module ownership.
-- Secure frontend checkout-handoff route reusing existing PayFast/Stripe payment flows.
-- Generated API schema/types if GraphQL changes, using `pnpm nx run webapp-api-client:graphql:download-schema`.
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_outbox.py 2>&1 | tee logs/backend-whatsapp-outbox.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-### Documentation and release
+  - `test_settings.py`: `2 failed`, exit code 1. Both fail with `subprocess.CalledProcessError`: the settings subprocess exits with an error, because `WHATSAPP_SEND_WAIT_FOR_SENT_STATUS` doesn't exist yet. The prediction was an assertion failure naming the setting; the run never reached the assertion. Command:
 
-- Feature guide in `packages/internal/docs/docs/` following its existing Docusaurus structure.
-- `CHANGELOG.md` versioned Documentation/Features entry as selected by the maintainer before implementation is committed.
-- Development seed data and human checks described in section 10.
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_settings.py 2>&1 | tee logs/backend-whatsapp-settings.log; echo "exit code: ${PIPESTATUS[0]}"`
 
-## 10. Verification Plan
+- **GREEN confirmed on 2026-10-17,** with the full backend run, because `config/settings.py` changed (agents.md section 1.3):
+  - **Migration:** `pnpm saas backend makemigrations` made only `0005_alter_whatsappmessage_kind_and_more` (the `kind` and `status` choices), and a second run said `No changes detected`. Command:
+
+    `mkdir -p logs; pnpm saas backend makemigrations > logs/makemigrations.log 2>&1; cat logs/makemigrations.log`
+
+  - **The first WhatsApp run had 6 failures, all in the new tests,** and none in the application code. Both causes were fixed in `test_outbox.py`:
+    - Four strict-mode tests made a second `FakeBackend`, which handed out `wamid.OUT0001` again and hit the unique `wamid` constraint. Each test now reuses one fake, and its assertion checks both messages.
+    - The two task tests failed with `InterfaceError: connection already closed`. [`config/celery.py`](../../../packages/backend/config/celery.py) calls `close_old_connections()` before and after every task, which ends a test transaction. Both now run with `transaction=True`, as the locking test does; upstream's signals are untouched.
+  - **Every WhatsApp test:** `apps/whatsapp: 177 tests | 177 passed, 20 warnings in 33.37s`. Command:
+
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp > logs/backend-whatsapp.log 2>&1; f=logs/backend-whatsapp.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "apps/whatsapp: $n tests |${r:- no test results, see $f}"`
+
+  - **Black:** the first full run stopped at black, which would reformat `test_outbox.py`. `pnpm saas backend black` gave `1 file reformatted, 458 files left unchanged`. It joined one test's signature onto a single line; line breaks only. Command:
+
+    `mkdir -p logs; cp packages/backend/apps/whatsapp/tests/test_outbox.py logs/test_outbox-before-black.py; pnpm saas backend black > logs/black.log 2>&1; cat logs/black.log; diff logs/test_outbox-before-black.py packages/backend/apps/whatsapp/tests/test_outbox.py > logs/black-test-outbox-diff.log; cat logs/black-test-outbox-diff.log`
+
+  - **Whole backend:** `backend: 1210 tests | 1210 passed, 1520 warnings in 872.59s (0:14:32)`. Command:
+
+    `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; f=logs/backend-test.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "backend: $n tests |${r:- no test results, see $f}"`
+
+  - **Prettier:** this plan and agents.md both `All matched files use Prettier code style!`.
+  - Appending `WHATSAPP_SEND_WAIT_FOR_SENT_STATUS` to `config/settings.py` is a touch to an upstream composition point (agents.md section 3.1).
+
+##### Step 1.4d — The safety net when there's no worker
+
+Added on 2026-10-17, after Step 1.4c; see the eager-mode risk in section 10. Done after Step 1.4c's GREEN.
+
+- **Tests first:**
+  - `test_commands.py`, for `whatsapp_send_queued`:
+    - It sends the queued messages of every contact that has any, in order, and a second run sends nothing twice.
+    - A contact another sender has locked is skipped and counted as busy.
+    - A recent message that fails for a passing reason stays `queued` for the next run.
+    - A message queued longer than `QUEUED_MESSAGE_MAX_AGE_SECONDS` (an hour) that still fails is marked `failed`, and the rest cancelled, so a queue never sticks forever.
+    - It prints a one-line summary (contacts checked, sent, busy, waiting, to retry, given up) and never a message's text.
+    - It also picks up a queue left behind by a `busy` drain. This is a known gap in Step 1.4c: if new rows are committed while another drain is finishing its last transaction, that drain doesn't see them, and the new drain reports `busy`. Until the next reply, only this command sends them.
+  - `test_outbox.py`: with `CELERY_TASK_ALWAYS_EAGER=True`, a passing failure isn't retried at once. The message stays `queued` for the command's next run, which gives the backoff eager mode can't. The task reads the setting rather than Celery's `request.is_eager`, which is also true under the tests' `apply()`.
+- **Test support, written directly:** `tests/fakes.py`, holding the `FakeBackend` moved out of `test_outbox.py` so both files share it.
+- **Then add:** `management/commands/whatsapp_send_queued.py`, `QUEUED_MESSAGE_MAX_AGE_SECONDS` in `services/outbox.py`, and the eager-mode branch in the send task.
+- **Docs:** the cron line, for deployments without a worker:
+
+  ```text
+  */5 * * * * cd /app && python manage.py whatsapp_send_queued
+  ```
+
+  It goes into the operator guide when phase 1 writes it, as the PayFast daily maintenance's does.
+
+- **RED confirmed on 2026-10-17:**
+  - `test_commands.py`: `6 failed`, exit code 1. Five fail with `CommandError: Unknown command: 'whatsapp_send_queued'`, and the given-up test with `AttributeError: module 'apps.whatsapp.services.outbox' has no attribute 'QUEUED_MESSAGE_MAX_AGE_SECONDS'`. Command:
+
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_commands.py 2>&1 | tee logs/backend-whatsapp-commands.log; echo "exit code: ${PIPESTATUS[0]}"`
+
+  - `test_outbox.py`: `1 failed, 25 passed`, exit code 1, so moving `FakeBackend` into `tests/fakes.py` broke nothing. The eager-mode test fails with `assert 3 == 1`: the failed try, then the immediate retry sending both messages. The prediction was `2 == 1`, which forgot that `attempts` counts every send. Command:
+
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_outbox.py 2>&1 | tee logs/backend-whatsapp-outbox.log; echo "exit code: ${PIPESTATUS[0]}"`
+
+- **GREEN confirmed on 2026-10-17,** run by the AI agent at the human maintainer's request ("go on auto pilot"), in the narrower form agents.md section 1.3 allows: only `apps/whatsapp` changed, and no model or setting.
+  - **Every WhatsApp test:** `apps/whatsapp: 184 tests | 184 passed, 20 warnings in 47.63s`. Command:
+
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp > logs/backend-whatsapp.log 2>&1; f=logs/backend-whatsapp.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "apps/whatsapp: $n tests |${r:- no test results, see $f}"`
+
+  - **Black:** `462 files left unchanged`. Command:
+
+    `mkdir -p logs; pnpm saas backend black > logs/black.log 2>&1; cat logs/black.log`
+
+  - **Added:** `drain_all()` and `QUEUED_MESSAGE_MAX_AGE_SECONDS` in `services/outbox.py`, the `whatsapp_send_queued` command, and the eager-mode branch in `send_queued_messages`.
+
+#### Step 1.5 — Connect a number with a form: backend
+
+The first user-facing step, and the first proof that a number works: credentials Meta accepts, a verified webhook, a test message out and a reply in, all before any conversation logic exists (user story 11).
+
+- **Tests first:**
+  - `test_phone_numbers.py` (D19), with examples including:
+    - `083 123-4567`, `+2783-123_1234`, `0027 83 123 4567`, `+27 (0)83 123 4567` and `27831234567` all give `27831234567`, or `27831231234` for the second
+    - another default country code is honoured
+    - letters, too few or too many digits, and an empty value are refused
+  - `test_settings.py` gains `WHATSAPP_DEFAULT_COUNTRY_CODE`.
+  - `test_permissions.py`: `whatsapp.view` and `whatsapp.manage` exist after the data migration; owners and admins get both, members get `whatsapp.view` (as Shopify's permissions do).
+  - `test_client.py` gains `get_phone_number`: it returns the display number and verified name, and a rejected token or unknown id maps to a clear error.
+  - `test_accounts_schema.py`:
+    - connecting needs `whatsapp.manage`; a member gets a permission error, and someone outside the organization gets "not found"
+    - saving asks Meta first; a rejected token saves nothing
+    - secrets are stored encrypted and never returned; the webhook URL and a generated verify token are returned once
+    - a `phone_number_id` already connected elsewhere is refused
+    - `sendWhatsAppTestMessage` sends Meta's `hello_world` template to the given number directly (see the decisions below)
+    - `whatsAppAccounts` shows each number's status: credentials verified, webhook verified, last message received
+    - disconnecting deactivates the account, and events for its number are then refused
+- **Then add:** `phone_numbers.py` and the `WHATSAPP_DEFAULT_COUNTRY_CODE` setting, `permissions.py` and its data migration, `services/accounts.py`, the GraphQL fields in `apps/whatsapp/schema.py`, and their registration in `config/schema.py`. Regenerate the GraphQL schema for the web app.
+- **Seed:** an organization with a fake connected number in each state: credentials verified only, webhook verified, and a message received.
+- **Split into RED/GREEN cycles on 2026-10-17** (agents.md section 2.4). The letters skip `b`, because Step 1.5b is the troubleshooting step below.
+  - **1.5a:** the phone numbers and `WHATSAPP_DEFAULT_COUNTRY_CODE`, plus a system check (`whatsapp.E008`) that the country code is 1 to 3 digits.
+  - **1.5c:** the permissions and their data migration.
+  - **1.5d:** the client's `get_phone_number` and `send_template`.
+  - **1.5e:** the account fields, `services/accounts.py`, the GraphQL API and the seed.
+- **The maintainer's decisions, 2026-10-17:**
+  - **The test message is sent directly, not queued.** It's one request to Meta from the web request, so the admin sees Meta's answer, for example "not on WhatsApp", in the form. The send queue needs a contact, and the test recipient isn't one yet.
+  - **Disconnecting wipes the secrets and keeps the history.** The access token, app secret and verify-token hash are deleted, and the account is marked inactive; its contacts and messages stay, for phase 5's transcript. Reconnecting the same number in the same organization reuses the row with fresh credentials.
+  - **A number can't move to another organization by itself.** A `phone_number_id` with a row in another organization is refused, even if that organization disconnected it, because the row holds that organization's customers' messages. The operator can delete the old row in the Django admin to free the number.
+- **Run by the AI agent** at the human maintainer's request ("go on auto pilot", 2026-10-17); every result below is the agent's run.
+- **Step 1.5a RED, 2026-10-17:** `test_phone_numbers.py`, `ModuleNotFoundError: No module named 'apps.whatsapp.phone_numbers'`, exit code 2. `test_settings.py`, `2 failed` with `subprocess.CalledProcessError` (the setting doesn't exist yet). `test_checks.py`, `5 failed, 15 passed`, each `assert [] == ['whatsapp.E008']`. Command, once per file:
+
+  `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_phone_numbers.py > logs/backend-whatsapp-test_phone_numbers.log 2>&1; echo "exit code: $?"`
+
+- **Step 1.5a GREEN, 2026-10-17:**
+  - **Every WhatsApp test:** `apps/whatsapp: 212 tests | 212 passed, 20 warnings in 43.10s`. Command:
+
+    `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp > logs/backend-whatsapp.log 2>&1; f=logs/backend-whatsapp.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "apps/whatsapp: $n tests |${r:- no test results, see $f}"`
+
+  - **Whole backend,** because `config/settings.py` changed: `backend: 1252 tests | 7 failed, 1245 passed, 1526 warnings in 882.25s (0:14:42)`. Black: `465 files would be left unchanged`. The 7 failures are all Step 1.5c's RED: its `test_permissions.py` was written while this run's image was building and was picked up by it. 4 fail with the permissions not seeded, and 3 with `ModuleNotFoundError: No module named 'apps.whatsapp.migrations.0006_seed_whatsapp_permissions'`. Every other test passed. Command:
+
+    `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; f=logs/backend-test.log; n=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "backend: $n tests |${r:- no test results, see $f}"`
+
+  - **Lesson:** don't write new test files while a full run is building its image; the build copies the working tree.
+
+- **Step 1.5c RED, 2026-10-17:** seen in the full run above: `test_permissions.py`, 7 failed (4 with the permissions not seeded, 3 with the migration module missing).
+- **Step 1.5d RED, 2026-10-17:** `test_client.py`, `ImportError: cannot import name 'PhoneNumberDetails' from 'apps.whatsapp.client'`, exit code 2. Command:
+
+  `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_client.py > logs/backend-whatsapp-client.log 2>&1; echo "exit code: $?"`
+
+- **Steps 1.5c and 1.5d GREEN, 2026-10-17:**
+  - **Every WhatsApp test:** `apps/whatsapp: 226 tests | 226 passed, 26 warnings in 48.69s`. The command is the same as Step 1.5a's GREEN.
+  - **Migrations:** `pnpm saas backend makemigrations` said `No changes detected`. The new `0006_seed_whatsapp_permissions` is a hand-written data migration, copied from Shopify's `0003_seed_shopify_permissions`.
+  - **Black:** `1 file reformatted, 465 files left unchanged` (line breaks in `client.py`). Command: `mkdir -p logs; pnpm saas backend black > logs/black.log 2>&1; cat logs/black.log`
+  - **Added:** `permissions.py`, the data migration, and in `client.py`, `PhoneNumberDetails`, `get_phone_number`, `send_template` and a shared `_call` that maps every request's errors the same way.
+- **Step 1.5e RED, 2026-10-17:**
+  - `test_accounts.py`: `ImportError: cannot import name 'ConnectionMethod' from 'apps.whatsapp.constants'`, exit code 2.
+  - `test_webhook_views.py`: `1 failed, 19 passed`; a disconnected number's events were still stored (`assert 200 == 403`).
+
+  Command, once per file: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_accounts.py > logs/backend-whatsapp-test_accounts.log 2>&1; echo "exit code: $?"`
+
+- **Step 1.5e GREEN, 2026-10-17:**
+  - **Migration:** `pnpm saas backend makemigrations` made only `0007_whatsappaccount_connection_method_and_more` (`connection_method`, `credentials_verified_at`, `is_active`, `verified_name`); a second run said `No changes detected`.
+  - **The first WhatsApp run had 7 failures,** all in `test_permissions.py`, which had passed the run before. The cause was the 1.4c and 1.4d `transaction=True` tests: such a test empties every table when it ends, the permission rows from migration `0006` included, and `--reuse-db` kept the emptied database for the next run. `serialized_rollback=True` didn't help, because it restores the data before such a test, not after. The fix, with the maintainer's decision:
+    - D21's lock became a Postgres advisory lock, so the lock tests need no committed rows (`another_sender_holds_the_send_lock` in `tests/fakes.py`).
+    - The task tests use a `celery_keeps_the_test_connection` fixture in `tests/conftest.py`, which disconnects `config/celery.py`'s connection-closing receivers for the test only.
+    - No WhatsApp test uses `transaction=True` any more. The rule is agents.md section 2.6.
+  - **Every WhatsApp test, three runs in a row** (one with `--create-db` to rebuild the emptied database, then two reusing it): `254 tests | 254 passed` each time. Command, with `--create-db` for the first run only: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest --create-db apps/whatsapp > logs/backend-whatsapp-create-db.log 2>&1`
+  - **Black:** `2 files reformatted, 466 files left unchanged` (`tests/fakes.py` and `tests/test_accounts.py`, line breaks only).
+  - **Whole backend:** `backend: 1287 tests | 1287 passed, 1557 warnings in 920.52s (0:15:20)`. The command is the same as Step 1.5a's GREEN.
+  - **Added:** `ConnectionMethod`, the four account fields, `services/accounts.py`, `send_template` on both send backends, and only active accounts in the webhook's lookup.
+- **Step 1.5f RED, 2026-10-17:** `test_accounts_schema.py`, `13 failed, 2 passed`. The failures are GraphQL errors such as `Unknown type 'ConnectWhatsAppAccountInput'`. The 2 that passed check that something is refused or that no secret leaks, which holds trivially while the API doesn't exist. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_accounts_schema.py > logs/backend-whatsapp-accounts-schema.log 2>&1; echo "exit code: $?"`
+- **Step 1.5f GREEN, 2026-10-18:**
+  - **The schema tests:** `15 passed`, then every WhatsApp test: `apps/whatsapp: 269 tests | 269 passed, 121 warnings in 60.46s (0:01:00)`.
+  - **Black:** `2 files reformatted, 469 files left unchanged` (`whatsapp_seed_demo.py` and `test_accounts_schema.py`, line breaks only).
+  - **Whole backend,** because `config/schema.py` changed: `backend: 1302 tests | 1302 passed, 1621 warnings in 903.03s (0:15:03)`. The command is the same as Step 1.5a's GREEN.
+  - **Added:** `apps/whatsapp/schema.py` (`whatsAppAccounts`, `connectWhatsAppAccount`, `sendWhatsAppTestMessage`, `disconnectWhatsAppAccount`); its registration in `config/schema.py`, an upstream composition point (agents.md section 3.1); and the `whatsapp_seed_demo` command, test-support code that only loaded its `--help` here, because running it needs the maintainer's own login.
+  - **Still to do by the maintainer, with the stack up:** regenerate the web app's GraphQL schema (`pnpm nx run webapp-api-client:graphql:download-schema`, which introspects the running backend), then run section 13's checks 4 to 8.
+
+#### Step 1.5b — Number troubleshooting: backend (D18)
+
+- **Tests first:**
+  - `test_client.py` gains `get_number_status`, `request_code`, `verify_code`, `register` and `subscribe_app`, with HTTP mocked. Each request's method, path and body are as in section 6.1, and the PIN never appears in a log line. Meta's errors map to their own messages: `133016` (too many registration attempts, with the 72-hour wait), `136024` (already verified) and a wrong code.
+  - `test_number_tools_schema.py`:
+    - each operation needs `whatsapp.manage`; a member gets a permission error, and someone outside the organization gets "not found"
+    - the status query returns Meta's fields as they are
+    - `register` takes the PIN, passes it straight to Meta and stores nothing
+    - every call writes an action-log entry, without the PIN or the code
+  - `test_admin.py`: the platform number's admin page offers the same operations, and hides the account's secrets (moved here from Step 1.2).
+- **Then add:** the client methods, `services/number_tools.py`, the GraphQL operations in `apps/whatsapp/schema.py`, and `admin.py` with its actions. Each Meta call's comment links its section 6.1 page (agents.md section 5.1).
+- **Done on 2026-10-18 by the AI agent, at the maintainer's request ("Implement these", "using TDD cycles"),** in three RED/GREEN cycles:
+  - **Meta's documentation, read first:**
+    - `request_code` takes `code_method` and `language` in the query string, and an already-verified number gets `136024`.
+    - `verify_code` takes `code` as a form field.
+    - `register` takes `{"messaging_product": "whatsapp", "pin": …}`, limited to 10 per 72 hours, after which Meta answers `133016` and blocks registration for 72 hours.
+    - `POST /<WABA_ID>/subscribed_apps` has no body.
+    - Meta's error-codes page lists `133005` (wrong PIN), `133006` (verify first), `133008`, `133009` and `133010`, but no code for a wrong verification code, so that case shows Meta's own message.
+  - **Cycle 1, the client:** RED `11 failed, 28 passed` (`AttributeError` for each missing method); GREEN `39 passed` in `test_client.py`.
+  - **Cycle 2, the service and GraphQL:** RED `test_number_tools.py` `ImportError` (module missing) and `test_number_tools_schema.py` `13 failed` (unknown GraphQL types); GREEN `apps/whatsapp: 316 tests | 316 passed`. Decisions made while writing it:
+    - Every repair writes an action-log entry, with `force_log` (succeeded or failed, with Meta's code), because Meta counts attempts against its limit. The read-only status isn't logged.
+    - The entity type is the string `whatsapp_account`, since `ActionLog.entity_type` is free text, so upstream's choices are untouched.
+    - `accounts.find_account` became public, so the tools share the "not found" rule. The tools' query sits in `apps/whatsapp/schema.py`'s one `Query` class, so `config/schema.py` didn't change again.
+  - **Cycle 3, the admin:** RED `14 failed` (`NoReverseMatch`, no admin yet); GREEN `14 passed`. The platform number has no organization, so its repairs go to Django's admin history (`LogEntry`) instead of the action log, naming the operation only.
+  - **After all three:** black `7 files reformatted` (line breaks only); `apps/whatsapp: 330 tests | 330 passed, 233 warnings in 97.08s (0:01:37)`. Only `apps/whatsapp` changed, so the full backend run waits for the commit (agents.md section 1.3). The commands are the same as Step 1.5a's.
+
+#### Step 1.6 — Connect a number with a form: web app tab
+
+- **Tests first:** component tests in a new `webapp-whatsapp` Nx library:
+  - the WhatsApp tab lists the organization's numbers with their status
+  - the form checks its required fields, and shows Meta's rejection message
+  - after saving, the webhook URL and verify token are shown once, with copy buttons
+  - the test message form
+  - disconnect asks to confirm
+  - a member with only `whatsapp.view` sees the status but no form
+- **Then add:** the library, its public entry point, and a route and tab in organization settings, the way `webapp-backup` adds its tab. Both `packages/webapp/src/app/app.component.tsx` and the `webapp-tenants` tab list are upstream composition points, flagged as such.
+- **Done on 2026-10-20,** after the backend steps, as the maintainer reordered on 2026-10-18.
+  - **The schema first:** the backend container was started alone (`docker compose up -d backend`), then `pnpm nx run webapp-api-client:graphql:download-schema`. Types were regenerated again with `pnpm nx run webapp-api-client:graphql:generate-types` once the library's documents existed.
+  - **The library:** `packages/webapp-libs/webapp-whatsapp`, set up as `webapp-shopify` is. It's registered in `tsconfig.base.json`, `packages/webapp/package.json` (linked by `pnpm install`, which updated `pnpm-lock.yaml`) and the `.github/workflows/webapp.yml` test matrix.
+  - **The tab:** `WhatsAppSettings`, with `ConnectNumberForm` and `AccountRow`.
+    - **The numbers:** each shows its three proofs: credentials verified, webhook verified, message received. A disconnected number says so.
+    - **The connect form:** uses upstream's `useApiForm`, so the backend's refusal lands under its own field, such as Meta's token rejection under **Access token**. After saving, the webhook URL and verify token are shown once, with copy buttons, and the secrets are cleared from the form.
+    - **The test message:** shows Meta's message id, or Meta's reason (`utils/serverReason.ts`).
+    - **Disconnect:** asks through webapp-core's `ConfirmDialog`.
+    - **Members with only `whatsapp.view`:** see the numbers, and no form or buttons. The backend checks the same permissions anyway.
+  - **The upstream touches, each marked with a comment:**
+    - `webapp-tenants`: `RoutesConfig.tenant.settings.whatsapp`, the `whatsapp.view` and `whatsapp.manage` codes in `PermissionCode`, and the tab in `tenantSettings.component.tsx`
+    - `app.component.tsx`: the route, behind `PermissionAuthRoute permissions="whatsapp.view"`
+  - **RED:**
+    - `webapp-whatsapp:test` failed with `Cannot find module '../whatsappSettings.component'`. Command: `mkdir -p logs; pnpm nx run webapp-whatsapp:test --watchAll=false --skip-nx-cache > logs/webapp-whatsapp-red-1-6.log 2>&1; echo "exit code: $?"`
+    - The two new tab tests in `tenantSettings.component.spec.tsx`: `1 failed, 5 passed`. The pass checks that the tab is hidden without the permission, which nothing showed yet. Command: `mkdir -p logs; pnpm nx run webapp-tenants:test --watchAll=false --skip-nx-cache --testPathPattern=tenantSettings.component > logs/webapp-tenants-red-1-6.log 2>&1; echo "exit code: $?"`
+  - **GREEN:**
+    - `webapp-whatsapp`: `10 passed`, three runs in a row. A first run had `1 failed`, because the test looked for the manage controls before the permissions had loaded. The tests now wait for them with `find…`. Command: `mkdir -p logs; pnpm nx run webapp-whatsapp:test --watchAll=false --skip-nx-cache > logs/webapp-whatsapp-green-1-6.log 2>&1; echo "exit code: $?"`
+    - All of `webapp-tenants`: `165 passed, 2 skipped` (upstream's skips). A first run had one unrelated timeout in `TenantSwitch` under load; alone it passed twice, and the whole library passed on the next run. Command: `mkdir -p logs; pnpm nx run webapp-tenants:test --watchAll=false --skip-nx-cache > logs/webapp-tenants-green-1-6.log 2>&1; echo "exit code: $?"`
+  - **Lint and types:** clean for `webapp-whatsapp:lint`, `webapp-whatsapp:type-check`, `webapp-tenants:lint`, `webapp-tenants:type-check`, `webapp:lint` and `webapp:type-check`, each run alone. Command, per target: `mkdir -p logs; pnpm nx run <target> --skip-nx-cache > logs/webapp-check-<target>.log 2>&1; echo "exit code: $?"`
+  - **Formatting:** the root `prettier --check` isn't the web code's formatter: the existing libraries fail it too (23 files in `webapp-shopify` and `webapp-backup`). The web app's ESLint config, which every library extends, is, and it passed.
+  - **The exact pin, on 2026-10-21:** the library's `package.json` had copied `"lucide-react": "^0.378.0"` from `webapp-shopify`. agents.md section 5.3 pins every dependency we add exactly, so it's now `"0.378.0"`. The installed version is unchanged. The maintainer ran:
+    - **The install:** `exit code: 0`, and the lockfile entry now reads `specifier: 0.378.0`, `version: 0.378.0(react@19.2.3)`. Command: `pnpm install > logs/pnpm-install-pin-lucide.log 2>&1; echo "exit code: $?"; tail -2 logs/pnpm-install-pin-lucide.log; n=$(grep -n "^  packages/webapp-libs/webapp-whatsapp:" pnpm-lock.yaml | cut -d: -f1); sed -n "$((n+11)),$((n+13))p" pnpm-lock.yaml`
+    - **Lint:** `webapp-whatsapp lint exit code: 0`. Command: `mkdir -p logs; pnpm nx run webapp-whatsapp:lint --skip-nx-cache > logs/webapp-whatsapp-lint.log 2>&1; echo "webapp-whatsapp lint exit code: $?"`
+    - **Types:** `webapp-whatsapp type-check exit code: 0`. Command: `pnpm nx run webapp-whatsapp:type-check --skip-nx-cache > logs/webapp-whatsapp-type-check.log 2>&1; echo "webapp-whatsapp type-check exit code: $?"`
+    - **Tests:** `webapp-whatsapp: Test Suites: 3 passed, 3 total` and `webapp-whatsapp: Tests: 26 passed, 26 total`. Command: `mkdir -p logs; p=webapp-whatsapp; pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/webapp-whatsapp-test.log 2>&1; sed 's/\x1b[[0-9;]*m//g' logs/webapp-whatsapp-test.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"`
+
+#### Step 1.6b — Number troubleshooting: web app panel (D18)
+
+- **Tests first:** component tests in `webapp-whatsapp`:
+  - the troubleshooting panel shows Meta's status fields
+  - request a code by SMS or voice, then enter it
+  - register with a PIN, after a warning about the 72-hour limit
+  - re-subscribe the app
+  - each Meta error shows its explanation and link
+  - a member with only `whatsapp.view` sees the status but no buttons
+- **Then add:** the panel in the WhatsApp tab.
+- **Done on 2026-10-20:**
+  - **What was added:** `TroubleshootPanel`, opened from a number's **Troubleshoot** button.
+    - **Status:** Meta's six status fields, fetched fresh when the panel opens.
+    - **A code by SMS or voice call:** requested, then entered and verified.
+    - **Registration:** with the two-step 6-digit PIN, after a warning that Meta allows 10 attempts in 72 hours. **Register number** stays disabled until the PIN is exactly six digits, so a typo can't use up an attempt.
+    - **Re-subscribing the app.**
+    - **Meta's errors:** each shows the backend's explanation, with its link to Meta's page made clickable.
+  - **Who sees it, read against Step 1.5b:** the backend requires `whatsapp.manage` for every tool, Meta's status included. So "a member with only `whatsapp.view` sees the status but no buttons" can only mean the number's own status, the proofs from Step 1.6. The panel is offered to `whatsapp.manage` only; offering it to anyone else would only show them the backend's refusal.
+  - **RED:** `6 failed, 1 passed`, each failure unable to find the **Troubleshoot** button. The pass checks that a view-only member isn't offered it, which nothing offered yet. Command: `mkdir -p logs; pnpm nx run webapp-whatsapp:test --watchAll=false --skip-nx-cache --testPathPattern=troubleshootPanel > logs/webapp-whatsapp-red-1-6b.log 2>&1; echo "exit code: $?"`
+  - **GREEN:** `17 passed`, the whole library. Command: `mkdir -p logs; pnpm nx run webapp-whatsapp:test --watchAll=false --skip-nx-cache > logs/webapp-whatsapp-green-1-6b.log 2>&1; echo "exit code: $?"`
+  - **Lint and types:** clean for `webapp-whatsapp:lint` and `webapp-whatsapp:type-check`.
+
+#### Step 1.7 — Linking a SaaS user's number
+
+- **Tests first:**
+  - `apps/phone_verification/tests/test_codes.py`, for the channel-neutral code store (D20):
+    - a code is shown once and stored only as a hash
+    - it expires, works once, and voids the user's older codes
+    - attempts are rate-limited
+    - it's bound to one normalized number and one channel, and checking it with another number fails
+  - `test_identity.py`:
+    - the number entered on the profile is normalized (D19) and a `whatsapp_inbound` code is issued for it
+    - "link 123456" links the number only when it's sent from that number; from any other number it's refused
+    - a number linked to another account is refused
+    - `unlink` removes the link
+    - an unlinked sender gets only the instructions, whatever they send
+  - `test_identity_schema.py`: the four GraphQL fields act only on the logged-in user, and the number comes back masked.
+- **Then add:**
+  - the small `apps.phone_verification` app, with `PhoneVerificationCode`, its issue-and-check service, and its `migrations/__init__.py` from the start (agents.md section 4.2)
+  - `WhatsAppIdentity` and `services/identity.py`
+  - the GraphQL fields in `apps/whatsapp/schema.py`
+
+  Then regenerate the GraphQL schema for the web app.
+
+- **Seed:** a linked user (fake number `27000000001`), an unlinked user, and an expired code.
+- **Order of work, changed on 2026-10-18:** the backend steps 1.7 to 1.13 come first, then the three web app steps (1.6, 1.6b and 1.14) together, so the web app's GraphQL schema is regenerated once, with every field, and the stack is started once.
+- **Done on 2026-10-18 by the AI agent** (the maintainer's "Implement these", "using TDD cycles"), in three RED/GREEN cycles:
+  - **1.7a, the code store** (`apps.phone_verification`, with its `migrations/__init__.py` from the start):
+    - RED: `ModuleNotFoundError: No module named 'apps.phone_verification.constants'`.
+    - GREEN: `12 passed`, after one real bug was fixed. The wrong-guess count was written inside the transaction that the "wrong code" error then rolled back, so guesses never added up. The check now records the guess, commits, then raises.
+    - Codes are 6 digits, stored as an HMAC-SHA256 keyed with the Django secret key over the number, channel and code. At most 5 wrong guesses per code.
+    - Migration `0001_initial` was the only one made; the second run said `No changes detected`.
+  - **1.7b, the identity** (`WhatsAppIdentity`, `services/identity.py`):
+    - RED: `ImportError: cannot import name 'WhatsAppIdentity'`.
+    - GREEN: `20 passed`. Migration `0008_whatsappidentity` was the only one made.
+    - Decisions made while writing it:
+      - The link command is "link" and 6 digits, in any case or spacing.
+      - Linking a new number moves the user's link to it.
+      - A sender Meta gives no phone number for (`wa_id` empty) can't link by sending a code.
+      - The instructions are the same words for everyone.
+    - The `wa.me` link format is from WhatsApp's "click to chat" help page, whose text couldn't be fetched to confirm it, so the profile page's human check (Step 1.14) opens a link for real.
+  - **1.7c, the GraphQL fields:**
+    - RED: `8 failed, 1 passed` (`Cannot query field 'whatsAppIdentity'`; the anonymous refusal passed trivially).
+    - GREEN: `9 passed`.
+    - `disconnectWhatsApp` takes no input, since GraphQL can't have an empty input type.
+    - The three mutations are an `IdentityMutation` class, registered in `config/schema.py` beside `Mutation`, because `Mutation` requires organization membership.
+    - The number is masked to its last four digits, for example `*******4567`.
+  - **Seed:** `whatsapp_seed_demo` adds `whatsapp-linked@example.com` (Admin of the seeded organization, linked to `27000000001` on the platform number; needs `seed_whatsapp` first) and `whatsapp-unlinked@example.com` with an expired code for `27000000002`. Only its `--help` was run here.
+  - **Together:** black `3 files reformatted` (line breaks only); `whatsapp + phone_verification: 371 tests | 371 passed, 270 warnings in 109.43s (0:01:49)`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp apps/phone_verification > logs/backend-whatsapp.log 2>&1`
+
+#### Step 1.8 — Conversation state, router and conversation modes
+
+- **Tests first:**
+  - `test_router.py`: the handling order in section 8.5; opaque ids resolve, and expired or unknown ids fall back to the menu; escape words work in both modes.
+  - `test_conversation_mode.py`: a saved mode beats the default; the default applies when nothing is saved; switching discards pending forms and actions.
+  - `test_confirmations.py`: Confirm runs the stored action once; Cancel and expiry run nothing; the permission is checked again when it runs; another contact's confirmation id does nothing.
+- **Then add:** `WhatsAppConversation`, `WhatsAppPendingAction`, `services/router.py`, `services/confirmations.py`, and the handler registry (D1). The platform handler is registered by `apps.whatsapp_saas`.
+- **Done on 2026-10-18 by the AI agent, on autopilot** (the maintainer: "continue building out the whatsapp plan on auto pilot", with the same RED/GREEN cycles), in two cycles:
+  - **1.8a, the router** (`registry.py`, `services/router.py`, `WhatsAppConversation`):
+    - RED: `test_router.py` `ImportError: cannot import name 'registry'`; `test_tasks.py` `1 failed` (no router yet).
+    - GREEN: `28 passed` and `2 passed`. Migration `0009_whatsappconversation` was the only one made.
+    - The conversation-mode tests the plan named `test_conversation_mode.py` are in `test_router.py`.
+    - Design, within section 8.5 and D17:
+      - A handler gets a `Turn` and registers each button with `turn.choice(kind, **data)`, which returns an opaque id such as `c7`.
+      - Ids are never reused within a conversation, and every reply replaces the screen's choices, so a press on an older screen gets "that menu has expired" and the main menu.
+      - The fixed `menu` id always works.
+      - An unlinked sender on the platform number gets the linking instructions before anything else.
+      - A message is answered once: routing marks it processed, and a second routing does nothing.
+  - **1.8b, confirmations** (`services/confirmations.py`, `WhatsAppPendingAction`):
+    - RED: `ImportError: cannot import name 'WhatsAppPendingAction'`.
+    - GREEN: `38 passed` with the router tests. Migration `0010_whatsapppendingaction`.
+    - Design, within D11:
+      - Confirm and Cancel are the channel's: the router answers them for any handler.
+      - Actions are registered by name (`register_action`), and they refuse with `ActionRefused` when the permission is gone.
+      - A pending action lives as long as the conversation's menus (`WHATSAPP_CONVERSATION_TTL_SECONDS`), so there's no new setting.
+      - It's looked up within its own conversation only, so an id pointing anywhere else finds nothing.
+      - `cancel` and a mode switch consume every open one.
+  - **A full backend run that doesn't count:** Step 1.7's run, started before the pause, finished during this step with `46 errors` (`could not translate host name "db"`) and `1 failed` in `apps/users`. The test commands run alongside it made Docker recreate the database container under it. A clean full run follows, with no other Docker command alongside it.
+  - **The clean full run, for Steps 1.7 and 1.8 together:** black `2 files reformatted, 489 files left unchanged` (line breaks only), then `backend: 1442 tests | 1442 passed, 1808 warnings in 989.19s (0:16:29)`. The `apps/users` failure in the disrupted run doesn't recur. The command is the same as Step 1.5a's GREEN.
+
+#### Step 1.9 — Shared SaaS operations and the permission audit
+
+- **Audit first, recorded in this plan:** for each operation, the GraphQL field it mirrors, its permission code, and how the organization is resolved. Already known: renaming is `UpdateTenantMutation`, registered with `requires("org.settings.edit")` and `@action_logged` in `apps/multitenancy/schema.py`, so the WhatsApp rename checks `org.settings.edit` and writes the same action-log entry.
+- **Tests first,** in `apps/whatsapp_saas/tests/`:
+  - `test_use_cases_organizations.py`: list only accepted memberships; select; create (the creator becomes owner, as on the website); rename with and without permission.
+  - `test_use_cases_items.py`:
+    - list in pages of 7
+    - view, create, update and delete
+    - `features.crud.view` versus `features.crud.manage`
+    - another organization's item reads as "not found"
+    - validation errors come back as messages
+    - an action-log entry is written where the website writes one
+- **Then add:** `apps/whatsapp_saas` (`apps.py`, `use_cases.py`) calling the existing serializers with a server-built context (D10).
+- **The audit, done on 2026-10-18** by reading [`apps/multitenancy/schema.py`](../../../packages/backend/apps/multitenancy/schema.py) and [`apps/demo/schema.py`](../../../packages/backend/apps/demo/schema.py). Each WhatsApp operation checks what its GraphQL field checks:
+  - **List organizations** mirrors `allTenants`, which lists the user's memberships. WhatsApp lists accepted memberships only (user story 4): `TenantMembership.objects`, whose default manager leaves out invitations. Personal organizations are included, as on the website.
+  - **Select an organization** has no GraphQL twin. It stores the choice on the conversation, and every later operation rechecks the membership.
+  - **Create an organization** mirrors `createTenant`: any logged-in user, through `TenantSerializer`, whose `create` makes the creator the owner. No action-log entry, as on the website.
+  - **Rename an organization** mirrors `updateTenant`, which `TenantOwnerMutation` guards with `IsTenantAdminAccess` and `requires("org.settings.edit")`, and `@action_logged(entity_type="tenant", action_type=UPDATE)`. WhatsApp checks both, using the same `IsTenantAdminAccess` check, and writes the same entry with `log_update`.
+  - **List and view items** mirror `allCrudDemoItems` and `crudDemoItem`: `IsTenantMemberAccess` and `features.crud.view`, filtered by the organization.
+  - **Create, update and delete items** mirror the three item mutations: `IsTenantMemberAccess` and `features.crud.manage`, through `CrudDemoItemSerializer`. No action-log entries on the website (no `@action_logged`), so none in WhatsApp either. The plan's earlier "an action-log entry is written where the website writes one" therefore means the rename only.
+  - **The organization** always comes from the conversation's stored selection, never from message text (user story 9). Membership is checked with the accepted-memberships manager, and permissions with `user_has_permission`. Another organization's item reads as "not found".
+- **Done on 2026-10-18 by the AI agent, on autopilot:**
+  - **RED:** both files `ImportError: cannot import name 'use_cases'`.
+  - **Test corrections before the GREEN:**
+    - Organization action logging is off by default, and `@action_logged` respects that switch, so the rename test switches it on, and a new test proves nothing is logged while it's off.
+    - Every user gets a personal organization (`TenantType.DEFAULT`) at sign-up, and the website lists it, so the listing test expects it.
+  - **A real bug found by the tests:** rename saved the conversation's possibly stale tenant object, so every field went back to its old value. It now renames a freshly loaded copy.
+  - **GREEN:** `27 passed`.
+  - **Added:** `apps.whatsapp_saas` (`apps.py`, `use_cases.py`) in `INSTALLED_APPS`. It has no models yet, so no migrations package (agents.md section 4.2 asks for one with the first model).
+
+#### Step 1.10 — Menus, paging and confirmations (`whatsapp_form`)
+
+- **Tests first:** `test_menus.py`, with use cases faked:
+  - the main menu
+  - organization list and select
+  - items paged 7 per page, with Previous, Next and Main menu
+  - every screen offers Back or Main menu, and `menu` works from each one (D17)
+  - item detail with Edit and Delete buttons
+  - delete asks to confirm
+  - a member without `features.crud.manage` sees no write buttons, and is refused if they replay an old button
+- **Then add:** `apps/whatsapp_saas/menus.py`.
+- **Seed:** two organizations with different roles for the linked user, and 20 items in one organization so paging shows.
+- **Done on 2026-10-18 by the AI agent, on autopilot:**
+  - **The tests use the real Step 1.9 operations,** not fakes as planned: they cost little and test what users will get.
+  - **RED:** `13 failed`. No handler answered yet, so each test's screen was missing.
+  - **The router and confirmations tests' fixtures now restore** the real platform handler after swapping in their fake, since `apps.whatsapp_saas` registers it at startup. `register_handler(purpose, None)` removes one.
+  - **One test correction:** permissions are cached per user and organization, so the "lost the permission" test clears the cache, as upstream's role editing does.
+  - **GREEN:** `78 passed` with the router and confirmations tests.
+  - **Design:**
+    - The main menu lists Items once an organization is picked, and Organizations always.
+    - An item's detail has Edit and Delete for members with `features.crud.manage`, and Back to the same page.
+    - Delete goes through Confirm (D11), and the registered `items.delete` action rechecks the permission.
+    - An organization the user has left is forgotten, with "Organization not found."
+    - Edit's form arrives in Step 1.11; until then, Edit and free text get the main menu.
+    - The router now saves the conversation's `tenant` too.
+  - **Seed:** `whatsapp_seed_demo` adds "WhatsApp demo: second organization", where the linked user is a Member, and 20 items in the first organization.
+  - **Together:** black `1 file reformatted` (line breaks only); `whatsapp + phone_verification + whatsapp_saas: 449 tests | 449 passed, 468 warnings in 158.23s (0:02:38)`.
+
+#### Step 1.11 — WhatsApp Flows for create and update
+
+- **Check first:** confirm with Meta's docs or a sandbox number whether endpoint-less Flows need the number's encryption key (D9). Record the answer here.
+- **Tests first:** `test_flows.py`:
+  - the Flow message carries pre-filled data (the organization dropdown; current values on update)
+  - a signed `flow_token` resolves to its pending form
+  - an expired, tampered or other-contact token is refused
+  - the `nfm_reply` answers are validated by the same serializer and then go through Confirm
+- **Then add:** Flow JSON files under `apps/whatsapp_saas/flows/`; a `whatsapp_publish_flows` command that publishes them once and stores their ids (avoiding the reference app's repeated creation); `services/flows.py` in `apps.whatsapp`.
+- **The check, done on 2026-10-20 (the maintainer chose Flows, as planned, over typed prompts):**
+  - **Facts confirmed from Meta's docs:**
+    - **No endpoint:** a Flow needs no routing model or `data_api_version` without one ("Routing model configuration is needed only when you use an Endpoint", https://developers.facebook.com/docs/whatsapp/flows/reference/flowjson).
+    - **Pre-filled data:** a screen declares it under `data`, each value with a mandatory `__example__`.
+    - **Answers:** the `complete` action "terminates the flow and sends the response message to the chat thread", with its `payload` and the `flow_token`.
+    - **Starting values:** a TextInput's `init-value` (Flow JSON 4.0 and later) and a Dropdown's work "only … when component is outside Form component", so the forms here use no Form component.
+    - **Dropdowns:** a Dropdown's `data-source` can be `${data.…}`, holding up to 200 items shaped `{id, title}` with titles up to 30 characters (https://developers.facebook.com/docs/whatsapp/flows/reference/components).
+    - **Publishing:** `POST /<WABA_ID>/flows` takes `name`, `categories` (at least one, for example `OTHER`), `flow_json` as a string and `publish`, and answers with `id`, `success` and `validation_errors` (https://developers.facebook.com/docs/whatsapp/flows/reference/flowsapi).
+    - **Drafts:** a Flow can also be sent unpublished with `mode: draft` (https://developers.facebook.com/docs/whatsapp/flows/guides/sendingaflow).
+  - **Settled by the reference app, whose Flows worked on a real number:** `flow_action_payload.data` is an object, as `builders.flow_message` sends it, not the JSON string Meta's sample shows. Its JSON is the model here (`app/static/flows/` in `python-flask-whatsapp-store`).
+  - **Still not stated anywhere:** whether a navigate-only Flow, with no endpoint, needs the number's business encryption key. Meta's encryption page ties the key to "an encrypted … data exchange channel", which these Flows don't use. The reference's number had a key for its booking Flow's endpoint, so it can't tell. A human check on a real number settles it.
+- **Step 1.11a, publishing, done on 2026-10-20:**
+  - **What was added:**
+    - `WhatsAppFlow` (migration 0011): a form's Flow id per WhatsApp Business account, with a hash of its JSON.
+    - `WhatsAppClient.create_flow` and `FlowValidationError`, which holds Meta's validation errors.
+    - `flows.publish` and `flows.flow_id_for`.
+    - The forms `item.json` and `organization.json`.
+    - The `whatsapp_publish_flows` command. It publishes only a form whose JSON changed, as a new Flow named with the hash, since a published Flow can't be edited. With the `log` backend it stores fake ids.
+  - **RED:** each file failed on import:
+    - `test_flow_json.py` failed with `ModuleNotFoundError: No module named 'apps.whatsapp_saas.flows'`
+    - `test_publish_flows.py` failed with `ImportError: cannot import name 'WhatsAppFlow'`
+    - `test_client.py` failed with `ImportError: cannot import name 'FlowValidationError'`
+
+    Command: `mkdir -p logs; for t in apps/whatsapp_saas/tests/test_flow_json.py apps/whatsapp_saas/tests/test_publish_flows.py apps/whatsapp/tests/test_client.py; do docker compose run --rm -T -e DATABASE_URL= backend pytest $t > logs/backend-red-1-11a.log 2>&1; echo "$t exit code: $?"; done`
+
+  - **GREEN:** `59 passed`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_saas/tests/test_flow_json.py apps/whatsapp_saas/tests/test_publish_flows.py apps/whatsapp/tests/test_client.py > logs/backend-green-1-11a.log 2>&1; echo "exit code: $?"`
+
+- **Step 1.11b, opening forms and reading their answers, done on 2026-10-20:**
+  - **What was added:**
+    - **The token:** `flows.open_form` and `flows.read_answers`, with `FormNotAvailable` and `FormExpired`. The `flow_token` is `django.core.signing` over `{conversation, form}` only. It expires with the conversation's menus (`WHATSAPP_CONVERSATION_TTL_SECONDS`) and works in its own conversation alone. What the form is for (its kind and context, such as the item being edited) stays in the conversation's state and is used up by the first answer.
+    - **The menus:** New item and Rename organization are on the main menu when the user may do them, and Create organization always is. Edit on an item opens its form pre-filled.
+    - **The use cases:** each write in `use_cases.py` got a `check_` twin that runs the same permission checks and serializer validation without saving, plus `can_rename_organization`.
+    - **The actions:** `items.create`, `items.update`, `organizations.create` and `organizations.rename` are registered beside `items.delete`. A use case's refusal becomes the reply.
+  - **Choices made while building it, each the stricter or clearer option:**
+    - **One open form per conversation:** opening another form replaces it, as each menu replaces the last. `cancel`, a mode switch and 30 minutes of silence forget it too.
+    - **Invalid answers get the form back:** an invalid answer (the website's own serializer message) gets that message and the same form again, holding what was typed. A refusal (not found, no permission) gets the main menu.
+    - **The New item dropdown:** it lists only organizations where the user may create items, the current one first and chosen. Picking another one doesn't change the organization the conversation works in; the Confirm summary names the organization.
+    - **Editing:** an edited item stays in its organization, as on the website. Its dropdown holds that one organization, and the server ignores whatever organization the form sends back.
+    - **Forms not published:** a user is told forms aren't set up yet, and that whoever runs the service can run `whatsapp_publish_flows`.
+  - **RED:**
+    - `test_flows.py` failed on import: `ImportError: cannot import name 'FormExpired'`.
+    - `test_forms.py`: `10 failed, 1 passed`, mostly `ValueError: not enough values to unpack`, because the menus had no form rows yet. The one that passed checks that a member isn't offered Rename, which nothing offered yet.
+    - `test_menus.py`, refactored to share `chat.py`: `13 passed`.
+
+    Command: `mkdir -p logs; for t in apps/whatsapp/tests/test_flows.py apps/whatsapp_saas/tests/test_forms.py apps/whatsapp_saas/tests/test_menus.py; do docker compose run --rm -T -e DATABASE_URL= backend pytest $t > logs/backend-red-1-11b.log 2>&1; echo "$t exit code: $?"; done`
+
+  - **GREEN:** every test in `apps/whatsapp` and `apps/whatsapp_saas`, `477 passed`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp apps/whatsapp_saas > logs/backend-green-1-11b.log 2>&1; echo "exit code: $?"`
+  - **Black:** one test file needed rewrapping, and was fixed by hand. Command: `mkdir -p logs; docker compose run --rm -T backend black --check apps/whatsapp/services/flows.py apps/whatsapp/tests/test_flows.py apps/whatsapp_saas > logs/backend-black-1-11b.log 2>&1; echo "exit code: $?"`
+
+#### Step 1.12 — Shopify products for SaaS users
+
+- **Tests first:**
+  - `test_use_cases_products.py`, with `fetch_products` mocked:
+    - `shopify.view` required
+    - several stores means "pick a store" first
+    - pages of 7, using cursors kept in the conversation state
+    - a store needing reconnection gives a clear message
+    - a product's detail shows image, price and status
+  - Search needs a `query` argument on `fetch_products` in [`apps/shopify/products.py`](../../../packages/backend/apps/shopify/products.py). That is a small, additive change to an earlier feature, with its own tests in `apps/shopify/tests/`, and is asked for separately before it's made.
+- **Then add:** the products operations and menus in `apps.whatsapp_saas`.
+- **Step 1.12a, the search on `fetch_products`,** asked for and approved on 2026-10-18 and done first, on 2026-10-20:
+  - Shopify's `query` argument is "a filter made up of terms…"; free text is "a case-insensitive search of multiple fields" (https://shopify.dev/docs/api/admin-graphql/latest/queries/products).
+  - RED: `5 failed, 14 passed` in `apps/shopify/tests/test_products.py`, each `TypeError: fetch_products() got an unexpected keyword argument 'query'`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_products.py > logs/backend-shopify-products.log 2>&1; echo "exit code: $?"`
+  - GREEN: every Shopify test, `119 passed`, the website's products tests included, since a blank or missing query sends exactly what it sent before. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify > logs/backend-shopify.log 2>&1; echo "exit code: $?"`
+  - "Newest first" (user story 7) would need a `sortKey` that changes the website's products page too, so it isn't done; it's raised with the menus in Step 1.12b.
+- **Step 1.12b, the product menus, done on 2026-10-20.** The maintainer chose two things that day:
+  - **Newest first, for WhatsApp only:** `fetch_products` got an optional `newest_first`, which sends `sortKey: CREATED_AT` and `reverse: true`. The website passes neither, so its products page sends what it sent before.
+  - **A typed search:** Search asks for the words, and the next text message is the search. This needed a small router change: `turn.expect_text(kind, **data)`, answered through the handler's new `on_typed_answer`. It's asked once, in either mode, and any other message drops it, an escape word included.
+- **What was added in Step 1.12b:**
+  - **Image headers:** `builders.reply_buttons` takes an optional `image_url`, shown as Meta's image header.
+  - **The use cases:** `list_stores`, `get_store`, `list_products` and `can_view_products`, mirroring `shopifyShops` and `shopifyProducts`. They require `shopify.view` and a store of the selected organization, and Shopify is asked only after both checks. A store that must be reconnected, or a busy Shopify, becomes a `UseCaseError` holding the Shopify app's own fixed text.
+  - **The menus:**
+    - **Products row:** on the main menu for anyone with `shopify.view`.
+    - **Stores:** none says how to connect one; one goes straight to it; several are picked from a list.
+    - **A store's screen:** Browse, Search and Main menu.
+    - **Pages:** 7 products, newest first, each row with price and status. Previous and Next follow Shopify's cursors, and keep the search words.
+    - **A product's detail:** its picture, price and status, and Back to the same page.
+    - **No results:** a search with no results offers Search again and Browse all.
+- **Choices made while building it:**
+  - **Search gets its own screen:** a full page (7 products, Previous, Next, Main menu) is Meta's 10 rows, so Search sits on the store's screen instead.
+  - **A product's detail isn't fetched again:** there's no single-product query, and adding one would change the Shopify app again. The detail shows what the page showed, kept with its button on the server. `shopify.view` is still checked again on the press.
+  - **Only JPEG and PNG pictures:** Meta's image headers take JPEG or PNG only, and another format would fail the whole message. So a picture is shown only when its file name ends in `.jpg`, `.jpeg` or `.png`. An open option, not taken without asking, since it changes the shared products query: Shopify's `url(transform: {preferredContentType: JPG})` would make every picture showable.
+  - **Store rows show the handle:** a list row's title holds 24 characters, which most full `.myshopify.com` domains overflow. So a store's row shows its handle, with the full domain beneath. The test first expected the full domain, and failed on exactly this.
+  - **Search words are tidied:** spaces are collapsed, and the words are cut at 100 characters. They're passed to Shopify's `query` as they are, so Shopify's own search syntax works too. It only reads products the user may already see.
+- **RED, then GREEN, part by part.** Each GREEN command was also re-run after black's rewrapping, with the same counts.
+  - **`newest_first`:**
+    - RED: `3 failed, 19 passed`, each `TypeError: fetch_products() got an unexpected keyword argument 'newest_first'`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_products.py > logs/backend-red-1-12b-shopify.log 2>&1; echo "exit code: $?"`
+    - GREEN: every Shopify test, `122 passed`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify > logs/backend-green-1-12b-shopify.log 2>&1; echo "exit code: $?"`
+  - **The typed answer:**
+    - RED: `6 failed, 28 passed`, each `AttributeError: 'Turn' object has no attribute 'expect_text'`. A first run had one test fail for its own mistake: in agentic mode "hi" goes to the assistant and shows no menu, so the test now opens the menu with "menu". Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_router.py > logs/backend-red-1-12b-router.log 2>&1; echo "exit code: $?"`
+    - GREEN: `44 passed`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_router.py apps/whatsapp/tests/test_confirmations.py > logs/backend-green-1-12b-router.log 2>&1; echo "exit code: $?"`
+  - **Image headers and the use cases:**
+    - RED: `test_builders.py` had `1 failed, 20 passed` (`TypeError: reply_buttons() got an unexpected keyword argument 'image_url'`). `test_use_cases_products.py` had `3 failed, 6 errors`, all `AttributeError`s for the missing operations. Command: `mkdir -p logs; for t in apps/whatsapp/tests/test_builders.py apps/whatsapp_saas/tests/test_use_cases_products.py; do docker compose run --rm -T -e DATABASE_URL= backend pytest $t > logs/backend-red-1-12b-use-cases.log 2>&1; echo "$t exit code: $?"; done`
+    - GREEN: `30 passed`, after the test cleared the permissions cache when it removed `shopify.view`, as `test_menus.py` does. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_builders.py apps/whatsapp_saas/tests/test_use_cases_products.py > logs/backend-green-1-12b-use-cases.log 2>&1; echo "exit code: $?"`
+  - **The menus:**
+    - RED: `test_use_cases_products.py` had `1 failed, 9 passed` (no `get_store`). `test_products_menus.py` had `16 failed, 1 passed`, the pass being "not without `shopify.view`", which nothing offered yet. Command: `mkdir -p logs; for t in apps/whatsapp_saas/tests/test_use_cases_products.py apps/whatsapp_saas/tests/test_products_menus.py; do docker compose run --rm -T -e DATABASE_URL= backend pytest $t > logs/backend-red-1-12b-menus.log 2>&1; echo "$t exit code: $?"; done`
+    - GREEN: every test in `apps/whatsapp` and `apps/whatsapp_saas`, `512 passed`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp apps/whatsapp_saas > logs/backend-green-1-12b-menus.log 2>&1; echo "exit code: $?"`
+  - **Black:** clean after rewrapping two files by hand. Command: `mkdir -p logs; docker compose run --rm -T backend black --check apps/whatsapp apps/whatsapp_saas apps/shopify > logs/backend-black-1-12b.log 2>&1; echo "exit code: $?"`
+
+#### Step 1.13 — Agentic mode
+
+- **Tests first:**
+  - `test_agent.py`, with a fake provider:
+    - tool names outside the list are refused
+    - strict argument schemas are enforced
+    - the tool-call cap
+    - a write tool returns "needs confirmation" and the server sends Confirm and Cancel
+    - provider errors give a short apology and the menu
+    - history, tool calls included, is rebuilt from `WhatsAppAgentItem`
+    - the organization comes from the conversation, never from tool arguments
+  - `test_provider_openai.py`, with HTTP mocked: the Responses API request shape (`store: false`, strict tools) and parsing `function_call` items.
+  - `test_tools.py`: each tool maps to one Step 1.9 or Step 1.12 operation.
+  - The assistant's replies go out with a Main menu button, like any plain text (D17).
+- **Then add:** `apps/whatsapp/agent/` (`provider.py`, `service.py`, `registry.py`), `WhatsAppAgentItem`, and the SaaS tool list and prompt in `apps.whatsapp_saas`.
+- **Done on 2026-10-20.** The maintainer chose two things that day:
+  - **History is kept, last 20 turns:** the assistant's history stays until `cancel`, a mode switch or unlink, and each request sends the last 20 user turns.
+  - **The model is set in `.env.shared`:** `WHATSAPP_AI_MODEL=gpt-5.1` (settings.py's own `OPENAI_MODEL` default), leaving `OPENAI_MODEL` alone for upstream. A startup check, `whatsapp.E009`, refuses an instruct model, or no model, when `WHATSAPP_DEFAULT_CONVERSATION_MODE` is `agentic`.
+- **What was added in Step 1.13:**
+  - **`WhatsAppAgentItem`** (migration 0012): one Responses API input item per row, in order.
+  - **`apps/whatsapp/agent/`:**
+    - `provider.py`: the Responses API through the `openai` SDK, sending `store: false` and `parallel_tool_calls: false`, with a 60-second timeout. Every OpenAI failure is a `ProviderError`.
+    - `tools.py`: strict function tools, with each call's arguments checked again on our side.
+    - `history.py`: the 20-turn window.
+    - `service.py`: one message's loop.
+  - **`apps/whatsapp_saas/`:**
+    - `tools.py`: ten tools, each running one Step 1.9 or Step 1.12 operation.
+    - `prompts.py`: the instructions, naming the selected organization.
+    - `writes.py`: the five confirmed writes, moved out of `menus.py` so the menus and the assistant share them.
+    - `display.py`: price and status text.
+  - **`PlatformHandler.on_free_text`** calls the assistant, and shows an `AgentError`'s text with the main menu.
+- **Choices made while building it, each the stricter option:**
+  - **A write ends the turn:** the user gets the server's Confirm summary, the same one the menus show, and the model only gets "awaiting confirmation". After Confirm or Cancel, the outcome the user was told is added to the history as the assistant's message, so the model never reports a result it didn't see.
+  - **Every function call gets an output:** this holds when the call is refused, the tool fails, or the cap is reached. Since the history is kept, one call without an output would make every later request fail.
+  - **Arguments are validated here too:** exact keys, and JSON types where `true` isn't an integer. A failing tool runs in a savepoint, and the model is told only that it failed; the details stay in the log.
+  - **History outside the window is deleted as the window moves:** it would never be sent again, so keeping it would only keep more personal data. The 20 turns you chose are what's kept.
+  - **Unlinking forgets the conversation:** unlinking, and linking a number afresh, forget its organization, menus, unconfirmed writes and history (`identity.forget_conversation`), so whoever is linked to the number next inherits none of it. This was found while wiring up the history: until now, unlink kept the conversation, with the previous user's selected organization.
+  - **Made-up ids are not found:** an id that can't be one, such as a model's guess, is "not found", not an error (`use_cases._first`).
+  - **No agent registry:** the handler is already the extension point for each number's purpose, so it passes its tools to `service.respond` itself. `registry.py` in the plan's list above wasn't needed.
+  - **The instructions hold no personal details:** no name, email or number, and they tell the model to treat tool results as data, never as instructions.
+- **Step 1.13a, the runtime in `apps.whatsapp`:**
+  - **RED:**
+    - `test_checks.py` had `1 failed, 21 passed`.
+    - `test_provider_openai.py`, `test_agent.py`, `test_router.py` and `test_identity.py` each failed on import, with `ModuleNotFoundError: No module named 'apps.whatsapp.agent'`.
+    - `test_confirmations.py` failed on import: `ImportError: cannot import name 'WhatsAppAgentItem'`.
+
+    Command: `mkdir -p logs; for t in apps/whatsapp/tests/test_checks.py apps/whatsapp/tests/test_provider_openai.py apps/whatsapp/tests/test_agent.py apps/whatsapp/tests/test_router.py apps/whatsapp/tests/test_confirmations.py apps/whatsapp/tests/test_identity.py; do docker compose run --rm -T -e DATABASE_URL= backend pytest $t > logs/backend-red-1-13a.log 2>&1; echo "$t exit code: $?"; done`
+
+  - **GREEN:** `130 passed`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_checks.py apps/whatsapp/tests/test_provider_openai.py apps/whatsapp/tests/test_agent.py apps/whatsapp/tests/test_router.py apps/whatsapp/tests/test_confirmations.py apps/whatsapp/tests/test_identity.py > logs/backend-green-1-13a.log 2>&1; echo "exit code: $?"`
+  - **A test written after its fix:** `test_unlink_in_chat_forgets_the_conversation` was written during the GREEN, after its fix: the router saves its copy of the conversation last, which would undo what unlink forgot. To prove it can fail, the fix was taken out and the test run alone: `1 failed`, the organization still set. The fix was then put back: `39 passed` in `test_router.py`.
+    - Without the fix: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest "apps/whatsapp/tests/test_router.py::TestEscapeWords::test_unlink_in_chat_forgets_the_conversation" > logs/backend-red-1-13a-unlink.log 2>&1; echo "exit code: $?"`
+    - With it: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_router.py > logs/backend-green-1-13a-unlink.log 2>&1; echo "exit code: $?"`
+
+- **Step 1.13b, the tools and agentic mode for SaaS users:**
+  - **RED:** `test_tools.py` and `test_assistant.py` each failed on import, with `ModuleNotFoundError: No module named 'apps.whatsapp_saas.tools'`. `test_agent.py` had `20 passed`, after its fake model moved to the shared `agent_fakes.py`. Command: `mkdir -p logs; for t in apps/whatsapp_saas/tests/test_tools.py apps/whatsapp_saas/tests/test_assistant.py apps/whatsapp/tests/test_agent.py; do docker compose run --rm -T -e DATABASE_URL= backend pytest $t > logs/backend-red-1-13b.log 2>&1; echo "$t exit code: $?"; done`
+  - **GREEN:** `141 passed`. A first run had `6 failed` from a bug in the test's own helper: its `name` parameter clashed with the tools' `name` argument. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_saas apps/whatsapp/tests/test_agent.py > logs/backend-green-1-13b.log 2>&1; echo "exit code: $?"`
+  - **Black:** clean after rewrapping five lines by hand. Command: `mkdir -p logs; docker compose run --rm -T backend black --check apps/whatsapp apps/whatsapp_saas apps/shopify > logs/backend-black-1-13.log 2>&1; echo "exit code: $?"`
+  - **Every app this phase touches:** `596 passed`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp apps/whatsapp_saas apps/phone_verification > logs/backend-green-1-13.log 2>&1; echo "exit code: $?"`
+- **Step 1.13c, what the first full run found, fixed on 2026-10-20:**
+  - **The full run:** `13 failed, 1554 passed, 70 errors`. Two causes, neither seen in one-app runs. Command: `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-full-1-13.log 2>&1; echo "exit code: $?"`
+  - **The SaaS tests had no encryption key:** every `apps/whatsapp_saas` test that creates a WhatsApp account failed with `ImproperlyConfigured: WHATSAPP_TOKEN_ENCRYPTION_KEY must be set`. They had passed only because the local `.env` holds a key, and the full run doesn't use it. Fixed with `apps/whatsapp_saas/tests/conftest.py`, giving each test a key as `apps/whatsapp/tests/conftest.py` does.
+    - Reproduced: `2 passed, 19 errors`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= -e WHATSAPP_TOKEN_ENCRYPTION_KEY= backend pytest apps/whatsapp_saas/tests/test_tools.py > logs/backend-red-saas-key.log 2>&1; echo "exit code: $?"`
+    - Fixed: `121 passed`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= -e WHATSAPP_TOKEN_ENCRYPTION_KEY= backend pytest apps/whatsapp_saas > logs/backend-green-saas-key.log 2>&1; echo "exit code: $?"`
+  - **Upstream's tests leave `OpenAI` broken:** `apps/integrations/tests` patch `OpenAI.__new__`. Once a class's `__new__` has been set and removed, CPython keeps calling it through a wrapper, so `OpenAI(api_key=...)` fails with `TypeError: object.__new__() takes exactly one argument` in every later test. Removing the attribute doesn't help, which was tried first. Fixed in `test_provider_openai.py` with an autouse fixture: it gives the class a `__new__` that ignores the arguments for each test, and monkeypatch restores it. Upstream's tests are untouched, and the app's own code never meets this.
+    - Reproduced: `13 failed, 3 passed`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest -p no:randomly apps/integrations/tests/test_clients.py apps/whatsapp/tests/test_provider_openai.py > logs/backend-red-openai-pollution.log 2>&1; echo "exit code: $?"`
+    - Fixed: `16 passed`, with the same command, writing `logs/backend-green-openai-pollution.log`.
+  - **Two active platform accounts:** found while writing the real-phone checks. `seed_whatsapp` keys the platform account on `phone_number_id`, so seeding the real number added a second active platform account beside the fake one. Linking, `whatsapp_publish_flows` and `whatsapp_seed_demo` each picked one with an unordered `.first()`, and could pick the fake one, which has no token.
+    - **The fix:** the maintainer chose the app-level fix that day, with the database constraint to follow after the human checks (Step 1.13d). `WhatsAppAccount.objects.platform()` is now the only way code finds the platform account: the active one, and the most recently updated if there were ever two. `seed_whatsapp` deactivates every other platform account, and says so. Organizations' numbers are untouched.
+    - **RED:** `test_models.py` had `3 failed, 27 passed`, and the new `test_seed_whatsapp.py` had `3 failed, 2 passed`, each `AttributeError: 'WhatsAppAccountManager' object has no attribute 'platform'`. The two passes check what must not change: organizations' numbers, and a second run. Command: `mkdir -p logs; for t in apps/whatsapp/tests/test_models.py apps/whatsapp/tests/test_seed_whatsapp.py; do docker compose run --rm -T -e DATABASE_URL= backend pytest $t > logs/backend-red-platform.log 2>&1; echo "$t exit code: $?"; done`
+    - **GREEN:** `72 passed`, the linking and publishing tests included. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_models.py apps/whatsapp/tests/test_seed_whatsapp.py apps/whatsapp/tests/test_identity.py apps/whatsapp/tests/test_identity_schema.py apps/whatsapp_saas/tests/test_publish_flows.py > logs/backend-green-platform.log 2>&1; echo "exit code: $?"`
+  - **Black:** clean. Command: `mkdir -p logs; docker compose run --rm -T backend black --check apps/whatsapp apps/whatsapp_saas apps/shopify > logs/backend-black-platform.log 2>&1; echo "exit code: $?"`
+  - **The full run again:** `1645 passed`, in 20 minutes, with nothing else running in Docker. Command: `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-full-1-13-rerun.log 2>&1; echo "exit code: $?"`
+
+#### Step 1.13e — The OpenAI provider as plain HTTP requests, done on 2026-10-20
+
+The maintainer's rule that day, recorded as agents.md section 5.3a: features we write call providers' HTTP APIs directly, through a small class of our own, and never through the provider's SDK. The history stays in our database, as before.
+
+- **What changed:** `agent/provider.py`'s `OpenAIProvider` now posts to `https://api.openai.com/v1/responses` with `requests`, as `client.py` does for Meta.
+  - **Timeout:** one explicit timeout of 60 seconds on the request.
+  - **One retry:** a timeout, a lost connection, a 429 or a 5xx is tried once more after one second, in place of the SDK's own retries.
+  - **Errors:** every failure is a `ProviderError` naming only the HTTP status and OpenAI's error code, never the key or OpenAI's message, which may quote the conversation.
+  - **The same interface:** `respond` and `ProviderReply` are unchanged, so `service.py`, the tools and their tests are untouched.
+- **What went with it:** Step 1.13c's workaround fixture for upstream's patched `OpenAI.__new__`, since nothing of ours builds the SDK's client any more. Upstream's `apps/integrations` tests and the `openai` package itself are untouched.
+- **RED:** `test_provider_openai.py`, rewritten to patch `requests.post` as `test_client.py` does, failed on import: `ImportError: cannot import name 'RESPONSES_URL'`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_provider_openai.py > logs/backend-red-1-13e.log 2>&1; echo "exit code: $?"`
+- **GREEN:** `48 passed`, with upstream's `apps/integrations` client tests run first in the same session, so the provider no longer depends on what they leave behind. No `openai` or `httpx` import is left in `apps/whatsapp` or `apps/whatsapp_saas`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest -p no:randomly apps/integrations/tests/test_clients.py apps/whatsapp/tests/test_provider_openai.py apps/whatsapp/tests/test_agent.py apps/whatsapp_saas/tests/test_assistant.py > logs/backend-green-1-13e.log 2>&1; echo "exit code: $?"`
+- **Black:** clean. Command: `mkdir -p logs; docker compose run --rm -T backend black --check apps/whatsapp apps/whatsapp_saas > logs/backend-black-1-13e.log 2>&1; echo "exit code: $?"`
+
+#### Step 1.13d — One active platform account, enforced by the database (after the human checks)
+
+**Superseded on 2026-10-22 by Step 1.17:** there's no platform number any more. Its replacement, at most one active internal communications number per organization, is a database constraint in Step 1.17.
+
+The maintainer's choice on 2026-10-20: the more sustainable fix, done after the human checks so they aren't held up.
+
+- **Tests first:** in `test_models.py`, a second active platform account is refused by the database, while an inactive one beside it is allowed.
+- **Then add:**
+  - a partial unique constraint on `WhatsAppAccount`: one row with `purpose=platform` and `is_active=True`, with its migration
+  - `seed_whatsapp` deactivating the others before it saves, inside one transaction, so the constraint never trips
+- **The test factories:** `ContactFactory` creates a platform account for every contact. It must reuse one active platform account instead, and every test that creates a second one on purpose passes `is_active=False`. Expect this to touch many WhatsApp test files; their counts are recorded before and after.
+
+#### Step 1.14 — Web app: WhatsApp settings on the profile page
+
+- **Tests first:** component tests in the `webapp-whatsapp` library: not linked; start linking (code and link shown); linked (masked number, linked date); change mode; disconnect; server errors.
+- **Then add:** the profile section, exported from the library, and one added section in [`profile.component.tsx`](../../../packages/webapp/src/routes/profile/profile.component.tsx), flagged as a touch to an upstream file.
+- **Done on 2026-10-20:**
+  - **What was added:** `WhatsAppProfileSection`, exported from `@sb/webapp-whatsapp`, and one card for it on the profile page, after Passkeys, marked with a comment.
+    - **Not linked:** a number field and **Get a link code**. The code, the masked number and the expiry time are shown, with **Open WhatsApp** (the `wa.me` link, with "link 123456" typed) and **I've sent it**, which checks again.
+    - **Linked:** the masked number, the date it was linked, and a choice of **Menus and forms** or **AI assistant**, saved at once. With no choice saved, it says the default applies.
+    - **Unlink:** asks to confirm, and says the conversation is forgotten too (Step 1.13).
+    - **A failed load:** says so, rather than offering to link.
+  - **RED:**
+    - `whatsappProfileSection.component.spec.tsx` failed with `Cannot find module '../whatsappProfileSection.component'`. Command: `mkdir -p logs; pnpm nx run webapp-whatsapp:test --watchAll=false --skip-nx-cache --testPathPattern=whatsappProfileSection > logs/webapp-whatsapp-red-1-14.log 2>&1; echo "exit code: $?"`
+    - The profile page's new test: `1 failed, 1 passed`. Command: `mkdir -p logs; pnpm nx run webapp:test --watchAll=false --skip-nx-cache --testPathPattern=routes/profile > logs/webapp-red-1-14.log 2>&1; echo "exit code: $?"`
+  - **GREEN:**
+    - The section: `9 passed`. Command: `mkdir -p logs; pnpm nx run webapp-whatsapp:test --watchAll=false --skip-nx-cache --testPathPattern=whatsappProfileSection > logs/webapp-whatsapp-green-1-14.log 2>&1; echo "exit code: $?"`
+    - The profile page: `2 passed`, after one change to the test. It looked for a heading, but upstream's `CardTitle` is a `div`, so it now finds the card by its text. Command: `mkdir -p logs; pnpm nx run webapp:test --watchAll=false --skip-nx-cache --testPathPattern=routes/profile > logs/webapp-green-1-14.log 2>&1; echo "exit code: $?"`
+  - **Every web project this phase touches, one target at a time:**
+    - `webapp-whatsapp:test`: `26 passed`
+    - `webapp:test`: `166 passed, 2 skipped` (upstream's skips)
+    - `lint` and `type-check`: clean for both
+
+    Command: `mkdir -p logs; for t in webapp-whatsapp:test webapp-whatsapp:lint webapp-whatsapp:type-check webapp:lint webapp:type-check webapp:test; do extra=""; case $t in *:test) extra="--watchAll=false";; esac; pnpm nx run $t $extra --skip-nx-cache > logs/webapp-final-$(echo $t | tr ':' '-').log 2>&1; echo "$t exit code: $?"; done`
+
+#### Step 1.15 — Operator guide and the real-phone check
+
+- **Tests first:** `test_smoke.py`, one path from a signed webhook through linking, an item create with Confirm, and the queued reply, all with the `log` backend.
+- **Then add:** a guide under `packages/internal/docs/docs/` covering:
+  - the Meta app and test number
+  - the webhook URL over a public HTTPS tunnel
+  - the environment variables
+  - `seed_whatsapp`
+  - `whatsapp_publish_flows`
+  - switching `WHATSAPP_SEND_BACKEND` to `meta`
+  - costs and the 24-hour rule
+
+  Then a `CHANGELOG.md` entry; 6.3.0 is proposed for this phase.
+
+- **Done on 2026-10-20, apart from the real-phone check, which is the maintainer's (section 13, checks 9 to 21):**
+  - **The smoke test:** [`apps/whatsapp_saas/tests/test_smoke.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_smoke.py), in `apps.whatsapp_saas` because the journey runs through its handler. It goes:
+    1. GraphQL's `startWhatsAppLink` issues a code.
+    2. An unlinked "hi" gets only the instructions.
+    3. "link <code>" in a signed webhook links the number.
+    4. The menus pick the organization, then **New item**.
+    5. The form's answers, then **Confirm**, create the item.
+
+    Every reply goes through the real send queue with the `log` backend, and each Celery task's `delay` runs the task at once, in the test's transaction (agents.md section 2.6).
+
+  - **Proving the smoke test can fail:** it passed on its first run, as a smoke test over finished code should. So it was run once with the confirmed writes' registration taken out of `apps/whatsapp_saas/apps.py`: `1 failed`, Confirm answering "This action can't be done any more." With the registration back, `1 passed`.
+    - Broken: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_saas/tests/test_smoke.py > logs/backend-smoke-1-15-broken.log 2>&1; echo "exit code: $?"`
+    - Back: the same command, writing `logs/backend-smoke-1-15.log`.
+  - **The operator guide:** [`packages/internal/docs/docs/features/whatsapp/index.mdx`](../../../packages/internal/docs/docs/features/whatsapp/index.mdx), under Integrations in `sidebars.js`. It covers everything listed above, plus the assistant's costs and the troubleshooting tools.
+    - Prettier: clean.
+    - A Docusaurus build wasn't possible here: the local Node is v18.17.0 and Docusaurus needs at least 20 (CI runs 22 and 24). The command tried: `mkdir -p logs; cd packages/internal/docs && NODE_OPTIONS="--max-old-space-size=4096" TYPEDOC_WATCH=false pnpm docusaurus build > ../../../logs/docs-build-1-15.log 2>&1; echo "exit code: $?"`
+  - **`render.yaml`** (open question 7):
+    - `backend-api` gets every WhatsApp key, with `WHATSAPP_ENABLED` defaulting to `"False"`.
+    - `celery-worker` gets what answering needs: the switch, the encryption key, the send backend, the model, `OPENAI_API_KEY`, and `WEB_APP_URL`, which the linking instructions use and the worker didn't declare.
+    - The file parses, with no key repeated in any service.
+  - **`CHANGELOG.md`:** the 6.3.0 entry, dated 2026-10-20. The version bump and the tag are the README Commit Protocol's steps 2 and 6, run by the maintainer.
+  - **The full backend run after every phase 1 step:** `1653 passed`, in 21 minutes, with nothing else running in Docker. Command: `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-full-1-15.log 2>&1; echo "exit code: $?"`
+
+#### Step 1.16 — Enums stored with exactly their names (agents.md section 5.3b)
+
+Use case: whoever reads the database or a setting sees what a value means, and every number says who it's for. It's the groundwork for Step 1.17's two forms.
+
+Set by the maintainer on 2026-10-22: "Every enum in the application (for commits we pair programme on) should be mirrored in the database, no ambiguity, no deviations, no nonsense."
+
+- **What changes:**
+  - **`AccountPurpose`, renamed:** `PLATFORM` becomes `INTERNAL_COMMUNICATIONS` (a number the organization's own team texts, to run the organization from WhatsApp), and `STOREFRONT` becomes `EXTERNAL_COMMUNICATIONS` (a number its store customers, and later other outside parties, text). Each is stored as its name.
+  - **Every other enum in `apps/whatsapp/constants.py`, stored as its names:**
+    - `ConnectionMethod`: `SEED`, `MANUAL`, `EMBEDDED_SIGNUP`
+    - `MessageKind`: `TEXT`, `BUTTON_REPLY`, `LIST_REPLY`, `FLOW_REPLY`, `UNSUPPORTED`, `INTERACTIVE`
+    - `MessageDirection`: `INBOUND`, `OUTBOUND`, instead of `in` and `out`
+    - `MessageStatus`: `RECEIVED` to `CANCELLED`
+    - `ConversationMode`: `WHATSAPP_FORM`, `AGENTIC`
+    - `SendBackend`: `LOG`, `META`
+  - **`Channel` in `apps/phone_verification/constants.py`:** `WHATSAPP_INBOUND`, `WHATSAPP_TEMPLATE`, `SMS`.
+  - **Settings take the same names:** `WHATSAPP_SEND_BACKEND` takes `LOG` or `META`, and `WHATSAPP_DEFAULT_CONVERSATION_MODE` takes `WHATSAPP_FORM` or `AGENTIC`. That covers their defaults, the startup checks, `.env.shared`, `render.yaml`, the operator guide and the human checks.
+  - **Meta's own values are translated where they come in:** a status webhook's lowercase `sent` is stored as `SENT`.
+- **Data migrations:** one per app, rewriting the stored values of existing rows, with a reverse that restores the old ones. A phone verification code binds its channel into its HMAC, so codes issued before the migration stop working; they only last 10 minutes anyway.
+- **Tests first:**
+  - Every enum in both apps stores exactly its member names, checked over each class's members, so a new enum can't slip in without it.
+  - Each data migration turns old rows into the new values, and back. The migration functions are called directly, as `test_permissions.py` already does, never with `transaction=True` (agents.md section 2.6).
+  - The settings tests, startup-check tests and webhook tests expect the new values, and a status webhook's `sent` arrives stored as `SENT`.
+- **Done, 2026-10-22:**
+  - **New tests:**
+    - `apps/whatsapp/tests/test_enums.py`
+    - `apps/whatsapp/tests/test_enum_migration.py`
+    - `apps/phone_verification/tests/test_constants.py`
+    - `apps/phone_verification/tests/test_channel_migration.py`
+    - `test_checks.py` gained `test_the_old_lowercase_values_are_refused`: `meta` gives `whatsapp.E005`, and `agentic` gives `whatsapp.E006`.
+  - **RED:** each new file, and `test_settings.py`, failed as expected:
+    - `test_enums.py`, `test_settings.py` and `test_constants.py` failed on the lowercase values (exit code 1). For example, `WHATSAPP_SEND_BACKEND` defaulted to `'log'`, not `'LOG'`.
+    - The two migration tests couldn't import their migrations, which didn't exist yet (exit code 2).
+
+    Command: `mkdir -p logs; for t in apps/whatsapp/tests/test_enums.py apps/whatsapp/tests/test_enum_migration.py apps/whatsapp/tests/test_settings.py apps/phone_verification/tests/test_constants.py apps/phone_verification/tests/test_channel_migration.py; do docker compose run --rm -T -e DATABASE_URL= backend pytest $t > logs/backend-red-1-16.log 2>&1; echo "$t exit code: $?"; done`
+
+  - **GREEN, what changed:**
+    - the values in both apps' `constants.py`, and every use of the renamed purposes
+    - the settings defaults, `.env.shared`, `render.yaml` and the `whatsapp.E009` message
+    - the tests and factories, updated to the new values
+    - the operator guide, and this plan's sections 8.2, 8.3a and 8.7
+  - **The migrations:**
+    - `whatsapp` 0013 is hand-written. It removes the purpose check constraint, rewrites the rows, then adds the constraint back with the new names.
+    - `whatsapp` 0014 and `phone_verification` 0003 change only the choices; they were made by `makemigrations`.
+    - `phone_verification` 0002 rewrites the channel values.
+  - **The first full run failed one test:** `630 passed, 1 failed`. `test_the_reverse_restores_the_old_values` wrote `platform` back under the new constraint. Each migration test now drops the constraint first, as the migration does, inside the test's own transaction. After that fix: `35 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_enum_migration.py apps/whatsapp/tests/test_models.py > logs/backend-green-1-16-migration.log 2>&1; echo "exit code: $?"`
+  - **GREEN:** `631 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp apps/whatsapp_saas apps/phone_verification -q 2>&1 | tee logs/step-1.16-green-summary.log | tail -15`
+  - **No migration missing:** `No changes detected`. Command: `docker compose run --rm -T backend python manage.py makemigrations --check --dry-run 2>&1 | tee logs/step-1.16-makemigrations-check.log | tail -15`
+  - **Black:** `532 files would be left unchanged`. Command: `docker compose run --rm -T backend black --check . 2>&1 | tee logs/step-1.16-black-check.log | tail -4`
+  - **For the maintainer's local `.env`:** `WHATSAPP_SEND_BACKEND` must be `META` or `LOG`. The old `meta` stops the backend with `whatsapp.E005`.
+
+#### Step 1.17 — Two forms on the WhatsApp tab: internal and external communications numbers
+
+Use case: a Shopify business connects its own numbers itself, on its WhatsApp tab: its team's number, to run the organization from WhatsApp now, and its store's number, for its customers. No number belongs to whoever deploys the app, and no Meta credentials go in `.env`.
+
+Decided by the maintainer on 2026-10-21 and 2026-10-22. It replaces the platform number of D2 and D3.
+
+- **Two forms on the same tab.** Each has its own fields, its own **Connect number** button and its own list of connected numbers, with these examples:
+  - **Internal communications number:** "Your team texts this number to run the organization from WhatsApp: list and create items, rename the organization, check your Shopify products, or ask the AI assistant. It only answers members who have linked their phone on their profile page. Example: your shop manager texts 'add an item called Winter stock'."
+  - **External communications number:** "Your customers text this number: browsing and ordering from your store, and order updates. Anyone can text it. Example: a customer texts 'do you have blue shirts in medium?'. Answering customers arrives in a later release; until then, messages are received and stored."
+- **Every number belongs to an organization.** The database check becomes "every account has an organization". An organization has at most one active internal communications number, enforced by a partial unique constraint. This also covers Step 1.13d, which it replaces.
+- **No platform number, and no Meta credentials in `.env`.** These go:
+  - the `WHATSAPP_PLATFORM_*` settings and `seed_whatsapp`'s real-number path
+  - `WhatsAppAccount.objects.platform()`
+  - `WHATSAPP_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN`
+
+  Each number's webhooks are signed with its own app secret, and its subscription check uses its own verify token, both from the form (D6 already supports this). `whatsapp_seed_demo` seeds an organization with one demo number of each kind.
+
+- **On an internal communications number:**
+  - A linked member of that number's organization gets the menus, forms and assistant, fixed to that organization, so the "Organizations" picker goes.
+  - Anyone else gets no reply; their message is stored. Only `link <code>` is answered, since it's how a team member links. Decided by the maintainer on 2026-10-22, instead of the linking instructions.
+  - Of the organization actions, only "Rename organization" stays. "Organizations" (switching), "Create organization" and the item form's organization dropdown go, from the menus and the assistant's tools alike. Decided by the maintainer on 2026-10-22.
+  - Membership is checked on every message. A linked user who has left the organization is treated like anyone else.
+- **On an external communications number:** messages are stored, and answering store customers is phase 2.
+- **Linking happens on each organization's internal number:**
+  - The profile page lists the user's organizations that have an internal communications number, and gives a code for the one chosen.
+  - `WhatsAppIdentity` becomes one link per user per internal number, instead of one per user. A member of two organizations links on each.
+  - The conversation mode is kept per link.
+  - A link code isn't tied to a number. Linking checks instead that the user is a member of the number's organization. The organization chosen on the profile page decides which number the "Open WhatsApp" link opens.
+  - `WhatsAppIdentity` gets an `account` column, unique with `user`; its `contact` stays one-to-one.
+  - The migration deletes the old platform number's account rows (their contacts, messages and links go with them). They exist only in development.
+- **Connecting:**
+  - The connect mutation takes a `purpose`, and the accounts query returns each number's purpose, so each form lists its own numbers.
+  - A second active internal number for the same organization is refused, with a message saying to disconnect the first.
+  - The send-test, disconnect and troubleshooting tools work on both kinds.
+- **The webhook:** with no platform secret, a body that names no connected number is refused with 403. The GET check only matches a number's own verify token.
+- **The forms (Flows) are published to the internal number's WhatsApp Business account when it's connected.** A Celery task is queued once the account is saved, so Meta's four calls don't hold up the form. `whatsapp_publish_flows` publishes to every active internal number.
+- **`seed_whatsapp` goes.** `whatsapp_seed_demo` covers local data without Meta.
+- **Tests first:**
+  - Model constraints: every account has an organization, and an organization has one active internal number.
+  - The connect mutation takes a purpose, and the GraphQL schema exposes it.
+  - Routing on each kind of number: a linked member versus anyone else.
+  - Linking on an internal number, the profile page's choice of organization, and one link per number.
+  - The menus fixed to the number's organization.
+  - Publishing the forms on connect.
+  - Component tests for the two forms and their examples.
+  - The smoke test rewritten: connect an internal number, link, then create an item with Confirm.
+- **The human checks are rewritten as a fast path to a real message:**
+  1. Connect your internal number in the tab.
+  2. Enter the webhook URL and verify token it shows in Meta's dashboard.
+  3. Link from the profile page, then text "hi" and get the menu.
+  4. Then the forms, the assistant, and the external number's form.
+- **Backend, done 2026-10-22,** in TDD cycles (logs in `logs/step-1.17*`). Each RED and GREEN ran `docker compose run --rm -T -e DATABASE_URL= backend pytest <the files> -q -p no:warnings`:
+  - **1.17a, the model:**
+    - Files: [`test_models.py`](../../../packages/backend/apps/whatsapp/tests/test_models.py), the new [`test_no_platform_number_migration.py`](../../../packages/backend/apps/whatsapp/tests/test_no_platform_number_migration.py) and [`test_enum_migration.py`](../../../packages/backend/apps/whatsapp/tests/test_enum_migration.py).
+    - RED: `28 failed, 11 passed`; the migration test couldn't import its migration.
+    - GREEN: `47 passed`. `tenant` is required; there's a partial unique constraint for one active internal number per organization; `WhatsAppIdentity` has `user` as a foreign key plus `account`, unique together; `objects.internal_for(tenant)` replaces `objects.platform()`.
+    - Migration 0015 is hand-written. It deletes the numbers with no organization, flushing Postgres's deferred checks so the same migration can alter the tables, then changes the schema.
+    - The factories are now `InternalAccountFactory` and `ExternalAccountFactory`. Both have an organization and an app secret.
+  - **1.17b, the webhook and settings:**
+    - Files: [`test_webhook_views.py`](../../../packages/backend/apps/whatsapp/tests/test_webhook_views.py), [`test_settings.py`](../../../packages/backend/apps/whatsapp/tests/test_settings.py) and [`test_checks.py`](../../../packages/backend/apps/whatsapp/tests/test_checks.py).
+    - RED: `14 failed, 32 passed`. GREEN: `51 passed`.
+    - Each number is checked with its own secret, and a body naming no connected number gets 403.
+    - Removed: `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, the `WHATSAPP_PLATFORM_*` settings and checks E001 and E002. They're also gone from `.env.shared` and `render.yaml`.
+  - **1.17c, connecting:**
+    - Files: [`test_accounts.py`](../../../packages/backend/apps/whatsapp/tests/test_accounts.py) and [`test_accounts_schema.py`](../../../packages/backend/apps/whatsapp/tests/test_accounts_schema.py).
+    - RED: `48 failed, 9 passed`. GREEN: `57 passed`.
+    - The connect mutation and the accounts query carry the purpose.
+    - The service refuses `internal_number_exists` and `connected_for_the_other_purpose`.
+    - The tools reach both kinds of number.
+    - The handler's optional `on_connected(account)` hook runs after commit.
+  - **1.17d, linking:**
+    - Files: [`test_identity.py`](../../../packages/backend/apps/whatsapp/tests/test_identity.py) and [`test_identity_schema.py`](../../../packages/backend/apps/whatsapp/tests/test_identity_schema.py).
+    - RED: `37 failed, 3 passed`. GREEN: `40 passed`.
+    - `start_link(user, tenant, number)` takes the organization, and linking needs membership of the number's organization.
+    - `identity_for` rechecks membership.
+    - Anyone unlinked gets no reply, except to `link <code>`.
+    - GraphQL `whatsAppLinks`, one per organization, replaces `whatsAppIdentity`. The three mutations take a `tenantId`.
+  - **1.17e, the router:**
+    - File: [`test_router.py`](../../../packages/backend/apps/whatsapp/tests/test_router.py).
+    - RED: `8 failed, 35 passed`. GREEN: `43 passed`.
+    - The conversation is always in the number's organization.
+    - `unlink` and the mode switch act on this number's link only.
+  - **1.17f, `apps/whatsapp_saas`:**
+    - RED: `9 failed, 99 passed`, and [`test_publish_flows.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_publish_flows.py) and [`test_smoke.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_smoke.py) couldn't import the new task. GREEN: `119 passed`.
+    - Removed: "Organizations", "Create organization", the item form's organization dropdown (`item.json`), and the `list_organizations`, `select_organization` and `create_organization` tools.
+    - The handler is renamed `InternalNumberHandler`. Its `on_connected` queues `tasks.publish_forms`.
+    - `whatsapp_publish_flows` publishes to every active internal number.
+    - The smoke test is the fast path: connect on the tab, the forms published, link, then an item through Confirm.
+  - **1.17g, `whatsapp_seed_demo`:**
+    - New file: [`test_seed_demo.py`](../../../packages/backend/apps/whatsapp/tests/test_seed_demo.py). RED: `6 failed`. GREEN: `6 passed`.
+    - It seeds a fake internal number only when the organization has none, and links the demo user on it and on the second organization's.
+  - **`seed_whatsapp` and its test are deleted.**
+  - **Black:** `534 files would be left unchanged`. Command: `docker compose run --rm -T backend black --check .`
+  - **No migration missing:** `No changes detected`. Command: `docker compose run --rm -T backend python manage.py makemigrations --check --dry-run`
+  - **The three apps:** `676 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp apps/whatsapp_saas apps/phone_verification -q -p no:warnings 2>&1 | tee logs/step-1.17-backend-green.log`
+- **Web, done 2026-10-23:**
+  - The tab has two sections, each with its examples, form and list.
+  - The profile page has one block per organization, each with its code, mode and Unlink.
+  - **No RED run:** the specs and the components were written before the GraphQL types existed, and nothing in this library can compile without them. So there's no RED result to quote.
+  - **The schema:**
+    - The maintainer ran `pnpm nx run webapp-api-client:graphql:download-schema`. Its type generation failed only because it read `api.graphql` before the download had finished writing it: upstream's target runs its two commands at the same time.
+    - `pnpm nx run webapp-api-client:graphql:generate-types` then succeeded.
+  - **Type-check:** clean. Commands: `pnpm nx run webapp-whatsapp:type-check --skip-nx-cache` and `pnpm nx run webapp:type-check --skip-nx-cache`
+  - **Lint:** `All files pass linting`. Command: `pnpm nx run webapp-whatsapp:lint --skip-nx-cache`
+  - **GREEN:** `3 passed` suites, `31 passed` tests. Command: `pnpm nx run webapp-whatsapp:test --skip-nx-cache 2>&1 | tee logs/step-1.17h-web-test.log`
+
+#### Step 1.18 — One Meta app, ours: organizations connect numbers to it
+
+Use case: a store owner connects their shop's WhatsApp number to our SaaS without being a developer, so without a Meta app of their own.
+
+Decided by the maintainer on 2026-10-23, during check 1 of the human checks, instead of Step 1.17's "each number brings its own App secret". Meta sends every number's webhooks to the Meta app the number's WhatsApp Business account subscribed. It signs them with that app's App secret, and checks the webhook URL with the verify token set on that app. Both belong to whoever runs the app, so they go back in `.env`. This is how Meta's Tech Providers work. Numbers still belong to organizations, and there's still no operator number.
+
+- **What changes:**
+  - **Settings:** `WHATSAPP_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN` come back, required when `WHATSAPP_ENABLED` (checks `whatsapp.E001` and `whatsapp.E002` again). The `WHATSAPP_PLATFORM_*` settings stay gone.
+  - **The webhook:** every POST is checked with `WHATSAPP_APP_SECRET`. A signed body naming a number not connected here is acknowledged and not stored, so Meta stops retrying it. The GET check compares `WHATSAPP_VERIFY_TOKEN`, in constant time.
+  - **The form:** Phone number ID, WhatsApp Business Account ID and access token, with no App secret. Connecting checks the number with Meta, then subscribes our app to the number's WhatsApp Business account (`POST /{waba-id}/subscribed_apps`), so its messages reach our webhook. If Meta refuses either, nothing is saved. The form no longer shows a webhook URL or verify token: the operator sets the webhook once, in our app.
+  - **A number's proofs:** credentials verified, app subscribed (replacing "webhook verified", which Meta can't prove per number), and a message received.
+  - **The model:** `app_secret_encrypted` and `webhook_verify_token_hash` go, and `webhook_verified_at` becomes `subscribed_at`, in a migration.
+  - **Later (phase 4):** Meta's Embedded Signup popup replaces typing the three values.
+- **Tests first:** settings and checks; the webhook signed with the setting's secret, unknown numbers acknowledged; connecting with three values, subscribing, and nothing saved when the subscription fails; the GraphQL fields; the seed command; the tab's form and proofs; the smoke test.
+- **Backend, done 2026-10-23,** in TDD cycles (logs in `logs/step-1.18*`). Each RED and GREEN ran `docker compose run --rm -T -e DATABASE_URL= backend pytest <the files> -q -p no:warnings`:
+  - **1.18a, settings, checks and the webhook:**
+    - Files: [`test_settings.py`](../../../packages/backend/apps/whatsapp/tests/test_settings.py), [`test_checks.py`](../../../packages/backend/apps/whatsapp/tests/test_checks.py) and [`test_webhook_views.py`](../../../packages/backend/apps/whatsapp/tests/test_webhook_views.py).
+    - RED: `16 failed, 33 passed`. GREEN: `49 passed`.
+  - **1.18b, the model, connecting and GraphQL:**
+    - Files: [`test_models.py`](../../../packages/backend/apps/whatsapp/tests/test_models.py), [`test_accounts.py`](../../../packages/backend/apps/whatsapp/tests/test_accounts.py), [`test_accounts_schema.py`](../../../packages/backend/apps/whatsapp/tests/test_accounts_schema.py), [`test_admin.py`](../../../packages/backend/apps/whatsapp/tests/test_admin.py) and [`test_verification.py`](../../../packages/backend/apps/whatsapp/tests/test_verification.py).
+    - RED: `43 failed, 63 passed`. GREEN: `112 passed`.
+    - Migration 0016 removes `app_secret_encrypted` and `webhook_verify_token_hash`, and replaces `webhook_verified_at` with `subscribed_at`.
+    - The unused `generate_verify_token` and `hash_verify_token` go, with their tests.
+  - **1.18c, the seed command and the smoke test:**
+    - File: [`test_seed_demo.py`](../../../packages/backend/apps/whatsapp/tests/test_seed_demo.py). RED: `6 failed`.
+    - GREEN, with the smoke test: the three apps `665 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp apps/whatsapp_saas apps/phone_verification -q -p no:warnings 2>&1 | tee logs/step-1.18-backend-green.log`
+  - **Black:** `534 files would be left unchanged`.
+  - **No migration missing:** `No changes detected`.
+  - **Also updated:** `.env.shared` and `render.yaml` have the two settings back, and the operator guide and section 13's setup and checks 1, 2 and 14 match.
+- **Web, done 2026-10-23:**
+  - The form has three fields and a "connected" note, and a number's second proof is **App subscribed**.
+  - **No RED run:** the specs were changed before the types existed, as in Step 1.17.
+  - **The types:** the maintainer ran `pnpm nx run webapp-api-client:graphql:download-schema; pnpm nx run webapp-api-client:graphql:generate-types`. The first command's type generation failed on the race; the second succeeded.
+  - **Type-check:** clean for `webapp-whatsapp` and `webapp`.
+  - **Lint:** passes.
+  - **GREEN:** `3 passed` suites, `32 passed` tests. Command: `pnpm nx run webapp-whatsapp:test --skip-nx-cache 2>&1 | tee logs/step-1.18d-web-test.log`
+- **The full run before committing Steps 1.16 to 1.18, 2026-10-23,** run by the maintainer, in the order of section 8 of [`2026-10-07-restore-green-test-suite-plan.md`](2026-10-07-restore-green-test-suite-plan.md), with `webapp-whatsapp` added:
+  - **Lint and type-check, 16 frontend projects:** all 32 exit codes `0`.
+    - Command:
+      `mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify webapp-whatsapp; do pnpm nx run $p:lint --skip-nx-cache > logs/$p-lint.log 2>&1; echo "$p lint exit code: $?"; pnpm nx run $p:type-check --skip-nx-cache > logs/$p-type-check.log 2>&1; echo "$p type-check exit code: $?"; done`
+  - **Frontend tests, 16 projects:** every exit code `0`, no failures; `webapp-whatsapp` `32 passed`. The only skips are upstream's (`webapp` 2, `webapp-tenants` 2).
+    - Command:
+      `mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify webapp-whatsapp; do pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --verbose 2>&1 | tee logs/$p.log; echo "$p test exit code: ${PIPESTATUS[0]}"; done`
+  - **Backend and workers:** `backend: 1706 tests | 1 failed, 1705 passed`, and `workers: 2 tests | 2 passed`. The one failure is the known gap below.
+    - Command:
+      `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; pnpm nx run workers:test --skip-nx-cache > logs/workers-test.log 2>&1; for x in backend workers; do f=logs/$x-test.log; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "$x: $n tests |${r:- no test results, see $f}"; done`
+  - **The CI test-list check:** `All 15 webapp libraries with a test target are in the test-lib matrix.`, exit code `0`.
+    - Command:
+      `mkdir -p logs; (node .github/workflows/scripts/check-test-lib-matrix.test.js && node .github/workflows/scripts/check-test-lib-matrix.js) 2>&1 | tee logs/test-lib-matrix.log; echo "test-lib-matrix exit code: ${PIPESTATUS[0]}"`
+  - **Known gap: an order-dependent upstream test.**
+    - **The test:** upstream's `apps/multitenancy/tests/test_schema.py::TestAllTenantsQuery::test_all_tenants_query` failed in the full run, comparing tenant ids. It passed 3 times out of 3 on its own.
+    - **Why it can fail:** it expects `allTenants` in exactly the order it created the tenants, while the tenant factory gives each tenant a random `created_at` (`factory.Faker("date_time")`).
+    - **What we do:** these steps changed nothing in `apps/multitenancy`, and upstream tests stay as they are (agents.md section 3.4), so it's recorded here rather than changed.
+    - **Command for the rerun:** `for i in 1 2 3; do docker compose run --rm -T -e DATABASE_URL= backend pytest "apps/multitenancy/tests/test_schema.py::TestAllTenantsQuery" -q -p no:warnings 2>&1 | tail -1; done 2>&1 | tee logs/multitenancy-all-tenants-repeat.log`, giving `2 passed` three times.
+
+### Phase 2 — Use case 2: store customers on an organization's number (outline)
+
+The organization's number is already connected and proven by the form (Steps 1.5 and 1.6). Phase 2 gives it something to say.
+
+- **Step 2.1 Storefront access.**
+  - New Shopify scopes `unauthenticated_read_product_listings`, `unauthenticated_write_checkouts` and `unauthenticated_read_checkouts`. Merchants approve them again.
+  - A Storefront token per store, created with `storefrontAccessTokenCreate` and stored encrypted in an `apps.whatsapp_shop` table rather than on `ShopifyShop`.
+  - A `StorefrontChannel` row tying the account to one of the organization's stores.
+  - Any change to `apps.shopify` is asked for separately.
+- **Step 2.2 The storefront handler.** Routing to the account's store, a `StoreCustomer` for each contact (D4), and the store's own conversation mode setting for its store customers.
+- **Step 2.3 Browse and search.** Storefront `search` and `products`, 7 per page with Previous, Next and Main menu (D17), showing only products available for sale.
+- **Step 2.4 Product detail.** Image header, price, variants as a list when there's more than one, and buttons Add to cart, Buy now and Back to results.
+- **Step 2.5 Store assistant.** The same agent runtime, with shop tools only.
+- **Step 2.6 Privacy webhooks.** `customers/redact` and `shop/redact` delete the matching store customers, contacts, messages and agent history.
+- **Step 2.7 One number for both internal and external communications (planned, the maintainer's choice on 2026-10-21).** Use case: a small business that has only one WhatsApp number serves its team and its customers on it.
+  - **A switch on an external communications number,** off by default: "members can also manage the organization from this number".
+  - **With it on,** a member who has linked on that number gets the menus, forms and assistant, and anyone else is a store customer.
+  - **Its limits:**
+    - Every member's message on that number costs the organization money with Meta.
+    - The forms (Flows) must be published to that number's WhatsApp Business account too.
+  - **Built with phase 2,** when an organization's external number first answers anyone and the member-or-customer split starts to matter.
+
+### Phase 3 — Use case 3: paying in chat, and invoices (outline)
+
+- **Step 3.1 Subscription checkout.**
+  - A single-use, expiring `WhatsAppCheckoutHandoff` token behind a link to a web app page.
+  - The page checks login and `billing.manage`, then submits the existing PayFast form.
+  - A `post_save` receiver on `PayFastPayment` sends "payment received", so `apps.payfast` isn't edited.
+- **Step 3.2 Store customer cart.**
+  - The cart is kept on the `StoreCustomer` and built with `cartCreate` and `buyerIdentity.phone`.
+  - Its `checkoutUrl` is sent as a link button, after checking that the host is the store's domain. That link is the whole payment step (D13).
+- **Step 3.3 Paid orders and the receipt.** The `orders/paid` webhook (`read_orders` scope) is matched to the store customer by a cart attribute. The store customer gets the order number, the total and a button to the order's `statusPageUrl` (user story 22).
+- **Step 3.4 `apps.invoicing`.**
+  - An `Invoice` model and an organization counter row (D15).
+  - A ReportLab PDF with the section 6.5 fields, written to private storage.
+  - Created when a PayFast payment completes.
+- **Step 3.5 Invoices in chat and on the web.** A "My invoices" menu item and agent tool send the PDF through Meta's media upload; the web app gets a download link.
+
+### Phase 4 — Embedded Signup (outline)
+
+- **Prerequisites,** done by the operator outside the code:
+  - Meta business verification
+  - Tech Provider onboarding
+  - App Review for `whatsapp_business_messaging` and `whatsapp_business_management`
+  - a Facebook Login for Business configuration for Embedded Signup v4
+- **Step 4.1** A "Connect with Facebook" button in the WhatsApp tab:
+  - loads Meta's JavaScript SDK
+  - accepts only `WA_EMBEDDED_SIGNUP` messages from a `facebook.com` origin
+  - sends the code to the backend straight away
+- **Step 4.2** The backend:
+  - exchanges the code within its 30 seconds
+  - stores the account with `connection_method=embedded_signup` on the platform's webhook URL
+  - subscribes the app
+  - registers the number with a generated PIN, stored encrypted
+  - handles `account_update` webhooks
+
+### Phase 5 — Use case 4: talk to a human (outline)
+
+Kept only while it stays this small (section 3).
+
+- **Step 5.1 Handoff.**
+  - A "Talk to a person" button and agent tool set the conversation to `waiting`, with `waiting_since`.
+  - The bot stays silent while the conversation is `waiting` or `assigned`.
+  - Members with `whatsapp.inbox` get an in-app notification.
+- **Step 5.2 Inbox page.**
+  - Lists waiting conversations and those assigned to me.
+  - Shows the transcript from `WhatsAppMessage`.
+  - Assign to me, reply, close.
+- **Step 5.3 Reply rules.**
+  - Free text is refused 24 hours after `last_inbound_at`, with the reason shown.
+  - Closing returns the conversation to the bot.
+  - Every assignment and close is written to the action log.
+
+The design follows Chatwoot's conversation status, assignee and reply-window rule: https://github.com/chatwoot/chatwoot/blob/develop/app/models/conversation.rb and https://github.com/chatwoot/chatwoot/blob/develop/app/services/conversations/message_window_service.rb
+
+### Phase 6 — Verify a number by receiving a code (outline, D20)
+
+- **Step 6.1 The channel setting.**
+  - `PHONE_VERIFICATION_CHANNEL`, with `whatsapp_inbound` as the default, plus its loader test and a system check.
+  - Each channel registers a sender with `apps.phone_verification`, the way apps register permissions.
+- **Step 6.2 `whatsapp_template`.**
+  - A `whatsapp_publish_templates` command submits the authentication template (copy-code button, security line, expiry) once and stores its name and status.
+  - The sender fills in the code and sends it.
+  - A rejected or not-yet-approved template gives a clear error.
+- **Step 6.3 `sms`.**
+  - A sender behind an `SMS_PROVIDER` setting, empty by default.
+  - The provider is chosen when this step starts, with its docs cited (agents.md section 6.2).
+- **Step 6.4 Web app.** "Send me a code" on the profile's WhatsApp section, shown only when the channel isn't `whatsapp_inbound`, and a box to type the code.
+
+## 10. Risks and mitigations
+
+- **Meta resends a webhook and a write runs twice:** messages are unique on `wamid`, writes run only through one-use pending actions, and both are tested with duplicates.
+- **A forged sender, or an organization id smuggled into a message:** signatures are checked over the raw body; organizations come only from the stored conversation, and every operation rechecks membership.
+- **The AI claims success or calls something dangerous:** a fixed tool list with strict schemas, confirmation enforced by the server, and success read from the saved result.
+- **Slow AI or Shopify calls hold up the webhook:** the webhook only stores and queues, and the worker does the slow work with timeouts.
+- **Message costs grow quietly:** the `log` backend by default, one reply per action where possible, and the costs explained in the operator guide.
+- **A store customer reaches another store:** routing uses the receiving number only, contacts belong to one account, and isolation tests run per phase.
+- **More personal data is kept than needed:** minimal payloads, no message bodies in logs, `store: false` for OpenAI, and redaction on unlink and on Shopify privacy webhooks.
+- **A deployment with no Celery worker (`CELERY_TASK_ALWAYS_EAGER=True`).** Order still holds and nothing is lost, because the send queue and its lock are in Postgres (D21), and strict mode is still woken by Meta's status webhook. Three things get worse:
+  - **The webhook answers late:** the reply is worked out and sent before Meta gets its 200. A retry from Meta is skipped as a duplicate (Step 1.3c), but the response is still slow.
+  - **Retries don't wait:** eager mode runs a retry at once and ignores its countdown, so a rate limit (`130429`, `131056`) is likely to use up every retry, and the message ends `failed`.
+  - **Nothing picks up after a crash:** rows left `queued` by a process that died wait until that contact's next reply starts a drain.
+  - **A task started inside a transaction loses its connection:** [`config/celery.py`](../../../packages/backend/config/celery.py) runs `close_old_connections()` before and after every task, and in eager mode that runs in the caller's process. That's why this app only ever starts tasks with `transaction.on_commit`, and why the task tests in `test_outbox.py` run with `transaction=True` (found 2026-10-17).
+
+  Mitigation: Step 1.4d's `whatsapp_send_queued` command, run from cron like `payfast_daily_maintenance`.
+
+## 11. File Summary
+
+**Phase 1, new:**
+
+- `packages/backend/apps/whatsapp/`:
+  - `apps.py`, `checks.py`, `crypto.py`, `models.py`, `admin.py`, `permissions.py`
+  - `verification.py`, `normalize.py`, `views.py`, `urls.py`
+  - `builders.py`, `client.py`, `tasks.py`, `schema.py`
+  - `services/` (inbound, outbox, accounts, identity, router, confirmations, flows)
+  - `agent/` (provider, service, registry)
+  - `management/commands/` (`seed_whatsapp`, `whatsapp_send_queued`, `whatsapp_publish_flows`), migrations and tests
+- `packages/backend/apps/whatsapp_saas/`: `apps.py`, `use_cases.py`, `menus.py`, `tools.py`, `prompts.py`, `flows/`, tests.
+- `packages/backend/apps/phone_verification/`: `PhoneVerificationCode`, the issue-and-check service, migrations and tests (Step 1.7, D20).
+- `packages/webapp-libs/webapp-whatsapp/`: the organization's WhatsApp tab, the profile section, and their tests.
+- A guide page under `packages/internal/docs/docs/`.
+
+**Phase 1, appended to existing files (composition points):**
+
+- `packages/backend/config/settings.py`, `config/urls_api.py`, `config/schema.py`
+- `packages/backend/.env.shared`
+- `packages/webapp/src/routes/profile/profile.component.tsx`
+- `packages/webapp/src/app/app.component.tsx` and the `webapp-tenants` settings tab list
+- the generated GraphQL schema and types
+- `CHANGELOG.md`
+
+**Phase 1, small additive change asked for separately:** an optional `query` argument in `apps/shopify/products.py` (Step 1.12).
+
+**Later phases:** `apps.whatsapp_shop` (with `StoreCustomer`), `apps.invoicing`, the handoff page and the inbox page, each listed in its phase's detailed steps.
+
+## 12. Verification Plan
 
 ### Automated tests
 
-- Every step writes its failing tests first and observes RED before production changes.
-- Run focused backend test files inside the backend container for each RED/GREEN micro-step.
-- Final backend GREEN: `pnpm nx run backend:test`.
-- Final frontend GREEN: for each touched Nx project, `pnpm nx run <project>:lint`, `pnpm nx run <project>:type-check`, and `pnpm nx run <project>:test --watchAll=false`.
-- Regenerate and commit GraphQL schema/types when the schema changes.
-- Because this touches Postgres, Redis/Celery, and Meta/PayFast integrations: after automated GREEN, run the full local stack via `pnpm saas up`, then perform the checks below. No automated test calls Meta, PayFast, Stripe, or a live LLM.
+- **RED,** one test file at a time: `docker compose run --rm -T -e DATABASE_URL= backend pytest <path> -v`.
+- **GREEN, backend:** `pnpm nx run backend:test`.
+- **GREEN, frontend:** `pnpm nx run webapp-whatsapp:lint`, `pnpm nx run webapp-whatsapp:type-check` and `pnpm nx run webapp-whatsapp:test --watchAll=false`, and the same three for `webapp`.
+- After a schema change: `pnpm nx run webapp-api-client:graphql:download-schema`.
+- No automated test calls Meta, Shopify, PayFast or OpenAI. After GREEN, `pnpm saas up` and the human checks in section 13.
 
-### Human checks
+### Kinds of test
 
-After the test seed command and local stack are in place:
+The kinds are defined in agents.md section 2.5. Each file's docstring says why it's that kind and what's faked. They're in [`apps/whatsapp/tests/`](../../../packages/backend/apps/whatsapp/tests/) unless a link says otherwise, and each later step adds its new files here.
 
-1. Open the web app as the seeded linked user, change profile mode to **Menus and Flows**, reload, and confirm the choice persists. Repeat with **AI conversation**. An unset preference follows the configured default.
-2. Create an account through the existing website sign-up flow. As an unlinked sender, message the configured WhatsApp test number with `LINK`; provide the account email and one-time code. The bot does not reveal tenant, billing, or CRUD data before linking. Retry and confirm supported actions work after linking. Also start linking from the website profile page and confirm it reaches the same verified identity state.
-3. Send a duplicate delivery with the same Meta message ID using a signed webhook fixture. The endpoint acknowledges it and the action is not repeated.
-4. In menu mode, create an organization and select it. The bot confirms the created organization and subsequent actions use that selected tenant.
-5. In menu mode, list, create, update, and delete a seeded CRUD demo item. Confirm delete explicitly; cancel once and verify the row remains.
-6. In AI mode, ask to create an item with name and organization. Confirm the preview; then query the list and verify the persisted item. Ask to delete it; decline confirmation and verify it remains.
-7. As a user with `billing.view` but without `billing.manage`, ask for the current subscription (allowed) and then ask to change/cancel it (denied with a useful message).
-8. As a billing manager with PayFast active, request a subscription checkout. Open the WhatsApp link, confirm amount and organization, complete sandbox checkout, and verify the bot reports success only after the verified ITN updates the backend. Reopen the consumed/expired link; it must not create a second checkout.
-9. Request a one-off payment/donation link. The link opens the appropriate provider checkout; cancel it and verify payment is not recorded as complete.
-10. Switch `PAYMENT_BACKEND` to Stripe in a local environment and repeat the billing menu. Only Stripe-supported choices are shown, and the PayFast handoff cannot be used.
-11. Submit a webhook with a bad `X-Hub-Signature-256` and confirm a client error with no message row, task, outbound message, or business side effect.
-12. Allow Flow state to expire, then submit its old response. The bot explains that the flow expired and offers to restart; it does not mutate data.
+- **Sanity:**
+  - [`test_settings.py`](../../../packages/backend/apps/whatsapp/tests/test_settings.py): each setting reads its environment variable.
+  - [`test_checks.py`](../../../packages/backend/apps/whatsapp/tests/test_checks.py): a broken configuration fails at startup.
+- **Unit:**
+  - [`test_builders.py`](../../../packages/backend/apps/whatsapp/tests/test_builders.py)
+  - [`test_navigation.py`](../../../packages/backend/apps/whatsapp/tests/test_navigation.py)
+  - [`test_normalize.py`](../../../packages/backend/apps/whatsapp/tests/test_normalize.py)
+  - [`test_verification.py`](../../../packages/backend/apps/whatsapp/tests/test_verification.py)
+  - [`test_crypto.py`](../../../packages/backend/apps/whatsapp/tests/test_crypto.py)
+  - [`test_phone_numbers.py`](../../../packages/backend/apps/whatsapp/tests/test_phone_numbers.py)
+  - [`apps/whatsapp_saas/tests/test_flow_json.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_flow_json.py): the Flow JSON files' shape.
+  - [`test_enums.py`](../../../packages/backend/apps/whatsapp/tests/test_enums.py) and [`apps/phone_verification/tests/test_constants.py`](../../../packages/backend/apps/phone_verification/tests/test_constants.py): every enum stores its member names (Step 1.16).
+- **Integration:**
+  - [`test_enum_migration.py`](../../../packages/backend/apps/whatsapp/tests/test_enum_migration.py) and [`apps/phone_verification/tests/test_channel_migration.py`](../../../packages/backend/apps/phone_verification/tests/test_channel_migration.py): Step 1.16's data migrations, run on rows in the test database; nothing faked.
+  - [`test_models.py`](../../../packages/backend/apps/whatsapp/tests/test_models.py): the test database.
+  - [`test_tasks.py`](../../../packages/backend/apps/whatsapp/tests/test_tasks.py): the test database.
+  - [`test_client.py`](../../../packages/backend/apps/whatsapp/tests/test_client.py): the test database, with Meta's HTTP mocked.
+  - [`test_webhook_views.py`](../../../packages/backend/apps/whatsapp/tests/test_webhook_views.py): the webhook route, with the Celery task's `delay` patched.
+  - [`test_outbox.py`](../../../packages/backend/apps/whatsapp/tests/test_outbox.py): the test database and the real send lock held from a second connection, with the send backend faked.
+  - [`test_commands.py`](../../../packages/backend/apps/whatsapp/tests/test_commands.py): the `whatsapp_send_queued` command against the test database and the real send lock, with the send backend faked.
+  - [`test_permissions.py`](../../../packages/backend/apps/whatsapp/tests/test_permissions.py): permission rows and the data migration in the test database.
+  - [`test_accounts.py`](../../../packages/backend/apps/whatsapp/tests/test_accounts.py): the accounts service against the test database, with Meta's HTTP mocked.
+  - [`test_accounts_schema.py`](../../../packages/backend/apps/whatsapp/tests/test_accounts_schema.py), [`test_number_tools_schema.py`](../../../packages/backend/apps/whatsapp/tests/test_number_tools_schema.py): the real GraphQL schema and permissions, with Meta's HTTP mocked.
+  - [`test_number_tools.py`](../../../packages/backend/apps/whatsapp/tests/test_number_tools.py): the number tools and their action-log rows, with Meta's HTTP mocked.
+  - [`test_admin.py`](../../../packages/backend/apps/whatsapp/tests/test_admin.py): the Django admin pages, with Meta's HTTP mocked.
+  - [`test_identity.py`](../../../packages/backend/apps/whatsapp/tests/test_identity.py): identities, contacts and codes; nothing faked.
+  - [`test_identity_schema.py`](../../../packages/backend/apps/whatsapp/tests/test_identity_schema.py): the real GraphQL schema; nothing faked.
+  - [`test_router.py`](../../../packages/backend/apps/whatsapp/tests/test_router.py), [`test_confirmations.py`](../../../packages/backend/apps/whatsapp/tests/test_confirmations.py): the router against the test database, with a fake platform handler (and a fake action) that records what it was asked.
+  - [`test_flows.py`](../../../packages/backend/apps/whatsapp/tests/test_flows.py): opening forms and reading their answers; nothing faked.
+  - [`test_provider_openai.py`](../../../packages/backend/apps/whatsapp/tests/test_provider_openai.py): unit since Step 1.13e. The provider on its own, with `requests.post` patched.
+  - [`test_seed_demo.py`](../../../packages/backend/apps/whatsapp/tests/test_seed_demo.py): the `whatsapp_seed_demo` command against the test database; nothing faked. It replaced `test_seed_whatsapp.py` in Step 1.17.
+  - [`test_no_platform_number_migration.py`](../../../packages/backend/apps/whatsapp/tests/test_no_platform_number_migration.py): Step 1.17's migration, run on rows in the test database; nothing faked.
+  - [`test_agent.py`](../../../packages/backend/apps/whatsapp/tests/test_agent.py): the assistant's loop and history, with a fake model from [`agent_fakes.py`](../../../packages/backend/apps/whatsapp/tests/agent_fakes.py), support code with no Kind line.
+  - [`apps/phone_verification/tests/test_codes.py`](../../../packages/backend/apps/phone_verification/tests/test_codes.py): codes in the test database; nothing faked.
+  - [`apps/whatsapp_saas/tests/test_use_cases_organizations.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_use_cases_organizations.py), [`test_use_cases_items.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_use_cases_items.py): the Step 1.9 operations; nothing faked.
+  - [`apps/whatsapp_saas/tests/test_menus.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_menus.py), [`test_forms.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_forms.py): messages through the real router and handler; only the send task's Celery `delay` is patched. Their shared helpers are in [`chat.py`](../../../packages/backend/apps/whatsapp_saas/tests/chat.py), support code with no Kind line.
+  - [`apps/whatsapp_saas/tests/test_publish_flows.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_publish_flows.py): the `whatsapp_publish_flows` command, with Meta's HTTP mocked.
+  - [`apps/whatsapp_saas/tests/test_use_cases_products.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_use_cases_products.py): the Step 1.12b operations, with `fetch_products` mocked.
+  - [`apps/whatsapp_saas/tests/test_products_menus.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_products_menus.py): the product menus through the real router and handler, with `fetch_products` and the send task's Celery `delay` mocked.
+  - [`apps/whatsapp_saas/tests/test_tools.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_tools.py): the assistant's tools against the test database, with `fetch_products` mocked.
+  - [`apps/whatsapp_saas/tests/test_assistant.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_assistant.py): agentic mode through the real router, tools and confirmations, with a fake model and the send task's Celery `delay` patched.
+- **Smoke:** [`apps/whatsapp_saas/tests/test_smoke.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_smoke.py), from a link code through a confirmed item. Only Celery's queueing is replaced, by running each task at once.
+- **Web (Jest), all integration:** the components render with the real Apollo hooks, router and permission check, against Apollo's `MockedProvider`.
+  - [`whatsappSettings.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/whatsappSettings.component.spec.tsx): the WhatsApp tab.
+  - [`troubleshootPanel.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/troubleshootPanel.component.spec.tsx): the troubleshooting panel.
+  - [`whatsappProfileSection.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/components/whatsappProfileSection/__tests__/whatsappProfileSection.component.spec.tsx): the profile section.
 
-## 11. Decisions and open questions
+### Planned human checks (phase 1)
 
-1. **Channel is generic; generic CRUD remains the example resource.** This matches `agents.md` sections 4.5 and the maintainer's requested account/organization/billing/CRUD scope. Product-specific tools from the Flask reference stay in that product. Tenant-owned Shopify storefront commerce is a later generic capability, and will get its own plan after the existing Shopify feature is stable.
-2. **User profile preference beats deployment default.** The reference currently supports a global `CONVERSATION_MODE` override before the profile setting. The SaaS implementation should not let an ordinary environment value unexpectedly overrule a user's saved preference. If operations require a forced maintenance mode, design it as a separate explicit override and test/document its precedence.
-3. **A WhatsApp number must be explicitly linked.** Do not automatically match a sender's number to an account and grant access. Pick the verification method and expiry/rate limits during step 1 based on existing account security conventions; prefer requiring an authenticated web session and proving control of the WhatsApp number.
-4. **“All website actions” is scoped to the supported vertical slices.** New website features do not become automatically callable; each gets an audited tool/Flow, permission mapping, tests, and confirmation design.
-5. **Checkout remains on the provider's secure hosted flow.** PayFast's existing GraphQL response is form action + signed fields; the proposed short-lived app URL is a handoff to render/submit them. Confirm whether the existing frontend can host this route without exposing the backend-signed form payload in URL or browser storage. If not, add the smallest webapp route that fetches it after login.
-6. **Embedded signup and SaaS customer-owned WABAs are not included in the first slice.** Initial rollout configures one platform WhatsApp Business Account/phone number for SaaS users. That does not route tenant shoppers to a tenant's storefront; the deferred commerce plan must add tenant channel onboarding or another verified routing mechanism and credential isolation.
-7. **Shopify storefront actions are deferred until the current Shopify feature is complete.** The long-term product goal is customer interaction with each tenant's Shopify products and inventory through WhatsApp. Shoppers are not SaaS users and do not receive tenant-member permissions. No edits to `apps.shopify` or `webapp-shopify` are included here. The later plan must choose tenant WhatsApp routing/channel ownership, shopper identity and order association, product discovery API, inventory freshness semantics, checkout handoff, and required scopes.
-8. **Conversation mode switching and message retention need product review.** This draft proposes profile UI plus a chat shortcut and limited expiring history. Confirm whether history should be retained for a specific period and whether an operator-facing human-handoff inbox is in the initial release.
+Not runnable yet: this list is the plan. Each check is written out, with its exact commands, in section 13 "Human checks", in the step that makes it reachable. A sample inbound message is a JSON body built with `jq`, signed with `openssl dgst -sha256 -hmac`, and posted to the local webhook with `curl`. Replies are read back as whole rows from `WhatsAppMessage`.
 
-## 12. Sources
+Section 13 was rewritten in Step 1.17 as the fast path to a real message, on an organization's own internal number. Planned checks 1 and 2 (a bad signature, the same message twice) are left to the automated webhook tests there, since they need hand-signed requests rather than a phone.
 
-- Reference implementation, WhatsApp webhook and menu/Flow service: `/home/kgotso-koete/Documents/Projects/Personal/WhatsApp/python/python-flask-whatsapp-store/app/api/chatbot.py` and `app/services/whatsapp.py`.
-- Reference implementation, tool-using agent and provider abstraction: `/home/kgotso-koete/Documents/Projects/Personal/WhatsApp/python/python-flask-whatsapp-store/app/services/agent.py`, `app/services/llm_provider.py`, `app/services/openai.py`.
-- Reference implementation, conversation state and profile mode: `/home/kgotso-koete/Documents/Projects/Personal/WhatsApp/python/python-flask-whatsapp-store/app/services/conversation_state.py`, `config.py`, and `app/models.py` (`User.conversation_mode`).
-- Meta WhatsApp Cloud API webhook setup and signature verification: https://developers.facebook.com/docs/graph-api/webhooks/getting-started/.
-- Meta WhatsApp Cloud API messages and templates: https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages and https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates.
-- Meta WhatsApp Flows: https://developers.facebook.com/docs/whatsapp/flows/ and https://developers.facebook.com/docs/whatsapp/flows/guides/implementingyourflowendpoint.
-- PayFast custom payment form: https://developers.payfast.co.za/docs#custom-payment-integration.
-- Shopify Storefront API product discovery and cart checkout: https://shopify.dev/docs/api/storefront/latest/queries/products and https://shopify.dev/docs/api/storefront/latest/queries/cart.
-- Shopify Admin inventory level permission: https://shopify.dev/docs/api/admin-graphql/latest/objects/InventoryLevel.
-- Current Shopify installation and tenant-link plan: [`2026-10-03-shopify-app-installation-plan.md`](2026-10-03-shopify-app-installation-plan.md).
-- Current in-progress Shopify integration: [`packages/backend/apps/shopify/`](../../../packages/backend/apps/shopify/) and [`packages/webapp-libs/webapp-shopify/`](../../../packages/webapp-libs/webapp-shopify/).
-- Repository working agreement and implementation-plan rules: [`docs/superpowers/agents.md`](../agents.md).
+**Who can do what:**
+
+- **unlinked number:** linking instructions only
+- **linked SaaS user:** their own organizations
+- **CRUD reads:** need `features.crud.view`
+- **CRUD writes:** need `features.crud.manage`
+- **products:** need `shopify.view`
+- **connecting a number:** needs `whatsapp.manage`; seeing its status needs `whatsapp.view`
+- **every write:** needs the user's own Confirm press
+
+Planned checks:
+
+1. **A bad signature is refused** (Step 1.3).
+   - **Why:** Meta's signature is the only authority on this public URL. A 403 with no stored row proves nothing is processed before the check.
+2. **The same message twice is stored once** (Step 1.3).
+   - **Why:** Meta retries.
+3. **Connect a number with the form, as an organization admin** (user story 11).
+   - **Why:** the form is the first proof that the credentials work, before anyone texts.
+   - Prove the organization has no number first, connect one, then show the account row, with its secrets encrypted, and the webhook URL.
+4. **A member without `whatsapp.manage` can't connect a number, and someone outside the organization gets "not found"** (user story 11).
+   - **Why:** a connected number lets the app speak for the business; "not found" stops outsiders learning which organizations exist.
+5. **A GET with an account's verify token marks that account's webhook verified; a wrong token gets 403** (user story 11).
+   - **Why:** the GET carries no body, so the token itself is what identifies the account (D6).
+6. **Send a test message, then reply from the phone; the tab shows the last message received** (user story 11).
+   - Uses the maintainer's own Meta test number, read into a shell variable at run time.
+7. **An unlinked number gets only instructions** (user story 2).
+   - **Why:** no data before linking.
+   - Two senders side by side, one a seeded user's number and one unknown, get the same reply.
+8. **Linking with the shown code works** (user story 1).
+   - **Why:** both proofs together.
+   - Prove the user isn't linked first, link them, then show the identity row.
+9. **A used or expired code fails** (user story 1).
+   - **Why:** a code is single-use and short-lived.
+10. **A number linked to another account is refused** (user story 1).
+    - **Why:** no takeover.
+11. **The mode switch persists** (user story 3).
+    - **Why:** the user's choice beats the default.
+12. **Organization list shows only accepted memberships** (user story 4).
+    - **Why:** a pending invitation is not access.
+13. **Create an organization through the form, confirm, then show the new organization and owner membership** (user story 5).
+14. **Items page 1, then 2, then back** (user story 6).
+    - **Why:** paging keeps its cursor on the server, so an old button can't jump organizations.
+15. **A member without `features.crud.manage` can't create, even by replaying an old Confirm** (user story 9).
+    - **Why:** permission is rechecked when the action runs.
+16. **Another organization's item reads as "not found"** (user story 9).
+    - **Why:** nobody can probe other organizations' data.
+17. **Delete, then Cancel; the item is still there** (user story 6).
+18. **Products paging and search for an organization with a store** (user story 7).
+    - The same request for an organization without a store gives "no store connected".
+19. **In AI mode, "add an item called Monthly report"** (user story 8).
+    - **Why:** the model can't confirm on the user's behalf.
+    - Expect the Confirm and Cancel buttons, no item until Confirm, then the saved item.
+20. **Every reply has a way back** (user story 21).
+    - **Why:** nobody is ever stuck (D17).
+    - Show the seeded linked user's last 20 outbound messages as whole rows, each with a Back or Main menu option; then send `menu` in the middle of a form and see the main menu.
+21. **With the `log` backend, no request reaches Meta, and every reply is in the table** (user story 10).
+22. **Real phone, with the maintainer's own Meta test number and tunnel address read into shell variables at run time** (user stories 1, 5, 6 and 11).
+    - Steps: connect the number with the form, link, create an item, list items.
+23. **Troubleshoot the real number from the WhatsApp tab** (user story 23).
+    - **Why:** these are the last-resort repairs a stuck customer will need, and they act on Meta's side, so only a real number proves them.
+    - Show Meta's status for the number. Request a code and verify it, which an already-verified number should refuse with `136024`. Re-subscribe the app. Then show the action-log entries, with no PIN or code in them.
+    - `register` is left out of routine checks, because each attempt counts against Meta's 10 per 72 hours.
+
+## 13. Human checks
+
+> **Human checks start here.** They run by hand, top to bottom, against the local stack, your own Meta test number and your own phone (agents.md section 1.3). Everything you run is in this section, and the section ends at the line "**Human checks end here.**". Run them from this file rather than from chat, which can drop backslashes.
+
+Rewritten in Step 1.17 as the fast path to a real message. Checks 1 to 5 connect your organization's internal communications number, link your phone and get the menu. The rest go through what the team can do, and the WhatsApp tab. Webhooks, signatures and permissions are covered by the automated tests (section 12), so they aren't repeated here.
+
+Nothing personal is written in this file: real values go into `packages/backend/.env`, which git ignores, into the web app's forms, or into shell variables when you run the checks.
+
+### Setup
+
+Once, before the first check.
+
+1. **In Meta's App Dashboard** (https://developers.facebook.com/apps, then our app). Our app is the one Meta app every organization's number is connected to (Step 1.18).
+   - For check 1, under **WhatsApp** and **API Setup**, note three values the organization admin types: the test number's **Phone number ID** (under **From**), the **WhatsApp Business Account ID** shown beside it, and an **Access token** (**Generate access token**; it lasts about 24 hours, and a System User's token lasts longer, under Business Settings, **System users**).
+   - For step 3, under **App settings** and **Basic**, our app's **App secret** (**Show**).
+   - Under **To**, add your own WhatsApp number and enter the code Meta sends it. A test number can only message numbers listed there.
+
+2. **An encryption key,** which encrypts every stored access token, and **a verify token** for our app's webhook, any long random string:
+
+   ```shell
+   docker compose run --rm -T backend python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+   ```shell
+   python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+3. **In the untracked `packages/backend/.env`,** these six lines. Each `<…>` is your own value: our app's App secret from step 1, the verify token and key from step 2, and an OpenAI key from https://platform.openai.com/api-keys for the assistant.
+
+   ```shell
+   WHATSAPP_ENABLED=True
+   WHATSAPP_APP_SECRET=<our app's App secret, step 1>
+   WHATSAPP_VERIFY_TOKEN=<the verify token, step 2>
+   WHATSAPP_TOKEN_ENCRYPTION_KEY=<the key from step 2>
+   WHATSAPP_SEND_BACKEND=META
+   OPENAI_API_KEY=<your OpenAI key>
+   ```
+
+   Delete any `WHATSAPP_PLATFORM_*` lines: they're no longer read.
+
+4. **The tunnel.** In its own terminal, start a tunnel to the backend's port, with your static ngrok domain, and leave it running:
+
+   ```shell
+   ngrok http --url=<your ngrok domain> 5001
+   ```
+
+5. **The stack.** Restart it, so every container reads `.env`:
+
+   ```shell
+   pnpm saas down
+   pnpm saas up
+   ```
+
+   Then, in the terminal you run the checks in, check the worker is up. It answers every message:
+
+   ```shell
+   docker compose ps celery_default --format '{{.Service}} {{.State}}'
+   ```
+
+   **Expect:** `celery_default running`.
+
+6. **Your values, in this terminal.** Your tunnel address, your login email, the name of an organization you own, and your own WhatsApp number, digits only with its country code:
+
+   ```shell
+   read -r -p "Tunnel address (https://…): " TUNNEL_URL
+   read -r -p "Login email: " OWNER_EMAIL
+   read -r -p "Name of an organization you own: " ORG_A
+   read -r -p "Your WhatsApp number (digits, with country code): " MY_NUMBER
+   ```
+
+7. **The web app,** at http://localhost:3000, logged in as yourself.
+
+**If a reply doesn't arrive** in any check, show the last three replies queued for your number, whole, with their status and Meta's error code:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppMessage; print(json.dumps(list(WhatsAppMessage.objects.filter(contact__wa_id='$MY_NUMBER', direction='OUTBOUND').order_by('-pk').values()[:3]), indent=4, default=str))"
+```
+
+- `"status": "SENT"` or `"DELIVERED"` means Meta accepted it.
+- `"FAILED"` comes with Meta's code; for example, `131047` means the 24-hour window is closed, so send any message from the phone first.
+- `"QUEUED"` means the worker isn't sending.
+
+### Who can do what
+
+- **On the internal number:** a linked member of its organization gets the menus, forms and assistant, in that organization. Anyone else gets no reply, except to `link <code>`.
+- **Linking:** any member of the organization, from their profile page.
+- **The WhatsApp tab:** `whatsapp.view` (Owner, Admin and Member by default) sees the numbers and their status; `whatsapp.manage` (Owner and Admin) connects, tests, troubleshoots and disconnects them.
+- **In the menus:** item reads need `features.crud.view`, item writes `features.crud.manage`, products `shopify.view`, and renaming the organization `org.settings.edit`. Every write needs your own Confirm press.
+
+### The fast path
+
+#### 1. Connect your internal communications number on the WhatsApp tab (user story 11)
+
+- **Why:** every number belongs to an organization, and is connected by its admin to our one Meta app, with three values and no App secret (Step 1.18). Meta checks the token, and our app is subscribed to the number's WhatsApp Business account, before anything is saved.
+- **Acts on:** your organization `$ORG_A`, and your Meta test number as its internal number.
+
+**Prove** your organization has no internal number yet:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppAccount; print(json.dumps(list(WhatsAppAccount.objects.filter(tenant__name='$ORG_A', purpose='INTERNAL_COMMUNICATIONS').values()), indent=4, default=str))"
+```
+
+**Expect:** `[]`. If an active one is listed, from an earlier run, disconnect it on the tab first.
+
+**In the web app:**
+
+1. Open **Organization settings** for `$ORG_A`, then **WhatsApp**. **Expect:** two sections, **Internal communications number** and **External communications numbers**, each with what it's for, an example, a **Connect a number** form and its own list.
+2. In the **Internal communications number** section, enter setup step 1's three values (Phone number ID, WhatsApp Business Account ID, access token) and press **Connect number**. There's no App secret field. **Expect:** `<number> is connected: messages to it now reach this app.` Your number appears in this section's list, with **Credentials verified** and **App subscribed**.
+
+**Show** the stored number and the forms published for it:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppAccount, WhatsAppFlow; account = WhatsAppAccount.objects.get(tenant__name='$ORG_A', purpose='INTERNAL_COMMUNICATIONS', is_active=True); print(json.dumps(list(WhatsAppAccount.objects.filter(pk=account.pk).values()), indent=4, default=str)); print(json.dumps(list(WhatsAppFlow.objects.filter(waba_id=account.waba_id).values()), indent=4, default=str))"
+```
+
+**Expect:**
+
+- the number's whole row, with `"purpose": "INTERNAL_COMMUNICATIONS"`, your organization's id in `tenant_id`, `"connection_method": "MANUAL"`, `"is_active": true`, and both a `credentials_verified_at` and a `subscribed_at` time. `access_token_encrypted` holds the token encrypted, never the token itself.
+- two forms' whole rows, `item` and `organization`, each with Meta's Flow id: connecting published them
+
+If the forms list is empty, the worker's log says why: `docker compose logs celery_default --tail 50`.
+
+#### 2. Our app's webhook, set once (user story 11)
+
+- **Why:** Meta sends every connected number's messages to our app's one webhook URL, checks the URL with `WHATSAPP_VERIFY_TOKEN`, and signs every message with `WHATSAPP_APP_SECRET` (Step 1.18). It's set once for the app, never per number or per organization.
+- **Acts on:** our Meta app's webhook settings. If it's already set from an earlier run with the same tunnel address and verify token, press **Verify and save** again anyway: it proves the backend answers.
+
+Print the Callback URL, your tunnel's:
+
+```shell
+echo "$TUNNEL_URL/api/whatsapp/webhook/"
+```
+
+**In Meta's App Dashboard,** go to **WhatsApp**, **Configuration**, **Webhook**, **Edit**:
+
+1. Set **Callback URL** to the address printed above, and **Verify token** to your `WHATSAPP_VERIFY_TOKEN` from setup step 2.
+2. Press **Verify and save**. **Expect:** Meta saves it. It only does if the URL answered its check with the challenge.
+3. Under **Webhook fields**, **Manage**, subscribe to `messages`.
+
+In the ngrok terminal, **expect:** `GET /api/whatsapp/webhook/ 200 OK`, and from now on `POST /api/whatsapp/webhook/ 200 OK` for every message: a `403 Forbidden` means `WHATSAPP_APP_SECRET` isn't our app's App secret.
+
+#### 3. A phone that isn't linked gets no reply (user story 2)
+
+- **Why:** a store customer who finds the team's number hears nothing (maintainer's decision, 2026-10-22).
+- **Acts on:** your phone, not linked yet.
+
+**On the phone:** send `hi` to the test number. **Expect:** no reply, after waiting half a minute.
+
+**Show** that the message arrived and nothing went back:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppMessage; print(json.dumps(list(WhatsAppMessage.objects.filter(contact__wa_id='$MY_NUMBER').order_by('-pk').values()[:3]), indent=4, default=str))"
+```
+
+**Expect:** your `hi` first, with `"direction": "INBOUND"` and `"status": "PROCESSED"`, and no `OUTBOUND` row after it. The tab's row for the number now also shows **Message received**.
+
+#### 4. Link your phone from the profile page (user stories 1 and 3)
+
+- **Why:** both proofs at once: your login names the account, and Meta's signed webhook proves the phone. A member links once per organization.
+- **Acts on:** your account, your phone and `$ORG_A`'s internal number.
+
+**In the web app,** open your profile:
+
+1. **Expect:** a **WhatsApp** card with a block for `$ORG_A`, saying its team texts your test number, with **Your WhatsApp number** and **Get a link code**.
+2. Type your number and press **Get a link code**. **Expect:** a six-digit code, your number masked to its last four digits, the time the code expires, **Open WhatsApp** and **I've sent it**.
+
+**On the phone:** send `link <code>` to the test number, or open the link from **Open WhatsApp**. **Expect:** `Your WhatsApp number is now linked to your account (<your email>) for <your organization>.`
+
+**In the web app,** press **I've sent it**. **Expect:** `Linked to <masked number> since <today>.`, with **Menus and forms** and **AI assistant**.
+
+**Show** the link:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppIdentity; print(json.dumps(list(WhatsAppIdentity.objects.filter(contact__wa_id='$MY_NUMBER').values()), indent=4, default=str))"
+```
+
+**Expect:** one whole row: your user's id in `user_id`, the internal number's id in `account_id` (the same `id` as check 1's row), an empty `conversation_mode` (the default applies) and a `linked_at` time.
+
+#### 5. The main menu, in your organization (user stories 4 and 21)
+
+- **Why:** the number belongs to one organization, so there's nothing to pick (maintainer's decision, 2026-10-22), and every screen offers a way back (D17).
+
+**On the phone:** send `hi`. **Expect:** `You're working in <your organization>. What would you like to do?`, with a **Menu** button. It opens **Items**, **New item**, **Products** and **Rename organization**, then **Main menu**. There's no **Organizations** and no **Create organization**.
+
+### What the team can do on the phone
+
+Seed demo data first: 20 items in your organization, a second organization, and a Member. The command keeps your connected internal number, since an organization has one:
+
+```shell
+docker compose run --rm -T backend python manage.py whatsapp_seed_demo --email "$OWNER_EMAIL" --organization "$ORG_A"
+```
+
+**Expect:** a line for each demo external number (`100000000000801` to `100000000000804`), the Member, the linked demo user, and `Internal number of <your organization>: <your phone number id>`.
+
+#### 6. Items, 7 to a page (user story 6)
+
+**On the phone:**
+
+1. From the main menu, tap **Items**. **Expect:** `Items in <your organization>, page 1 of 3.`, with `Demo item 01` onwards, 7 to a page, then **Next** and **Main menu**.
+2. Tap **Next**. **Expect:** page 2, with **Previous**, **Next** and **Main menu**.
+3. Tap an item. **Expect:** `Item: <name>`, with **Edit**, **Delete** and **Back**.
+4. Tap **Back**. **Expect:** page 2 again.
+5. Send `menu`. **Expect:** the main menu.
+
+#### 7. A new item through the form, saved only on Confirm (user stories 6, D9 and D11)
+
+- **Why:** a form's answers are checked by the website's own rules, and nothing is saved before your own press.
+- **Acts on:** the item `Human check item` in your organization.
+
+**Prove** there's no such item:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.demo.models import CrudDemoItem; print(json.dumps(list(CrudDemoItem.objects.filter(name='Human check item').values()), indent=4, default=str))"
+```
+
+**Expect:** `[]`.
+
+**On the phone:**
+
+1. From the main menu, tap **New item**. **Expect:** `Fill in the form to create an item in <your organization>.`, with a **New item** button.
+2. Open it. **Expect:** a form with only **Name**, empty. There's no organization to choose.
+3. Type `Human check item` and press **Continue**. **Expect:** `Create Human check item in <your organization>?`, with **Confirm**, **Cancel** and **Main menu**.
+
+**If the form doesn't open,** this settles open question 2. Show the last replies (the block after setup), and record Meta's error code here. If Meta asks for the number's business encryption key, make one and upload it, then send `menu` and try again:
+
+```shell
+mkdir -p logs
+openssl genrsa -out logs/flows-private.pem 2048
+openssl rsa -in logs/flows-private.pem -pubout -out logs/flows-public.pem
+read -r -p "Phone number ID: " PHONE_NUMBER_ID
+read -r -s -p "Access token: " ACCESS_TOKEN; echo
+curl -s -X POST "https://graph.facebook.com/v26.0/$PHONE_NUMBER_ID/whatsapp_business_encryption" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  --data-urlencode "business_public_key@logs/flows-public.pem" | python3 -m json.tool
+```
+
+**Expect:** `"success": true`. Meta's reference is https://developers.facebook.com/docs/whatsapp/cloud-api/reference/whatsapp-business-encryption; `logs/` is ignored by git, so the keys stay on your machine.
+
+Run the first command again: still `[]`. **On the phone:** tap **Confirm**. **Expect:** `Created Human check item in <your organization>.` Run the first command once more. **Expect:** one whole row, `"name": "Human check item"`, with your organization's id in `tenant_id` (the same `tenant_id` as check 1's row).
+
+#### 8. Edit, then Delete with Cancel and Confirm (user story 6)
+
+**On the phone:**
+
+1. Open **Items**, find `Human check item` (items are by name), and tap **Edit**. **Expect:** the form, holding `Human check item`.
+2. Clear the name and press **Continue**. **Expect:** `Name: This field may not be blank.`, then the form again.
+3. Type `Human check item, renamed`, press **Continue**, then **Confirm**. **Expect:** `Saved: the item is now called Human check item, renamed.`
+4. Open the item and tap **Delete**. **Expect:** `Delete Human check item, renamed? This can't be undone.` Tap **Cancel**. **Expect:** `Cancelled. Nothing was done.`
+5. Tap **Delete** again, then **Confirm**. **Expect:** `Deleted Human check item, renamed.`
+6. Tap **Confirm** on the first question, further up the chat. **Expect:** `That menu has expired, so here's the main menu.` Each screen's buttons last until the next message (section 8.5), so nothing runs.
+
+Run check 7's first command. **Expect:** `[]`.
+
+#### 9. Renaming the organization (user story 5)
+
+**On the phone:**
+
+1. From the main menu, tap **Rename organization**. **Expect:** a form holding your organization's current name.
+2. Add ` (renamed)` to it, press **Continue**, then **Confirm**. **Expect:** `Renamed: the organization is now called <name> (renamed).`
+3. Rename it back the same way. Your shell's `$ORG_A` holds the old name, so the commands below still find it once it's back.
+
+#### 10. Products, newest first, with a typed search (user story 7)
+
+- **Acts on:** your organization's connected Shopify store, from the Shopify plan's checks. Without one, step 1 tells you so.
+
+**On the phone:**
+
+1. From the main menu, tap **Products**.
+   - **Without a store, expect:** `No Shopify store is connected to <your organization> yet. Connect one on the website's Shopify page.`
+   - **With one, expect:** `<your store>.myshopify.com: browse its products, newest first, or search them.`, with **Browse**, **Search** and **Main menu**.
+2. Tap **Browse**. **Expect:** your newest products first, each with its price and status, and **Next** when there are more than 7.
+3. Tap a product. **Expect:** its picture (for a JPEG or PNG), name, price and status, with **Back**, which returns to the same page.
+4. Send `menu`, go back to the store and tap **Search**. **Expect:** `Type what you're looking for in <your store>, …`. Type part of a product's name. **Expect:** `Products in <your store> matching "<your words>", newest first.`
+
+#### 11. The assistant: a write is confirmed by your press only (user stories 3 and 8)
+
+- **Why:** the model can only propose a write; the server shows its own summary, and only your Confirm runs it (D11).
+
+**On the phone:**
+
+1. Send `mode ai`. **Expect:** `You're now talking to the assistant: ask in your own words. Send *mode menu* for menus.`
+2. Send `what items do I have?`. **Expect:** a short answer naming some of the demo items.
+3. Send `add an item called Monthly report`. **Expect:** `Create Monthly report in <your organization>?`, with **Confirm**, **Cancel** and **Main menu**.
+
+**Show** the saved mode and that nothing is created yet:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.demo.models import CrudDemoItem; from apps.whatsapp.models import WhatsAppIdentity; print(json.dumps(list(WhatsAppIdentity.objects.filter(contact__wa_id='$MY_NUMBER').values()), indent=4, default=str)); print(json.dumps(list(CrudDemoItem.objects.filter(name='Monthly report').values()), indent=4, default=str))"
+```
+
+**Expect:** the identity's whole row, with `"conversation_mode": "AGENTIC"` and the internal number's id in `account_id`, and `[]` for the item.
+
+**On the phone:** tap **Confirm**. **Expect:** `Created Monthly report in <your organization>.` Then send `delete it`, and tap **Confirm**. **Expect:** `Deleted Monthly report.` Then send `mode menu`. **Expect:** `You're back on menus and forms. …`
+
+#### 12. Escape words work everywhere (user story 21)
+
+**On the phone:**
+
+1. Tap **New item** and open the form, but don't submit it. Send `menu`. **Expect:** the main menu.
+2. Send `help`. **Expect:** a reply naming `menu`, `mode ai`, `mode menu`, `cancel` and `unlink`.
+3. Tap **Delete** on any demo item, then send `cancel` instead of pressing a button. **Expect:** `Cancelled.` and the main menu. Tapping that **Confirm** afterwards gets `That menu has expired, so here's the main menu.`, and the item is still listed.
+
+#### 13. Unlinking forgets the conversation, and the number goes quiet (user story 1)
+
+- **Why:** the next person linked to this phone must inherit nothing, and an unlinked phone hears nothing.
+
+**On the phone:** send `unlink`. **Expect:** `This number is now unlinked from your account. …` Then send `hi`. **Expect:** no reply.
+
+**Show** the link and the conversation:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppConversation, WhatsAppIdentity; print(json.dumps(list(WhatsAppIdentity.objects.filter(contact__wa_id='$MY_NUMBER').values()), indent=4, default=str)); print(json.dumps(list(WhatsAppConversation.objects.filter(contact__wa_id='$MY_NUMBER').values()), indent=4, default=str))"
+```
+
+**Expect:** `[]` for the link, and the conversation's whole row, with its `"state"` holding only `next_choice`.
+
+Link again from the profile page (check 4) before going on.
+
+### The WhatsApp tab and the profile page
+
+#### 14. What each role sees on the tab (user story 11)
+
+- **Why:** only `whatsapp.manage` connects, tests, troubleshoots and disconnects numbers; `whatsapp.view` sees their status.
+- **Acts on:** numbers that are already there. Nothing new gets connected in this check:
+  - your real test number, connected as the internal number in check 1
+  - four fake demo numbers, `100000000000801` to `100000000000804`, which `whatsapp_seed_demo` created as external numbers before check 6. Their tokens are fake, so they never reach Meta.
+
+1. **Look only.** As yourself, open the WhatsApp tab. **Expect:**
+   - **Internal communications number:** your real test number, with its three proofs.
+   - **External communications numbers:** the four fake demo numbers. 801 has **Credentials verified** only, 802 also **App subscribed**, 803 all three proofs, and 804 is **Disconnected**.
+   - **Send test message**, **Troubleshoot** and **Disconnect** on every connected number, and both forms.
+2. **An empty form is stopped in the browser.** In the external section, press **Connect number** without typing anything. **Expect:** three "… is required" messages, and nothing sent.
+3. **A second internal number is refused.** This tries, on purpose, to add another internal number while yours is connected. In the internal section, type the made-up values `100000000000999`, `200000000000999` and `EAAGfake`, and press **Connect number**. **Expect:** `Your organization's team already texts <your number>. Disconnect it first to connect another internal communications number.` Nothing is connected, Meta isn't asked, and your real number is unchanged.
+4. **A Member only looks.** Log out and log in as `whatsapp-member@example.com` (password `WhatsAppMember123!`). Open the same tab. **Expect:** the same numbers and proofs, and no forms and no buttons.
+
+#### 15. One link per organization on the profile page (user stories 1 and 3)
+
+- **Acts on:** the second organization the demo seeded, `WhatsApp demo: second organization`, and the demo user `whatsapp-linked@example.com` (password `WhatsAppLinked123!`), a Member there.
+
+1. Log in as `whatsapp-linked@example.com` and open the profile. **Expect:** two blocks, one for your organization and one for the second, each linked to `*******0001`, each with its own mode.
+2. In the second organization's block, choose **AI assistant**. **Expect:** only that block changes; your organization's stays as it was.
+3. In the second organization's block, press **Unlink**, then **Unlink my number**. **Expect:** that block offers to link again; your organization's is still linked.
+
+#### 16. Test message and troubleshooting on your internal number (user story 23)
+
+- **Why:** the repairs act on Meta's side, so only a real number proves them.
+
+As yourself, on the WhatsApp tab, under your internal number:
+
+1. Type your own number into **Send a test message to** and press **Send test message**. **Expect:** `Sent. Meta's message id: wamid.…`, and Meta's hello_world template on your phone.
+2. Press **Troubleshoot**. **Expect:** Meta's status, `CONNECTED`, and its code verification, quality rating, display name review and verified name.
+3. Press **Request a code by SMS**. A verified test number should refuse, with Meta error `136024` and a link to Meta's page.
+4. Press **Re-subscribe the app**. **Expect:** `App subscribed.`
+5. Leave **Register number** alone: each attempt counts against Meta's 10 per 72 hours. Check only that the warning shows, and that the button stays disabled until six digits are typed.
+
+**Show** the repairs in the activity log, with no PIN or code in them:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.multitenancy.models import ActionLog; print(json.dumps(list(ActionLog.objects.filter(entity_type='whatsapp_account').order_by('-pk').values()[:5]), indent=4, default=str))"
+```
+
+**Expect:** one whole row per repair, newest first, each with `"operation"` and `"outcome"` in its `metadata`, and Meta's error code when Meta refused.
+
+> **Human checks end here.** The sections below are reference, not steps to run.
+
+## 14. Open questions
+
+1. **The organization-rename permission code.** Answered on 2026-10-15: `org.settings.edit` (Step 1.9).
+2. **Do endpoint-less Flows need an uploaded encryption key?** Not stated in Meta's docs (Step 1.11's check). Settled by section 13's check 7 on a real number, which also says how to upload a key if Meta asks for one.
+3. **Meta's conflicting pricing pages** (section 6.1). Re-read before phase 2, when organizations start paying for their own numbers.
+4. **Which payment provider a store uses inside Shopify Checkout.** Closed on 2026-10-15: not this app's concern (D13).
+5. **Shopify protected customer data.** A public app needs approval to receive store customers' phone numbers in order webhooks (section 6.2). Development stores work without it.
+6. **WhatsApp Business app coexistence in South Africa.** Using a business's existing app number is not documented for South Africa; this matters only for phase 4.
+7. **`render.yaml` declares no `SHOPIFY_*` or `PAYFAST_*` keys** today. The WhatsApp keys are added there in Step 1.15; whether the missing ones are added too is the maintainer's call. The WhatsApp keys were added on 2026-10-20.
+8. **One active platform account, enforced by the database:** Step 1.13d, after the human checks (maintainer's choice, 2026-10-20). Superseded on 2026-10-22: Step 1.17 removes the platform number and enforces one active internal communications number per organization instead.
+
+## 15. Sources
+
+- Meta, Shopify, PayFast, OpenAI and SARS: the links in section 6, next to each fact.
+- pywa, a structured Python WhatsApp Cloud API library (started 2023). Its routing by receiving number and its Flow request objects informed D2 and D9. https://github.com/david-lev/pywa
+- Meta's official Flow endpoint examples, for checking the later encryption code. https://github.com/WhatsApp/WhatsApp-Flows-Tools
+- Chatwoot's conversation model and reply-window rule, for phase 5. https://github.com/chatwoot/chatwoot
+- django-helpdesk's assignee and follow-up models, a plain Django precedent for phase 5. https://github.com/django-helpdesk/django-helpdesk
+- The earlier Shopify plan: [`2026-10-03-shopify-app-installation-plan.md`](2026-10-03-shopify-app-installation-plan.md).
+- Working rules: [`docs/superpowers/agents.md`](../agents.md).

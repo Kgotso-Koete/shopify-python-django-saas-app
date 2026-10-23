@@ -4,6 +4,9 @@ Tests for the PayFast Django system checks (apps/payfast/checks.py).
 The checks run on every `manage.py` command and on server start. They turn a misconfigured
 PAYMENT_BACKEND=payfast deployment into a clear startup error instead of a failed payment later.
 See docs/superpowers/plans/2026-09-30-payfast-payment-backend-plan.md section 3.1.
+
+Kind of test: sanity (agents.md section 2.5). Why: they prove a misconfigured deployment fails at
+startup; nothing is faked.
 """
 
 import pytest

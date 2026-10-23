@@ -163,6 +163,10 @@ The human maintainer runs every terminal command (shell, git, docker, pnpm, nx, 
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ```
 
+- **Every message carries every block still to run, in full** (set by the human maintainer on 2026-10-17). Never write "run BLOCK 3 from my last message": diffs and long output bury earlier messages. When a fix interrupts a sequence of blocks, repeat the remaining blocks in the same message, renumbered, each with its full explanation. The human maintainer's words: "I am not going to scroll all the way up in our chat through all the text and diffs".
+  - **The full set, with what's done ticked off** (added on 2026-10-21). Every message that hands over commands lists the whole sequence, in order. A command whose output the human maintainer has already sent is marked ✅ with its result; every other command is written out in full. The human maintainer's words: "I dont want to scroll through your messages to find the commands and the order and any missing ones."
+  - **Human checks run from the plan file** (section 1.3), so for those, each message carries the whole ordered checklist (setup steps and numbered checks), with ✅ on those reported, and the next check's commands in full.
+- **An edit request and commands never share a message** (set by the human maintainer on 2026-10-21). A message either asks permission for an edit (section 1.5), or hands over commands or checks to run, never both. The human maintainer's words: "Never make requests for an edit and issue a command/check verification in the same message."
 - **Readable beats short.** Write each command out on its own line rather than folding a few into a shell loop: two plain `pnpm nx run …:lint` and `pnpm nx run …:type-check` lines, not `for t in lint type-check; do … done`. The human maintainer copies and pastes the commands either way, so readability is what matters (set by the human maintainer on 2026-10-14). A loop is kept only where writing every command out would be long and repetitive, such as the 15 frontend projects or the 12 backend modules in the README's Testing section.
 - **Command output goes to the repository's gitignored `logs/` folder** (`mkdir -p logs; … > logs/<name>.log 2>&1`), never to the repository root, the home folder or `/tmp`, so the human maintainer always knows where every log is.
 
@@ -174,6 +178,13 @@ The human maintainer runs every terminal command (shell, git, docker, pnpm, nx, 
 ### 1.2 Use the real entrypoint for verification
 
 When giving manual verification steps, use the real top-level command a user or a deployment would run (a documented `pnpm saas` command, an Nx target), not a hand-built sequence of its internal sub-steps. Examples: `pnpm saas down` then `pnpm saas up`, not a hand-picked `docker compose up` of individual services; and `pnpm nx run backend:test`, not a bare `pytest`, because the Nx target also runs the formatter and the migrations check. Verification should exercise the whole real workflow, not an approximation that happens to reach the same state.
+
+**Look the command up before writing one** (set by the human maintainer on 2026-10-15). Before handing over a command, check whether a documented one already does the job:
+
+- [`packages/internal/docs/docs/api-reference/index.mdx`](../../packages/internal/docs/docs/api-reference/index.mdx) has the "Common Commands" quick reference.
+- [`packages/internal/docs/docs/api-reference/backend/commands.mdx`](../../packages/internal/docs/docs/api-reference/backend/commands.mdx) lists every backend command.
+
+For example, migrations are made with `pnpm saas backend makemigrations`, not a hand-built `docker compose run --rm backend python manage.py makemigrations`.
 
 ### 1.3 The verification ladder
 
@@ -187,6 +198,10 @@ When giving manual verification steps, use the real top-level command a user or 
 
 - **GREEN step:** run the project's full Nx targets, not just the single file.
   - Backend: `pnpm nx run backend:test`. It runs `ruff check` (report-only), `black`, `manage.py makemigrations --check --dry-run`, then the whole pytest suite with coverage.
+  - **When the full backend run is needed** (set by the human maintainer on 2026-10-16). It takes 10 to 15 minutes, so it runs only where it can catch something.
+    - **Full run:** `pnpm nx run backend:test` when a step touches anything outside its own Django app (`config/`, `common/`, another app, `pyproject.toml`, the root `conftest.py`), and always before a commit.
+    - **A step that touches only its own app's files** runs that app's tests (`docker compose run --rm -T -e DATABASE_URL= backend pytest apps/<app>`) plus `pnpm saas backend black`.
+    - **If that step changed a model,** `pnpm saas backend makemigrations` must list only the app's expected migration, and a second run must say "No changes detected". That stands in for the full run's missing-migrations check.
   - Frontend: `pnpm nx run <project>:lint`, `pnpm nx run <project>:type-check` and `pnpm nx run <project>:test --watchAll=false`, for every Nx project touched.
 
   These are the same targets CI runs (`.github/workflows/backend.yml`, `.github/workflows/webapp.yml`). They catch a GREEN whose tests pass but that breaks a type, a lint rule, formatting or a missing migration.
@@ -213,6 +228,17 @@ When giving manual verification steps, use the real top-level command a user or 
   - for an HTTP endpoint (a webhook such as the PayFast ITN, the REST API, or the GraphQL API at `/api/graphql/`), the exact, human-readable `curl` command, with a login step and one cookie file per user where needed
 
   The checks live in the plan, not only in chat, so they survive between sessions and can be re-run at any time. Aim for 5 to 20 checks per step. Seeded rows the checks act on get fixed ids, so the commands can be pasted as written.
+
+- **Human checks have their own top-level "Human checks" section in the plan, with a clear start and end** (set by the human maintainer on 2026-10-16).
+  - It opens with a line saying the human checks start there, and closes with "Human checks end here.", so nothing a human runs is mixed into planning text.
+  - Inside, in this order:
+    - Setup
+    - Seeded data
+    - Who can do what
+    - the checks, grouped by feature and numbered
+  - Each check's title states its expected result, for example "A bad signature: 403, and nothing stored". Each carries its **Why**, **Acts on**, commands and **Expect** lines.
+  - A list of checks not yet written out stays elsewhere, under a heading that says it's planned, not runnable.
+  - The model is the "Human checks" section of `docs/plans/10-profile-editing.md` in the sister repository `fastapi-clean-example`.
 
 - **Human checks are exact and unambiguous: no placeholders, ever.** The human maintainer's words: "No placeholder values please, it makes life hard for no reason. No ambiguity."
   - Every login is written out as its own command or click path, with the real seeded email and password, right before that user's first step. Never "log in as X first" without the command.
@@ -321,6 +347,29 @@ A hardcoded literal in the consumer's tests alone leaves the environment-variabl
 
 For a large, multi-step plan, the human maintainer prefers one continuous session over splitting the work across several PRs or sessions, because an AI agent loses context between sessions. The discipline inside that push is still strict TDD: one step, one test, a confirmed RED, a confirmed GREEN.
 
+### 2.5 Every test file says what kind of test it is
+
+Set by the human maintainer on 2026-10-17. Upstream keeps every app's tests in one flat `tests/` folder, with no unit or integration folders and no pytest markers, and CI runs them all at once. This fork keeps that layout (section 3.1), so the boundary between kinds of test is written down instead.
+
+- **Each backend test file's module docstring names its kind,** one of four (set by the human maintainer on 2026-10-17):
+  - **sanity:** the app is wired up and configured correctly. The settings read their environment variables (`test_settings.py`), and the Django system checks catch a broken configuration (`test_checks.py`).
+  - **unit:** one module's logic on its own, with no database and no network. An API client counts, with the provider's HTTP faked. Such a file still carries `pytestmark = pytest.mark.django_db`, only because the root `conftest.py`'s autouse fixtures need the database.
+  - **integration:** the code working with a real collaborator. That's either the test database, for a model, service, command or Celery task, or a request through a route with Django's test client: a view, a webhook, the GraphQL API or the admin.
+  - **smoke:** a whole user journey through the real stack, across several entrypoints, such as PayFast's `test_smoke.py`.
+- **The docstring says why the file is that kind, and what's faked,** for example `Kind of test: integration (agents.md section 2.5). Why: the client saves the wa_id Meta returns on the contact, in the test database; Meta's HTTP is mocked.` No test reaches a real third-party service. A file that mixes kinds is labelled by its main kind, and the Why line names the exception.
+- **Support code gets no such line:** `conftest.py`, `factories.py`, payload builders and other helpers aren't tests (section 2.1).
+- **Each plan's Verification section has a short "Kinds of test" list,** grouping the plan's test files by kind, so a reader sees at a glance how much is unit-tested logic and how much is integration through the database or a route.
+
+### 2.6 No `transaction=True` backend tests
+
+Found on 2026-10-17. A test marked `@pytest.mark.django_db(transaction=True)` empties every table when it ends, including the rows data migrations created, such as the permissions. `setup.cfg` runs pytest with `--reuse-db`, so the emptied database carries into the next local run, and unrelated tests that read those rows then fail there, while CI, which builds a fresh database, still passes. `serialized_rollback=True` doesn't help: it restores the data before such a test, not after it.
+
+- **Keep every test in the normal test transaction.** Upstream has no `transaction=True` tests either.
+- **When a test seems to need one, change what it waits on.** Two examples from the WhatsApp send queue:
+  - A lock that a second connection holds: use a Postgres advisory lock, which needs no committed rows.
+  - A Celery task run with `apply()`, whose `config/celery.py` signals close the connection: disconnect those receivers in a test fixture.
+- **If the local database is already emptied,** rebuild it once: `docker compose run --rm -T -e DATABASE_URL= backend pytest --create-db apps/<app>`.
+
 ---
 
 ## 3. Changing existing code
@@ -374,6 +423,13 @@ Every capability must work on the infrastructure the project already runs: the s
 Every implementation plan follows the structure the upstream code already uses:
 
 - **Backend:** one Django app per capability under `packages/backend/apps/`. Each app has `models.py`, `managers.py`, `services/` (business logic), `serializers.py`, `schema.py` (Graphene types, queries and mutations), `webhooks.py`/`views.py`, `urls.py`, `tasks.py`, `admin.py` and `tests/`. Shared code goes in `common/`, and the composition root is `config/`. Business logic goes in services, not in resolvers or views, and an app doesn't reach into another app's internals when a service function exists.
+- **A new Django app gets its empty `migrations/__init__.py` in the same GREEN as its first model** (set by the human maintainer on 2026-10-15).
+  - **Why it's needed:** without an app name, `makemigrations` only looks at apps that already have a `migrations` package. `pnpm saas backend makemigrations` runs it without one, so a new app with no package is skipped silently, with "No changes detected".
+  - **Why nothing else catches it:**
+    - The `makemigrations --check` step in `backend:test` skips the app the same way.
+    - The test database still gets the app's tables, because Django creates tables directly for an app without migrations.
+    - So every check passes while a real deployment would have no tables at all.
+  - **Then confirm:** run `pnpm saas backend makemigrations`, and check that the new app appears in its output.
 - **Frontend:** code lives in the Nx libraries under `packages/webapp-libs/` and is imported through their public entry points. The `@nx/enforce-module-boundaries` ESLint rule enforces this, and it is never silenced.
 - **GraphQL contract:** after a schema change, regenerate the committed schema and types with `pnpm nx run webapp-api-client:graphql:download-schema`, and commit them in the same change as the backend code.
 
@@ -409,6 +465,14 @@ Features in this codebase are comprehensive, production-ready vertical slices th
 - **Before proposing a feature,** check that it would be useful to many different applications. If it would only be useful to one product, it belongs in that product's fork, not here.
 - **A slice includes seed data, not just tests.** Besides its unit, integration and smoke tests, every vertical slice adds development seed data to the database (via an idempotent management command, see 1.3). A human reviewer or tester can then try the feature by hand, or demo it, straight after `pnpm saas up`, without first building up state themselves. Seed data covers the interesting cases, not just the happy path: for example an expired key as well as a valid one, or a pending invitation as well as an accepted membership. It pairs with the human-driven checks in 1.3, which should be runnable against the seeded data.
 
+### 4.5a Use cases are the north star of every design
+
+Set by the human maintainer on 2026-10-22 ("Let this be our north star for iterative design"), after an AI agent drifted into a design no use case needed: an operator-owned WhatsApp "platform number", copied from a reference app, with a new party added quietly to the plan's "Who's who" after the human maintainer's first review. The human maintainer's words: "I expect both us to think smarter about use cases that drive our design", and "I am not a machine and I can't read large amounts of documentation again and again".
+
+- **Every design proposal starts with one line naming the use case it serves,** and how it moves the feature closer to its goal. For the WhatsApp work, the goal is: a Shopify business signs up to this SaaS, connects its own store's WhatsApp number, and talks with its customers there. If that line can't be written, say so instead of proposing.
+- **A new party, role or kind of thing is raised in chat, in plain words, before it goes in any document,** and never added quietly to a plan.
+- **Decisions are short and taken one at a time,** not long option lists the human maintainer has to cross-check against the plan.
+
 ### 4.6 Every addition is a liability
 
 Every line of code, every file, every document and every comment is a liability. Each one increases the surface area for bugs and complexity, and adds cognitive load for the human who has to review, understand and maintain it. The human maintainer's attention is the ultimate bottleneck of this whole way of working, more than an AI agent's speed or output, so information is added with care.
@@ -430,6 +494,12 @@ This doesn't conflict with 4.6. Once we decide to build feature X, the code for 
 
 Code is the ideal form of documentation and of design intent. But code is best understood in relation to other code: the rest of its module, the port it implements, the use case that calls it. A reader meeting one function for the first time doesn't have that context yet. Comments supply it. They help a human understand a function before meeting the rest of its family of functions, which lowers the cognitive load of reading the code rather than adding to it.
 
+**Link the provider's documentation wherever code talks to a third-party API** (set by the human maintainer on 2026-10-15).
+
+- Application code that builds a request to an external service, or reads a payload from one, carries a comment with the absolute URL of the official documentation page for that endpoint, field or rule. External services include Meta's WhatsApp Cloud API, Shopify, PayFast and OpenAI.
+- The same goes for tests that build such a payload.
+- Debugging an integration usually means reading the provider's documentation, and the link puts it one click from the code that depends on it. It's the code-side twin of section 6.2's rule for plans.
+
 ### 5.2 Explain code before showing it
 
 Whenever the AI agent proposes code for review, it explains what the code does in three places: in the code's own design and structure, in code comments, and in the chat message. The chat explanation comes _before_ the diff, so the human maintainer never has to reverse-engineer intent from a wall of changed lines.
@@ -442,6 +512,21 @@ Every dependency the human maintainer and the AI agent add is pinned exactly.
 - **JavaScript:** an exact version with no `^` or `~` in the relevant `package.json`, added with `pnpm add --save-exact --filter <project>`.
 
 Upstream's existing constraints are mixed (`==`, `~=`, `>=`, `^`). Leave them as they are (section 3), because re-pinning them would conflict with every upstream merge. Check this whenever the dependency lists are touched.
+
+### 5.3a Call providers' HTTP APIs directly, not through their SDKs
+
+The maintainer's rule, 2026-10-20. In code the human maintainer and the AI agent write (not upstream's), a third-party API such as OpenAI's or Meta's is called with plain HTTP requests (`requests`), through one small client class of our own. Examples are `apps/whatsapp/client.py` for Meta and `apps/whatsapp/agent/provider.py` for OpenAI. The provider's SDK is neither added nor used.
+
+- **Why:** an SDK is one more dependency with its own bugs, breaking changes and deprecations. OpenAI's Assistants API was retired, and patching the `openai` SDK's client class in upstream's tests broke every later test that built one. A class of our own keeps the exact request visible in one place and testable with `requests.post` patched, and it can be changed without waiting for anyone's release.
+- **How:** set an explicit timeout on every request. Turn the provider's failures into one exception type of our own, and never put a secret, or text the provider may have echoed back from the request, in its message. Link each request to the provider's own reference page (section 5.1).
+- **Upstream's existing SDK uses** stay as they are (section 3).
+
+### 5.3b An enum is stored with exactly its member names
+
+Set by the human maintainer on 2026-10-22. Every enum in code the human maintainer and the AI agent write is stored in the database with exactly its member names: `INTERNAL_COMMUNICATIONS = "INTERNAL_COMMUNICATIONS"`, never `"internal"` or another spelling. A setting that takes an enum's values takes those same names. The human maintainer's words: "Every enum in the application (for commits we pair programme on) should be mirrored in the database, no ambiguity, no deviations, no nonsense", because "Databases are often checked by humans who have to know what fields mean semantically".
+
+- **A provider's own codes** (Meta's lowercase `sent`, PayFast's frequency `3`) are translated to the enum's names where they come in, and back where they go out, never stored as they arrive.
+- **Upstream's enums** stay as they are (section 3).
 
 ### 5.4 Docker Compose variables always have a fallback
 
@@ -469,7 +554,14 @@ Whenever an AI agent creates a plan, it always externalizes it as a file in `doc
 
 Two further sections belong in every plan where they apply, including older plans, retroactively:
 
-- **User stories.** Any feature a person uses is framed as user stories ("As a <role>, I want <capability>, so that <benefit>"), each with a few concrete acceptance points. They go in one table, so a human can scan them easily: `| Story | As a | I want | So that | Acceptance criteria |`, one row per story, with a short numbered title and the criteria as short points separated by `<br>`. Purely internal features, such as infrastructure a user never touches directly, can say "not user-facing" instead.
+- **User stories.** Any feature a person uses is framed as user stories ("As a <role>, I want <capability>, so that <benefit>"), each with a few concrete acceptance points. They go in one table, so a human can scan them easily: `| Story | As a | I want | So that | Acceptance criteria |`, one row per story, with a short numbered title and the criteria as short points separated by `<br>`. Purely internal features, such as infrastructure a user never touches directly, can say "not user-facing" instead. The rest of this list was set by the human maintainer on 2026-10-15, taken from the plans of the sister repository `fastapi-clean-example`:
+  - **Where they go:** right after the plan's Goal, before any design or Proposed Changes, so a reader meets what the feature is for before how it's built.
+  - **Who's who first, when a feature has more than one kind of user.** A short list names each kind and how the system knows them (for example "SaaS user: has an account and memberships" versus "shopper: known only by a WhatsApp number, never a member"). The "As a" column then uses exactly those names.
+  - **Each title names the steps that deliver it,** for example "4. Create an organization in chat (Steps 5, 6)", so a reader can go from a need to the code that meets it.
+  - **Cited as "user story N",** never with an ID scheme such as `US-1`. A story in another plan is cited with that plan's path. Numbers never change once given, because other documents cite them; a capability added later gets the next number.
+  - **A promise not to do something is a story too.** A boundary a user relies on, such as "a shopper never sees another store's products", gets its own row. Smaller edge cases go in the acceptance criteria of the story they belong to.
+  - **Out-of-scope items are not stories.** They go in a "Deliberately out of scope" list with the reason, so a deferred capability isn't mistaken for a promised one.
+  - **Every story is covered by at least one human check,** whose **Why** line names it ("(user story 3)"), so the checks prove the promises the stories make.
 - **Human checks.** A numbered, copy-pasteable list covering both the usual cases and the edge cases (see 1.3), so no one ever has to remember how to test a feature by hand. Use browser click paths for UI features and `curl` commands for HTTP endpoints. For other kinds, give the real command a person would run, such as a `pnpm saas` command, an Nx target or a `manage.py` command. A plan with nothing a human can usefully check says so and has no such section.
 
 ### 6.2 Choosing and citing reference repositories

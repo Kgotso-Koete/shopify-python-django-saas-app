@@ -1635,6 +1635,31 @@ human maintainer picks the number.
   Don't commit those.
 - Then `pnpm saas down` / `pnpm saas up` and the human checks.
 
+### Kinds of test
+
+The kinds are defined in agents.md section 2.5. Each file's docstring says why it's that kind and what's faked. All are in [`apps/shopify/tests/`](../../../packages/backend/apps/shopify/tests/).
+
+- **Sanity:**
+  - [`test_settings.py`](../../../packages/backend/apps/shopify/tests/test_settings.py): each setting reads its environment variable.
+  - [`test_checks.py`](../../../packages/backend/apps/shopify/tests/test_checks.py): a broken configuration fails at startup.
+- **Unit:**
+  - [`test_crypto.py`](../../../packages/backend/apps/shopify/tests/test_crypto.py)
+  - [`test_verification.py`](../../../packages/backend/apps/shopify/tests/test_verification.py)
+  - [`test_client.py`](../../../packages/backend/apps/shopify/tests/test_client.py): Shopify's HTTP mocked. Its `admin_client_for` tests are integration.
+- **Integration:**
+  - The test database:
+    - [`test_models.py`](../../../packages/backend/apps/shopify/tests/test_models.py)
+    - [`test_permissions.py`](../../../packages/backend/apps/shopify/tests/test_permissions.py)
+    - [`test_tasks.py`](../../../packages/backend/apps/shopify/tests/test_tasks.py)
+  - [`test_services_install.py`](../../../packages/backend/apps/shopify/tests/test_services_install.py): the test database, with the OAuth code exchange mocked.
+  - [`test_products.py`](../../../packages/backend/apps/shopify/tests/test_products.py): the test database, with the Admin API faked.
+  - [`test_schema.py`](../../../packages/backend/apps/shopify/tests/test_schema.py): the GraphQL API.
+  - [`test_schema_products.py`](../../../packages/backend/apps/shopify/tests/test_schema_products.py): the GraphQL API, with `fetch_products` faked.
+  - [`test_views.py`](../../../packages/backend/apps/shopify/tests/test_views.py): the install and callback routes, with `complete_install` patched.
+  - [`test_webhooks.py`](../../../packages/backend/apps/shopify/tests/test_webhooks.py): the webhook route, with HMAC-signed posts.
+  - [`test_webhooks_dispatch.py`](../../../packages/backend/apps/shopify/tests/test_webhooks_dispatch.py): the webhook route, with the Celery task patched.
+- **Smoke:** none yet.
+
 ### User stories
 
 | Story                       | As a                | I want                                              | So that                          | Acceptance criteria                                                                                                                                  |

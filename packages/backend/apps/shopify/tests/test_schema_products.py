@@ -3,6 +3,9 @@ Tests for the shopifyProducts GraphQL query (plan step 11, section 5.2 cases 5, 
 
 fetch_products is replaced by a fake, so these tests cover only the GraphQL layer: who may ask,
 which store they may ask about, and what reaches the browser. test_products.py covers the rest.
+
+Kind of test: integration (agents.md section 2.5). Why: queries go through the real GraphQL schema,
+permissions and test database; fetch_products is faked.
 """
 
 import pytest

@@ -208,7 +208,21 @@ services:
         value: gpt-5.1
       - key: MCP_SERVER_URL
         sync: false  # Set to MCP server URL if using AI Assistant (e.g., https://mcp-server-xxxx.onrender.com)
-      
+
+      # WhatsApp (optional; see packages/internal/docs/docs/features/whatsapp/index.mdx)
+      - key: WHATSAPP_ENABLED
+        value: "False"  # "True" once the keys below are set; startup checks refuse a half-configured setup
+      - key: WHATSAPP_APP_SECRET
+        sync: false  # Our Meta app's secret: it signs every number's webhooks
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false  # A long random string, also entered in our Meta app's webhook settings
+      - key: WHATSAPP_TOKEN_ENCRYPTION_KEY
+        sync: false  # A Fernet key; the same value on the worker
+      - key: WHATSAPP_SEND_BACKEND
+        value: META
+      - key: WHATSAPP_AI_MODEL
+        value: gpt-5.1  # Needs function calling; OPENAI_API_KEY above is the key
+
       # 2FA Configuration (optional)
       - key: OTP_AUTH_ISSUER_NAME
         sync: false  # Set to your app name (shown in authenticator apps)
@@ -361,6 +375,19 @@ services:
         sync: false  # Set to your frontend URL (e.g., https://webapp-xxxx.onrender.com)
       - key: VITE_EMAIL_ASSETS_URL
         sync: false  # Set to your frontend URL + /email-assets (e.g., https://webapp-xxxx.onrender.com/email-assets)
+      # WhatsApp (optional): the worker answers every message, sends the replies and runs the assistant
+      - key: WHATSAPP_ENABLED
+        value: "False"  # The same as on backend-api
+      - key: WHATSAPP_TOKEN_ENCRYPTION_KEY
+        sync: false  # The same value as on backend-api: it decrypts the numbers' access tokens
+      - key: WHATSAPP_SEND_BACKEND
+        value: META
+      - key: WHATSAPP_AI_MODEL
+        value: gpt-5.1
+      - key: OPENAI_API_KEY
+        sync: false  # For the WhatsApp assistant
+      - key: WEB_APP_URL
+        sync: false  # Your frontend URL; WhatsApp's linking instructions point to its profile page
 
   # =============================================================================
   # Celery Beat (Scheduled Tasks)

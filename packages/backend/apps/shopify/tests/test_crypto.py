@@ -1,5 +1,8 @@
 """
 Tests for token encryption/decryption.
+
+Kind of test: unit (agents.md section 2.5). Why: plain encryption functions, with no database or
+network; nothing is faked.
 """
 
 import pytest

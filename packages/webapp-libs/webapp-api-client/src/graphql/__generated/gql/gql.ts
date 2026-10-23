@@ -155,6 +155,19 @@ type Documents = {
     "\n  mutation deleteOrganizationRoleMutation($id: ID!, $tenantId: ID!, $replacementRoleId: ID) {\n    deleteOrganizationRole(id: $id, tenantId: $tenantId, replacementRoleId: $replacementRoleId) {\n      ok\n      affectedMemberCount\n    }\n  }\n": typeof types.DeleteOrganizationRoleMutationDocument,
     "\n  mutation assignRolesToMemberMutation($membershipId: ID!, $tenantId: ID!, $roleIds: [ID]!) {\n    assignRolesToMember(membershipId: $membershipId, tenantId: $tenantId, roleIds: $roleIds) {\n      membership {\n        id\n        organizationRoles {\n          id\n          name\n          color\n        }\n      }\n      ok\n    }\n  }\n": typeof types.AssignRolesToMemberMutationDocument,
     "\n  mutation removeRoleFromMemberMutation($membershipId: ID!, $tenantId: ID!, $roleId: ID!) {\n    removeRoleFromMember(membershipId: $membershipId, tenantId: $tenantId, roleId: $roleId) {\n      membership {\n        id\n        organizationRoles {\n          id\n          name\n          color\n        }\n      }\n      ok\n    }\n  }\n": typeof types.RemoveRoleFromMemberMutationDocument,
+    "\n  query whatsAppNumberStatusQuery($tenantId: ID!, $accountId: ID!) {\n    whatsAppNumberStatus(tenantId: $tenantId, accountId: $accountId) {\n      status\n      codeVerificationStatus\n      qualityRating\n      nameStatus\n      verifiedName\n      displayPhoneNumber\n    }\n  }\n": typeof types.WhatsAppNumberStatusQueryDocument,
+    "\n  mutation requestWhatsAppVerificationCodeMutation($input: RequestWhatsAppVerificationCodeInput!) {\n    requestWhatsAppVerificationCode(input: $input) {\n      ok\n    }\n  }\n": typeof types.RequestWhatsAppVerificationCodeMutationDocument,
+    "\n  mutation verifyWhatsAppNumberMutation($input: VerifyWhatsAppNumberInput!) {\n    verifyWhatsAppNumber(input: $input) {\n      ok\n    }\n  }\n": typeof types.VerifyWhatsAppNumberMutationDocument,
+    "\n  mutation registerWhatsAppNumberMutation($input: RegisterWhatsAppNumberInput!) {\n    registerWhatsAppNumber(input: $input) {\n      ok\n    }\n  }\n": typeof types.RegisterWhatsAppNumberMutationDocument,
+    "\n  mutation subscribeWhatsAppAppMutation($input: SubscribeWhatsAppAppInput!) {\n    subscribeWhatsAppApp(input: $input) {\n      ok\n    }\n  }\n": typeof types.SubscribeWhatsAppAppMutationDocument,
+    "\n  query whatsAppAccountsQuery($tenantId: ID!) {\n    whatsAppAccounts(tenantId: $tenantId) {\n      id\n      purpose\n      phoneNumberId\n      wabaId\n      displayPhoneNumber\n      verifiedName\n      connectionMethod\n      isActive\n      credentialsVerifiedAt\n      subscribedAt\n      lastMessageReceivedAt\n    }\n  }\n": typeof types.WhatsAppAccountsQueryDocument,
+    "\n  mutation connectWhatsAppAccountMutation($input: ConnectWhatsAppAccountInput!) {\n    connectWhatsAppAccount(input: $input) {\n      account {\n        id\n        purpose\n        displayPhoneNumber\n        verifiedName\n        subscribedAt\n      }\n    }\n  }\n": typeof types.ConnectWhatsAppAccountMutationDocument,
+    "\n  mutation sendWhatsAppTestMessageMutation($input: SendWhatsAppTestMessageInput!) {\n    sendWhatsAppTestMessage(input: $input) {\n      messageId\n    }\n  }\n": typeof types.SendWhatsAppTestMessageMutationDocument,
+    "\n  mutation disconnectWhatsAppAccountMutation($input: DisconnectWhatsAppAccountInput!) {\n    disconnectWhatsAppAccount(input: $input) {\n      account {\n        id\n        isActive\n      }\n    }\n  }\n": typeof types.DisconnectWhatsAppAccountMutationDocument,
+    "\n  query whatsAppLinksQuery {\n    whatsAppLinks {\n      tenantId\n      organizationName\n      internalNumber\n      linked\n      maskedNumber\n      conversationMode\n      linkedAt\n    }\n  }\n": typeof types.WhatsAppLinksQueryDocument,
+    "\n  mutation startWhatsAppLinkMutation($input: StartWhatsAppLinkInput!) {\n    startWhatsAppLink(input: $input) {\n      code\n      link\n      maskedNumber\n      expiresAt\n    }\n  }\n": typeof types.StartWhatsAppLinkMutationDocument,
+    "\n  mutation updateWhatsAppConversationModeMutation($input: UpdateWhatsAppConversationModeInput!) {\n    updateWhatsAppConversationMode(input: $input) {\n      link {\n        tenantId\n        organizationName\n        internalNumber\n        linked\n        maskedNumber\n        conversationMode\n        linkedAt\n      }\n    }\n  }\n": typeof types.UpdateWhatsAppConversationModeMutationDocument,
+    "\n  mutation disconnectWhatsAppMutation($input: DisconnectWhatsAppInput!) {\n    disconnectWhatsApp(input: $input) {\n      link {\n        tenantId\n        organizationName\n        internalNumber\n        linked\n        maskedNumber\n        conversationMode\n        linkedAt\n      }\n    }\n  }\n": typeof types.DisconnectWhatsAppMutationDocument,
     "\n  mutation authConfirmUserEmailMutation($input: ConfirmEmailMutationInput!) {\n    confirm(input: $input) {\n      ok\n    }\n  }\n": typeof types.AuthConfirmUserEmailMutationDocument,
     "\n  query dashboardStatsQuery($tenantId: ID!) {\n    allCrudDemoItems(tenantId: $tenantId, first: 100) {\n      edges {\n        node {\n          id\n          name\n          createdBy {\n            id\n          }\n        }\n      }\n    }\n    allDocumentDemoItems(first: 100) {\n      edges {\n        node {\n          id\n          createdAt\n        }\n      }\n    }\n    allNotifications(first: 100) {\n      edges {\n        node {\n          id\n          type\n          createdAt\n          readAt\n        }\n      }\n    }\n    tenant(id: $tenantId) {\n      userMemberships {\n        id\n        role\n        invitationAccepted\n      }\n    }\n  }\n": typeof types.DashboardStatsQueryDocument,
     "\n  query ActiveSessionsQuery {\n    mySessions(first: 50) {\n      edges {\n        node {\n          id\n          sessionId\n          deviceName\n          deviceType\n          browser\n          operatingSystem\n          ipAddress\n          location\n          isActive\n          isCurrent\n          lastActivityAt\n          expiresAt\n          createdAt\n        }\n      }\n    }\n  }\n": typeof types.ActiveSessionsQueryDocument,
@@ -313,6 +326,19 @@ const documents: Documents = {
     "\n  mutation deleteOrganizationRoleMutation($id: ID!, $tenantId: ID!, $replacementRoleId: ID) {\n    deleteOrganizationRole(id: $id, tenantId: $tenantId, replacementRoleId: $replacementRoleId) {\n      ok\n      affectedMemberCount\n    }\n  }\n": types.DeleteOrganizationRoleMutationDocument,
     "\n  mutation assignRolesToMemberMutation($membershipId: ID!, $tenantId: ID!, $roleIds: [ID]!) {\n    assignRolesToMember(membershipId: $membershipId, tenantId: $tenantId, roleIds: $roleIds) {\n      membership {\n        id\n        organizationRoles {\n          id\n          name\n          color\n        }\n      }\n      ok\n    }\n  }\n": types.AssignRolesToMemberMutationDocument,
     "\n  mutation removeRoleFromMemberMutation($membershipId: ID!, $tenantId: ID!, $roleId: ID!) {\n    removeRoleFromMember(membershipId: $membershipId, tenantId: $tenantId, roleId: $roleId) {\n      membership {\n        id\n        organizationRoles {\n          id\n          name\n          color\n        }\n      }\n      ok\n    }\n  }\n": types.RemoveRoleFromMemberMutationDocument,
+    "\n  query whatsAppNumberStatusQuery($tenantId: ID!, $accountId: ID!) {\n    whatsAppNumberStatus(tenantId: $tenantId, accountId: $accountId) {\n      status\n      codeVerificationStatus\n      qualityRating\n      nameStatus\n      verifiedName\n      displayPhoneNumber\n    }\n  }\n": types.WhatsAppNumberStatusQueryDocument,
+    "\n  mutation requestWhatsAppVerificationCodeMutation($input: RequestWhatsAppVerificationCodeInput!) {\n    requestWhatsAppVerificationCode(input: $input) {\n      ok\n    }\n  }\n": types.RequestWhatsAppVerificationCodeMutationDocument,
+    "\n  mutation verifyWhatsAppNumberMutation($input: VerifyWhatsAppNumberInput!) {\n    verifyWhatsAppNumber(input: $input) {\n      ok\n    }\n  }\n": types.VerifyWhatsAppNumberMutationDocument,
+    "\n  mutation registerWhatsAppNumberMutation($input: RegisterWhatsAppNumberInput!) {\n    registerWhatsAppNumber(input: $input) {\n      ok\n    }\n  }\n": types.RegisterWhatsAppNumberMutationDocument,
+    "\n  mutation subscribeWhatsAppAppMutation($input: SubscribeWhatsAppAppInput!) {\n    subscribeWhatsAppApp(input: $input) {\n      ok\n    }\n  }\n": types.SubscribeWhatsAppAppMutationDocument,
+    "\n  query whatsAppAccountsQuery($tenantId: ID!) {\n    whatsAppAccounts(tenantId: $tenantId) {\n      id\n      purpose\n      phoneNumberId\n      wabaId\n      displayPhoneNumber\n      verifiedName\n      connectionMethod\n      isActive\n      credentialsVerifiedAt\n      subscribedAt\n      lastMessageReceivedAt\n    }\n  }\n": types.WhatsAppAccountsQueryDocument,
+    "\n  mutation connectWhatsAppAccountMutation($input: ConnectWhatsAppAccountInput!) {\n    connectWhatsAppAccount(input: $input) {\n      account {\n        id\n        purpose\n        displayPhoneNumber\n        verifiedName\n        subscribedAt\n      }\n    }\n  }\n": types.ConnectWhatsAppAccountMutationDocument,
+    "\n  mutation sendWhatsAppTestMessageMutation($input: SendWhatsAppTestMessageInput!) {\n    sendWhatsAppTestMessage(input: $input) {\n      messageId\n    }\n  }\n": types.SendWhatsAppTestMessageMutationDocument,
+    "\n  mutation disconnectWhatsAppAccountMutation($input: DisconnectWhatsAppAccountInput!) {\n    disconnectWhatsAppAccount(input: $input) {\n      account {\n        id\n        isActive\n      }\n    }\n  }\n": types.DisconnectWhatsAppAccountMutationDocument,
+    "\n  query whatsAppLinksQuery {\n    whatsAppLinks {\n      tenantId\n      organizationName\n      internalNumber\n      linked\n      maskedNumber\n      conversationMode\n      linkedAt\n    }\n  }\n": types.WhatsAppLinksQueryDocument,
+    "\n  mutation startWhatsAppLinkMutation($input: StartWhatsAppLinkInput!) {\n    startWhatsAppLink(input: $input) {\n      code\n      link\n      maskedNumber\n      expiresAt\n    }\n  }\n": types.StartWhatsAppLinkMutationDocument,
+    "\n  mutation updateWhatsAppConversationModeMutation($input: UpdateWhatsAppConversationModeInput!) {\n    updateWhatsAppConversationMode(input: $input) {\n      link {\n        tenantId\n        organizationName\n        internalNumber\n        linked\n        maskedNumber\n        conversationMode\n        linkedAt\n      }\n    }\n  }\n": types.UpdateWhatsAppConversationModeMutationDocument,
+    "\n  mutation disconnectWhatsAppMutation($input: DisconnectWhatsAppInput!) {\n    disconnectWhatsApp(input: $input) {\n      link {\n        tenantId\n        organizationName\n        internalNumber\n        linked\n        maskedNumber\n        conversationMode\n        linkedAt\n      }\n    }\n  }\n": types.DisconnectWhatsAppMutationDocument,
     "\n  mutation authConfirmUserEmailMutation($input: ConfirmEmailMutationInput!) {\n    confirm(input: $input) {\n      ok\n    }\n  }\n": types.AuthConfirmUserEmailMutationDocument,
     "\n  query dashboardStatsQuery($tenantId: ID!) {\n    allCrudDemoItems(tenantId: $tenantId, first: 100) {\n      edges {\n        node {\n          id\n          name\n          createdBy {\n            id\n          }\n        }\n      }\n    }\n    allDocumentDemoItems(first: 100) {\n      edges {\n        node {\n          id\n          createdAt\n        }\n      }\n    }\n    allNotifications(first: 100) {\n      edges {\n        node {\n          id\n          type\n          createdAt\n          readAt\n        }\n      }\n    }\n    tenant(id: $tenantId) {\n      userMemberships {\n        id\n        role\n        invitationAccepted\n      }\n    }\n  }\n": types.DashboardStatsQueryDocument,
     "\n  query ActiveSessionsQuery {\n    mySessions(first: 50) {\n      edges {\n        node {\n          id\n          sessionId\n          deviceName\n          deviceType\n          browser\n          operatingSystem\n          ipAddress\n          location\n          isActive\n          isCurrent\n          lastActivityAt\n          expiresAt\n          createdAt\n        }\n      }\n    }\n  }\n": types.ActiveSessionsQueryDocument,
@@ -911,6 +937,58 @@ export function gql(source: "\n  mutation removeRoleFromMemberMutation($membersh
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function gql(source: "\n  query whatsAppNumberStatusQuery($tenantId: ID!, $accountId: ID!) {\n    whatsAppNumberStatus(tenantId: $tenantId, accountId: $accountId) {\n      status\n      codeVerificationStatus\n      qualityRating\n      nameStatus\n      verifiedName\n      displayPhoneNumber\n    }\n  }\n"): (typeof documents)["\n  query whatsAppNumberStatusQuery($tenantId: ID!, $accountId: ID!) {\n    whatsAppNumberStatus(tenantId: $tenantId, accountId: $accountId) {\n      status\n      codeVerificationStatus\n      qualityRating\n      nameStatus\n      verifiedName\n      displayPhoneNumber\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation requestWhatsAppVerificationCodeMutation($input: RequestWhatsAppVerificationCodeInput!) {\n    requestWhatsAppVerificationCode(input: $input) {\n      ok\n    }\n  }\n"): (typeof documents)["\n  mutation requestWhatsAppVerificationCodeMutation($input: RequestWhatsAppVerificationCodeInput!) {\n    requestWhatsAppVerificationCode(input: $input) {\n      ok\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation verifyWhatsAppNumberMutation($input: VerifyWhatsAppNumberInput!) {\n    verifyWhatsAppNumber(input: $input) {\n      ok\n    }\n  }\n"): (typeof documents)["\n  mutation verifyWhatsAppNumberMutation($input: VerifyWhatsAppNumberInput!) {\n    verifyWhatsAppNumber(input: $input) {\n      ok\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation registerWhatsAppNumberMutation($input: RegisterWhatsAppNumberInput!) {\n    registerWhatsAppNumber(input: $input) {\n      ok\n    }\n  }\n"): (typeof documents)["\n  mutation registerWhatsAppNumberMutation($input: RegisterWhatsAppNumberInput!) {\n    registerWhatsAppNumber(input: $input) {\n      ok\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation subscribeWhatsAppAppMutation($input: SubscribeWhatsAppAppInput!) {\n    subscribeWhatsAppApp(input: $input) {\n      ok\n    }\n  }\n"): (typeof documents)["\n  mutation subscribeWhatsAppAppMutation($input: SubscribeWhatsAppAppInput!) {\n    subscribeWhatsAppApp(input: $input) {\n      ok\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query whatsAppAccountsQuery($tenantId: ID!) {\n    whatsAppAccounts(tenantId: $tenantId) {\n      id\n      purpose\n      phoneNumberId\n      wabaId\n      displayPhoneNumber\n      verifiedName\n      connectionMethod\n      isActive\n      credentialsVerifiedAt\n      subscribedAt\n      lastMessageReceivedAt\n    }\n  }\n"): (typeof documents)["\n  query whatsAppAccountsQuery($tenantId: ID!) {\n    whatsAppAccounts(tenantId: $tenantId) {\n      id\n      purpose\n      phoneNumberId\n      wabaId\n      displayPhoneNumber\n      verifiedName\n      connectionMethod\n      isActive\n      credentialsVerifiedAt\n      subscribedAt\n      lastMessageReceivedAt\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation connectWhatsAppAccountMutation($input: ConnectWhatsAppAccountInput!) {\n    connectWhatsAppAccount(input: $input) {\n      account {\n        id\n        purpose\n        displayPhoneNumber\n        verifiedName\n        subscribedAt\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation connectWhatsAppAccountMutation($input: ConnectWhatsAppAccountInput!) {\n    connectWhatsAppAccount(input: $input) {\n      account {\n        id\n        purpose\n        displayPhoneNumber\n        verifiedName\n        subscribedAt\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation sendWhatsAppTestMessageMutation($input: SendWhatsAppTestMessageInput!) {\n    sendWhatsAppTestMessage(input: $input) {\n      messageId\n    }\n  }\n"): (typeof documents)["\n  mutation sendWhatsAppTestMessageMutation($input: SendWhatsAppTestMessageInput!) {\n    sendWhatsAppTestMessage(input: $input) {\n      messageId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation disconnectWhatsAppAccountMutation($input: DisconnectWhatsAppAccountInput!) {\n    disconnectWhatsAppAccount(input: $input) {\n      account {\n        id\n        isActive\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation disconnectWhatsAppAccountMutation($input: DisconnectWhatsAppAccountInput!) {\n    disconnectWhatsAppAccount(input: $input) {\n      account {\n        id\n        isActive\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query whatsAppLinksQuery {\n    whatsAppLinks {\n      tenantId\n      organizationName\n      internalNumber\n      linked\n      maskedNumber\n      conversationMode\n      linkedAt\n    }\n  }\n"): (typeof documents)["\n  query whatsAppLinksQuery {\n    whatsAppLinks {\n      tenantId\n      organizationName\n      internalNumber\n      linked\n      maskedNumber\n      conversationMode\n      linkedAt\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation startWhatsAppLinkMutation($input: StartWhatsAppLinkInput!) {\n    startWhatsAppLink(input: $input) {\n      code\n      link\n      maskedNumber\n      expiresAt\n    }\n  }\n"): (typeof documents)["\n  mutation startWhatsAppLinkMutation($input: StartWhatsAppLinkInput!) {\n    startWhatsAppLink(input: $input) {\n      code\n      link\n      maskedNumber\n      expiresAt\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation updateWhatsAppConversationModeMutation($input: UpdateWhatsAppConversationModeInput!) {\n    updateWhatsAppConversationMode(input: $input) {\n      link {\n        tenantId\n        organizationName\n        internalNumber\n        linked\n        maskedNumber\n        conversationMode\n        linkedAt\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation updateWhatsAppConversationModeMutation($input: UpdateWhatsAppConversationModeInput!) {\n    updateWhatsAppConversationMode(input: $input) {\n      link {\n        tenantId\n        organizationName\n        internalNumber\n        linked\n        maskedNumber\n        conversationMode\n        linkedAt\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation disconnectWhatsAppMutation($input: DisconnectWhatsAppInput!) {\n    disconnectWhatsApp(input: $input) {\n      link {\n        tenantId\n        organizationName\n        internalNumber\n        linked\n        maskedNumber\n        conversationMode\n        linkedAt\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation disconnectWhatsAppMutation($input: DisconnectWhatsAppInput!) {\n    disconnectWhatsApp(input: $input) {\n      link {\n        tenantId\n        organizationName\n        internalNumber\n        linked\n        maskedNumber\n        conversationMode\n        linkedAt\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function gql(source: "\n  mutation authConfirmUserEmailMutation($input: ConfirmEmailMutationInput!) {\n    confirm(input: $input) {\n      ok\n    }\n  }\n"): (typeof documents)["\n  mutation authConfirmUserEmailMutation($input: ConfirmEmailMutationInput!) {\n    confirm(input: $input) {\n      ok\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
@@ -970,13 +1048,7 @@ export function gql(source: "\n  mutation validateOtp($input: ValidateOTPMutatio
 export function gql(source: "\n  mutation disableOtp($input: DisableOTPMutationInput!) {\n    disableOtp(input: $input) {\n      ok\n    }\n  }\n"): (typeof documents)["\n  mutation disableOtp($input: DisableOTPMutationInput!) {\n    disableOtp(input: $input) {\n      ok\n    }\n  }\n"];
 
 export function gql(source: string) {
-  const document = (documents as any)[source];
-  if (!document) {
-    throw new Error(
-      `GraphQL query not found in documents map. Please run: pnpm nx run webapp-api-client:graphql:generate-types\n\nQuery:\n${source.substring(0, 200)}...`
-    );
-  }
-  return document;
+  return (documents as any)[source] ?? {};
 }
 
 export type DocumentType<TDocumentNode extends DocumentNode<any, any>> = TDocumentNode extends DocumentNode<  infer TType,  any>  ? TType  : never;

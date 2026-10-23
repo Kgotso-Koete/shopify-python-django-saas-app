@@ -1,6 +1,9 @@
 """
 Tests proving the Shopify settings in config/settings.py are read from environment variables,
 and that each one has a safe default when the variable is unset.
+
+Kind of test: sanity (agents.md section 2.5). Why: they prove each setting reads its environment
+variable, in a fresh subprocess; nothing is faked.
 """
 
 import pytest
