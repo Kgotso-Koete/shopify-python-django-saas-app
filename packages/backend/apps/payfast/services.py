@@ -82,7 +82,7 @@ def initialize_tenant(tenant) -> PayFastSubscription:
     return get_subscription(tenant)
 
 
-def next_period_end(start: datetime.datetime, frequency: int) -> datetime.datetime:
+def next_period_end(start: datetime.datetime, frequency: str) -> datetime.datetime:
     """The end of a billing period starting at `start`: one calendar month or year later."""
     months = 12 if frequency == constants.Frequency.ANNUAL else 1
     month_index = start.month - 1 + months
@@ -127,7 +127,8 @@ def create_subscription_checkout(*, tenant, user, plan_name: str, return_url: st
         "custom_str1": plan.name,
         "subscription_type": "1",
         "recurring_amount": f"{plan.amount:.2f}",
-        "frequency": str(plan.frequency),
+        # PayFast's code (3 or 6), not the stored name (PayFast plan section 14).
+        "frequency": str(constants.payfast_frequency_code(plan.frequency)),
         "cycles": "0",  # indefinite, like a Stripe subscription
         # We send TrialExpiresSoonEmail ourselves, like Stripe, so PayFast's own buyer email is off.
         "subscription_notify_buyer": "false",
@@ -174,7 +175,7 @@ def _create_plan_change_checkout(subscription, plan, user, return_url: str, canc
         "subscription_type": "1",
         "billing_date": subscription.current_period_end.date().isoformat(),
         "recurring_amount": f"{plan.amount:.2f}",
-        "frequency": str(plan.frequency),
+        "frequency": str(constants.payfast_frequency_code(plan.frequency)),
         "cycles": "0",
         "subscription_notify_buyer": "false",
     }

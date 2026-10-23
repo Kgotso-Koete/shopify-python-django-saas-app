@@ -59,7 +59,7 @@ describe('PayFast cancel subscription', () => {
       plan: 'yearly_plan',
       effectivePlan: 'yearly_plan',
       amount: '10.00',
-      status: 'trialing',
+      status: 'TRIALING',
       trialEnd: '2099-01-31T10:00:00+00:00',
       pendingPlan: 'monthly_plan',
       pendingAmount: '5.00',

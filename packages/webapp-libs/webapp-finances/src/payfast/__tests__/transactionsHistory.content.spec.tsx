@@ -12,8 +12,9 @@ const tenantId = 'tenantId';
 const tenantMock = () => fillCommonQueryWithUser(currentUserFactory({ tenants: [tenantFactory({ id: tenantId })] }));
 
 const payments = [
-  { pfPaymentId: '1', kind: 'donation', plan: '', amountGross: '50.00', createdAt: '2026-10-02T10:00:00+00:00' },
-  { pfPaymentId: '2', kind: 'subscription', plan: 'monthly_plan', amountGross: '199.00', createdAt: '2026-10-01T10:00:00+00:00' },
+  // Kinds are the enum's stored names (PayFast plan section 14).
+  { pfPaymentId: '1', kind: 'DONATION', plan: '', amountGross: '50.00', createdAt: '2026-10-02T10:00:00+00:00' },
+  { pfPaymentId: '2', kind: 'SUBSCRIPTION', plan: 'monthly_plan', amountGross: '199.00', createdAt: '2026-10-01T10:00:00+00:00' },
 ];
 
 // Mirrors the Stripe tab (routes/subscriptions/transactionsHistory.content.tsx) and full page

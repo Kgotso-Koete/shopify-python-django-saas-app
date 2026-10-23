@@ -6,6 +6,7 @@ import { RoutesConfig as FinancesRoutesConfig } from '@sb/webapp-finances/config
 import { RoutesConfig as GenerativeAIRoutesConfig } from '@sb/webapp-generative-ai/config/routes';
 import { RoutesConfig as ShopifyRoutesConfig } from '@sb/webapp-shopify/config/routes';
 import { RoutesConfig as TenantsRoutesConfig } from '@sb/webapp-tenants/config/routes';
+import { RoutesConfig as WhatsAppRoutesConfig } from '@sb/webapp-whatsapp/config/routes';
 
 export const LANG_PREFIX = `/:lang?/*`;
 export const TENANT_PREFIX = `:tenantId?/*`;
@@ -19,6 +20,7 @@ export const RoutesConfig = {
   ...CrudDemoRoutesConfig,
   ...FinancesRoutesConfig,
   ...ShopifyRoutesConfig,
+  ...WhatsAppRoutesConfig,
   //<-- INJECT ROUTE DEFINITION -->
 };
 

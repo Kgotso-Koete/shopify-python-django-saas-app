@@ -1610,6 +1610,82 @@ Decided by the maintainer on 2026-10-23, during check 1 of the human checks, ins
     - **Why it can fail:** it expects `allTenants` in exactly the order it created the tenants, while the tenant factory gives each tenant a random `created_at` (`factory.Faker("date_time")`).
     - **What we do:** these steps changed nothing in `apps/multitenancy`, and upstream tests stay as they are (agents.md section 3.4), so it's recorded here rather than changed.
     - **Command for the rerun:** `for i in 1 2 3; do docker compose run --rm -T -e DATABASE_URL= backend pytest "apps/multitenancy/tests/test_schema.py::TestAllTenantsQuery" -q -p no:warnings 2>&1 | tail -1; done 2>&1 | tee logs/multitenancy-all-tenants-repeat.log`, giving `2 passed` three times.
+- **Released as 6.3.0 on 2026-10-23** (PR #7). Steps 1.19 to 1.22 and the PayFast plan's section 14 follow on the same branch name, as one release (maintainer's choice, 2026-10-23).
+
+#### Step 1.19 — WhatsApp gets its own page in the sidebar
+
+Use case: a store owner finds where to connect the shop's WhatsApp numbers at a glance, next to Shopify, instead of inside Organization settings.
+
+Asked for by the maintainer on 2026-10-23: a **WhatsApp** sidebar item just under **Shopify products**, opening its own page, and the Organization settings tab removed, so there's one place to find it.
+
+- **What changes:**
+  - `webapp-whatsapp` gets its own `RoutesConfig` (`whatsapp`), spread into the web app's routes like Shopify's.
+  - The sidebar item needs `whatsapp.view`, like the page's route.
+  - The page gets the shell the Shopify products page has: a title, a heading and a line saying what it's for.
+  - The Organization settings tab, its route and `RoutesConfig.tenant.settings.whatsapp` go.
+  - Texts that say "the WhatsApp tab" (the profile page, the forms-not-set-up reply, `whatsapp_publish_flows`) say "the WhatsApp page" instead.
+- **Tests first:** the sidebar shows **WhatsApp** after **Shopify products** with `whatsapp.view` and hides it without; the page has its heading; Organization settings never shows a WhatsApp tab; the backend replies name the page.
+
+#### Step 1.20 — The main menu names the organization as an organization
+
+Use case: a team member who belongs to several organizations sees at once which one the number works in.
+
+Asked for by the maintainer on 2026-10-23, during check 5: `You're working in Organization: <name>. What would you like to do?`, since a personal organization is named after its owner's email and reads like a person otherwise.
+
+- **Tests first:** the main menu's text is exactly that, with the organization's name.
+
+#### Step 1.21 — No React key warning on the profile page
+
+Use case: a developer reading the test output sees only real problems.
+
+`FormattedMessage` values that are elements (`<strong>`, `<code>`, `FormattedTime`, `FormattedDate`) need a `key` in React 19: react-intl passes them on as an array, and React warns "Each child in a list should have a unique key". The Shopify products page already gives its link one.
+
+- **Tests first:** rendering a linked organization, a link code and a linked number logs no key warning.
+
+#### Step 1.22 — A refused webhook says why in the log
+
+Use case: an operator whose messages get a 403 finds the cause, usually the wrong App secret in `.env`, without guessing (found on 2026-10-23, in check 2).
+
+- **What changes:** a refused POST logs one warning: the signature is missing, or it doesn't match `WHATSAPP_APP_SECRET`, or that setting is empty. Neither the secret, the signature nor the body is logged.
+- **Tests first:** each of the three cases logs its own warning, and the log holds none of the three values.
+
+#### Steps 1.19 to 1.22 — done, 2026-10-23
+
+In TDD cycles, run by the AI agent (the maintainer's go-ahead for these cycles, 2026-10-23); logs in `logs/step-1.19*` to `logs/step-1.22*`.
+
+- **Backend, Steps 1.19, 1.20 and 1.22:**
+  - Files: [`test_webhook_views.py`](../../../packages/backend/apps/whatsapp/tests/test_webhook_views.py) (new `TestRefusalsAreLogged`), [`test_menus.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_menus.py), [`test_forms.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_forms.py) and [`test_publish_flows.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_publish_flows.py).
+  - RED: `6 failed, 52 passed`: the three refusal logs, the menu's text, and the two replies still naming "the WhatsApp tab". Command: `mkdir -p logs && docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_webhook_views.py apps/whatsapp_saas/tests/test_menus.py apps/whatsapp_saas/tests/test_forms.py apps/whatsapp_saas/tests/test_publish_flows.py -q -p no:warnings > logs/step-1.20-1.22-backend-red.log 2>&1`
+  - GREEN: [`views.py`](../../../packages/backend/apps/whatsapp/views.py) logs why a POST got 403 (`_refusal_reason`); [`menus.py`](../../../packages/backend/apps/whatsapp_saas/menus.py) says `Organization:` and "WhatsApp page"; so does [`whatsapp_publish_flows`](../../../packages/backend/apps/whatsapp_saas/management/commands/whatsapp_publish_flows.py).
+  - The three apps: `670 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp apps/whatsapp_saas apps/phone_verification -q -p no:warnings > logs/step-1.20-1.22-backend-green.log 2>&1`
+  - Black: `534 files would be left unchanged`. Command: `docker compose run --rm -T backend black --check . > logs/step-1.20-1.22-black.log 2>&1`
+- **Web, Steps 1.19 and 1.21:**
+  - Files: [`sidebar.component.spec.tsx`](../../../packages/webapp/src/shared/components/layout/sidebar/__tests__/sidebar.component.spec.tsx) (new "the WhatsApp item"), [`tenantSettings.component.spec.tsx`](../../../packages/webapp-libs/webapp-tenants/src/routes/tenantSettings/__tests__/tenantSettings.component.spec.tsx), [`whatsappSettings.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/whatsappSettings.component.spec.tsx), [`troubleshootPanel.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/troubleshootPanel.component.spec.tsx) and [`whatsappProfileSection.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/components/whatsappProfileSection/__tests__/whatsappProfileSection.component.spec.tsx).
+  - RED:
+    - `webapp-whatsapp`: the page's two suites couldn't find `config/routes`; in the profile section, `2 failed, 9 passed`: React's "Each child in a list should have a unique key" warning, and the "WhatsApp tab" text.
+    - `webapp-tenants`: `1 failed, 4 passed`, the WhatsApp tab still shown.
+    - `webapp`: `1 failed, 12 passed`, no WhatsApp item in the sidebar.
+    - Command: `for p in webapp-whatsapp webapp-tenants webapp; do case $p in webapp-whatsapp) pat=whatsapp;; webapp-tenants) pat=tenantSettings.component;; webapp) pat=sidebar.component;; esac; pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=$pat > logs/step-1.19-1.21-red-$p.log 2>&1; echo "$p exit code: $?"; done`
+  - GREEN:
+    - [`webapp-whatsapp/src/config/routes.ts`](../../../packages/webapp-libs/webapp-whatsapp/src/config/routes.ts) is new, spread into [`app/config/routes.ts`](../../../packages/webapp/src/app/config/routes.ts).
+    - [`app.component.tsx`](../../../packages/webapp/src/app/app.component.tsx) routes `whatsapp` next to Shopify's, under `whatsapp.view`.
+    - The [sidebar](../../../packages/webapp/src/shared/components/layout/sidebar/sidebar.component.tsx) has the item.
+    - The [page](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/whatsappSettings.component.tsx) has its title, heading and subheader.
+    - [`tenantSettings.component.tsx`](../../../packages/webapp-libs/webapp-tenants/src/routes/tenantSettings/tenantSettings.component.tsx) and [`webapp-tenants/src/config/routes.ts`](../../../packages/webapp-libs/webapp-tenants/src/config/routes.ts) are back to upstream's tabs.
+    - The [profile section](../../../packages/webapp-libs/webapp-whatsapp/src/components/whatsappProfileSection/whatsappProfileSection.component.tsx) gives each element value a key.
+  - Results: `webapp-whatsapp` `34 passed`; `webapp-tenants` `164 passed, 2 skipped`; `webapp` `168 passed, 2 skipped`. Lint and type-check: exit code `0` for all three. Command, per project: `pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/step-1.19-1.21-green-$p.log 2>&1; pnpm nx run $p:lint --skip-nx-cache > logs/step-1.19-1.21-$p-lint.log 2>&1; pnpm nx run $p:type-check --skip-nx-cache > logs/step-1.19-1.21-$p-type-check.log 2>&1`
+  - The first type-check failed on one prop type of the page's new `WhatsAppNumbers` part (`purpose` missing from `WhatsAppAccount`); `ListedAccount` fixed it.
+- **The full run before committing 7.0.0, 2026-10-23,** run by the maintainer, with the PayFast plan's section 14 included:
+  - **Lint and type-check, 16 frontend projects:** all 32 exit codes `0`. Command: `mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify webapp-whatsapp; do pnpm nx run $p:lint --skip-nx-cache > logs/$p-lint.log 2>&1; echo "$p lint exit code: $?"; pnpm nx run $p:type-check --skip-nx-cache > logs/$p-type-check.log 2>&1; echo "$p type-check exit code: $?"; done`
+  - **Frontend tests, 16 projects:** no failures. `webapp-whatsapp` `34 passed`, `webapp-finances` `100 passed`, `webapp` `168 passed, 2 skipped`, `webapp-tenants` `164 passed, 2 skipped`; the only skips are upstream's. Command: `mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify webapp-whatsapp; do pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/$p.log 2>&1; s=$(sed 's/\x1b\[[0-9;]*m//g' logs/$p.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"); echo "${s:-$p: no test results, see logs/$p.log}"; done`
+  - **Backend and workers:** `backend: 1724 tests | 1724 passed`, in 22 minutes, and `workers: 2 tests | 2 passed`. Upstream's order-dependent `test_all_tenants_query` (the 6.3.0 known gap) passed this time. Command: `mkdir -p logs; pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; pnpm nx run workers:test --skip-nx-cache > logs/workers-test.log 2>&1; for x in backend workers; do f=logs/$x-test.log; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "$x: $n tests |${r:- no test results, see $f}"; done`
+  - **The CI test-list check:** `All 15 webapp libraries with a test target are in the test-lib matrix.`, exit code `0`. Command: `mkdir -p logs; (node .github/workflows/scripts/check-test-lib-matrix.test.js && node .github/workflows/scripts/check-test-lib-matrix.js) 2>&1 | tee logs/test-lib-matrix.log; echo "test-lib-matrix exit code: ${PIPESTATUS[0]}"`
+  - **The quick checks for 7.0.0, Q1 to Q5 (section 13), all passed:**
+    - Q1: the sidebar item and the page, the old tab's address not found, and no tab in Organization settings.
+    - Q2: the reply "You're working in Organization: <name>. What would you like to do?", delivered after the restart.
+    - Q3: two 403s, each with its log line.
+    - Q4: `[X] 0004_enum_values_are_member_names`, `Rows with an old value: 0`, and a sandbox donation stored as `DONATION` and `COMPLETE`, then listed as **Donation** in the transaction history. Paying as the user whose email is the PayFast merchant account's is refused by PayFast ("Merchant is unable to receive payments from the same account"), as before this release, because the checkout sends the user's email as the buyer's.
+    - Q5: no key warning in the browser's console on the profile page.
 
 ### Phase 2 — Use case 2: store customers on an organization's number (outline)
 
@@ -1880,7 +1956,7 @@ Planned checks:
 
 > **Human checks start here.** They run by hand, top to bottom, against the local stack, your own Meta test number and your own phone (agents.md section 1.3). Everything you run is in this section, and the section ends at the line "**Human checks end here.**". Run them from this file rather than from chat, which can drop backslashes.
 
-Rewritten in Step 1.17 as the fast path to a real message. Checks 1 to 5 connect your organization's internal communications number, link your phone and get the menu. The rest go through what the team can do, and the WhatsApp tab. Webhooks, signatures and permissions are covered by the automated tests (section 12), so they aren't repeated here.
+Rewritten in Step 1.17 as the fast path to a real message. Checks 1 to 5 connect your organization's internal communications number, link your phone and get the menu. The rest go through what the team can do, and the WhatsApp page (in the sidebar since Step 1.19). Check 17 shows the PayFast values renamed in the PayFast plan's section 14, released with Steps 1.19 to 1.22. Webhooks, signatures and permissions are covered by the automated tests (section 12), so they aren't repeated here.
 
 Nothing personal is written in this file: real values go into `packages/backend/.env`, which git ignores, into the web app's forms, or into shell variables when you run the checks.
 
@@ -1962,12 +2038,151 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 - **On the internal number:** a linked member of its organization gets the menus, forms and assistant, in that organization. Anyone else gets no reply, except to `link <code>`.
 - **Linking:** any member of the organization, from their profile page.
-- **The WhatsApp tab:** `whatsapp.view` (Owner, Admin and Member by default) sees the numbers and their status; `whatsapp.manage` (Owner and Admin) connects, tests, troubleshoots and disconnects them.
+- **The WhatsApp page:** `whatsapp.view` (Owner, Admin and Member by default) sees its sidebar item, the numbers and their status; `whatsapp.manage` (Owner and Admin) connects, tests, troubleshoots and disconnects them.
 - **In the menus:** item reads need `features.crud.view`, item writes `features.crud.manage`, products `shopify.view`, and renaming the organization `org.settings.edit`. Every write needs your own Confirm press.
+
+### Quick checks for 7.0.0: the WhatsApp page, the menu text, the 403 log and PayFast's values
+
+Run these on their own, top to bottom, before committing 7.0.0 (Steps 1.19 to 1.22 and the PayFast plan's section 14). They expect what an earlier run of the fast path left behind: your organization's internal number connected, and your phone linked to it. The fast path's setup steps 1 to 3 (Meta values and `.env`) are already done then.
+
+#### Quick setup
+
+1. **The tunnel,** in its own terminal, left running:
+
+   ```shell
+   ngrok http --url=<your ngrok domain> 5001
+   ```
+
+2. **The stack,** restarted, so the backend and the Celery worker, which writes every WhatsApp reply, run the new code:
+
+   ```shell
+   pnpm saas down
+   pnpm saas up
+   ```
+
+3. **Your values, in the terminal you run the checks in:** your organization's current name, as the sidebar's organization switcher shows it, and your own WhatsApp number, digits only with its country code:
+
+   ```shell
+   read -r -p "Name of your organization: " ORG_A
+   read -r -p "Your WhatsApp number (digits, with country code): " MY_NUMBER
+   ```
+
+4. **The web app,** at http://localhost:3000, logged in as yourself, with your organization chosen in the sidebar's switcher.
+
+#### Q1. WhatsApp is its own page in the sidebar, and Organization settings has no tab (Step 1.19, user story 11)
+
+- **Why:** one place to find WhatsApp, next to Shopify. The sidebar item and the page's route both need `whatsapp.view`, and the old tab's address is gone.
+- **Acts on:** `$ORG_A` and its internal number.
+
+**Prove** your organization's internal number is connected:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppAccount; print(json.dumps(list(WhatsAppAccount.objects.filter(tenant__name='$ORG_A', purpose='INTERNAL_COMMUNICATIONS').values()), indent=4, default=str))"
+```
+
+**Expect:** one whole row with `"is_active": true`.
+
+**In the web app:**
+
+1. Look at the sidebar. **Expect:** **WhatsApp** right under **Shopify products**.
+2. Click **WhatsApp**. **Expect:** a page headed **WhatsApp**, with "The numbers your team and your customers text, connected to this app" under it, then the **Internal communications number** section with your number and its proofs, and the **External communications numbers** section. The address ends with `/whatsapp`.
+3. In the address bar, replace that ending `/whatsapp` with `/tenant/settings/whatsapp`, and press Enter. **Expect:** the not-found page: the old tab's address no longer exists.
+4. Click **Organization** in the sidebar. **Expect:** the tabs Members, Roles, General, Subscription, Security, Activity Logs and Backups (those your role may see), and no **WhatsApp** tab.
+
+#### Q2. The main menu names the organization as an organization (Step 1.20, user story 4)
+
+- **Why:** a personal organization is named after its owner's email, so without "Organization:" the menu reads as if it named a person.
+- **Acts on:** your phone, linked to `$ORG_A`'s internal number.
+
+**Prove** your phone is linked:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppIdentity; print(json.dumps(list(WhatsAppIdentity.objects.filter(contact__wa_id='$MY_NUMBER').values()), indent=4, default=str))"
+```
+
+**Expect:** one whole row, with a `linked_at` time. If it's `[]`, link again from the profile page, as the fast path's check 4 does.
+
+**On the phone:** send `menu` to the test number. **Expect:** `You're working in Organization: <your organization>. What would you like to do?`, with a **Menu** button.
+
+**Show** that reply, whole:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppMessage; print(json.dumps(list(WhatsAppMessage.objects.filter(contact__wa_id='$MY_NUMBER', direction='OUTBOUND').order_by('-pk').values()[:1]), indent=4, default=str))"
+```
+
+**Expect:** one whole row, `"status"` `SENT`, `DELIVERED` or `READ`, and the menu text above in its `payload`'s body.
+
+#### Q3. A refused webhook says why in the log (Step 1.22)
+
+- **Why:** an operator whose messages get a 403 finds the cause, usually the wrong App secret in `.env`, without guessing. The log names which check failed and never holds the secret, the signature or the body.
+- **Acts on:** the local webhook, with two posts Meta never sent: one with a made-up signature, one with none. Neither is stored.
+
+As a forger, post with a made-up signature:
+
+```shell
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5001/api/whatsapp/webhook/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-Hub-Signature-256: sha256=0000000000000000000000000000000000000000000000000000000000000000' \
+  -d '{"object": "whatsapp_business_account", "entry": []}'
+```
+
+**Expect:** `403`.
+
+Then the same post with no signature at all; only the header changed:
+
+```shell
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5001/api/whatsapp/webhook/ \
+  -H 'Content-Type: application/json' \
+  -d '{"object": "whatsapp_business_account", "entry": []}'
+```
+
+**Expect:** `403`.
+
+**Show** the backend's log lines for them:
+
+```shell
+docker compose logs backend --since 5m | grep "refused with 403"
+```
+
+**Expect:** two lines: one ending `its X-Hub-Signature-256 signature doesn't match WHATSAPP_APP_SECRET (is it our Meta app's App secret?).`, and one ending `the request has no X-Hub-Signature-256 header.`. Neither shows the `0000…` signature or the body.
+
+#### Q4. PayFast's stored values are their names, and its pages read them (PayFast plan section 14)
+
+- **Why:** migration `payfast` 0004 rewrote every PayFast status, kind and frequency to its name, on real data, so the rows and the pages that read them must both show it worked.
+- **Acts on:** `$ORG_A`'s PayFast subscription, checkouts and payments, as your local database holds them (there may be none), and every PayFast row for the old-values count.
+
+**Prove** the migration ran:
+
+```shell
+docker compose run --rm -T backend python manage.py showmigrations payfast
+```
+
+**Expect:** `[X] 0004_enum_values_are_member_names`.
+
+**Show** your organization's PayFast rows, whole, then how many rows in the whole database still hold an old value:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.payfast.models import PayFastCheckout, PayFastPayment, PayFastSubscription; [print(json.dumps(list(model.objects.filter(tenant__name='$ORG_A').values()), indent=4, default=str)) for model in (PayFastSubscription, PayFastCheckout, PayFastPayment)]; print('Rows with an old value:', PayFastSubscription.objects.filter(status__in=['active', 'trialing', 'past_due', 'cancelled']).count() + PayFastSubscription.objects.filter(frequency__in=['3', '6']).count() + PayFastCheckout.objects.filter(kind__in=['subscription', 'donation']).count() + PayFastCheckout.objects.filter(status__in=['pending', 'complete']).count() + PayFastCheckout.objects.filter(frequency__in=['3', '6']).count() + PayFastPayment.objects.filter(kind__in=['subscription', 'donation']).count())"
+```
+
+**Expect:**
+
+- the subscription's whole row, with `"status"` one of `ACTIVE`, `TRIALING`, `PAST_DUE` or `CANCELLED`, and `"frequency"` `MONTHLY`, `ANNUAL`, or `null` on the free plan
+- checkouts with `"kind"` `SUBSCRIPTION` or `DONATION` and `"status"` `PENDING` or `COMPLETE`, and payments with `"kind"` in capitals; `"payment_status"` is PayFast's own `COMPLETE` or `CANCELLED`, unchanged
+- `Rows with an old value: 0`
+
+**In the web app,** only if `packages/backend/.env` has `PAYMENT_BACKEND=payfast`: click **Subscriptions** in the sidebar, then the **Transaction history** tab. **Expect:** the same plan, price and dates as before (a trial still says **Free trial**), and donations still labelled **Donation**.
+
+#### Q5. No React key warning on the profile page (Step 1.21)
+
+- **Why:** the browser's console should show only real problems.
+- **Acts on:** your profile page's WhatsApp section, linked to `$ORG_A`.
+
+**In the web app:** open the browser's developer tools (F12), then **Console**, and clear it. Open your profile page. **Expect:** your organization's WhatsApp block, linked, and no "Each child in a list should have a unique "key" prop" in the console.
 
 ### The fast path
 
-#### 1. Connect your internal communications number on the WhatsApp tab (user story 11)
+#### 1. Connect your internal communications number on the WhatsApp page (user story 11)
 
 - **Why:** every number belongs to an organization, and is connected by its admin to our one Meta app, with three values and no App secret (Step 1.18). Meta checks the token, and our app is subscribed to the number's WhatsApp Business account, before anything is saved.
 - **Acts on:** your organization `$ORG_A`, and your Meta test number as its internal number.
@@ -1978,11 +2193,11 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppAccount; print(json.dumps(list(WhatsAppAccount.objects.filter(tenant__name='$ORG_A', purpose='INTERNAL_COMMUNICATIONS').values()), indent=4, default=str))"
 ```
 
-**Expect:** `[]`. If an active one is listed, from an earlier run, disconnect it on the tab first.
+**Expect:** `[]`. If an active one is listed, from an earlier run, disconnect it on the WhatsApp page first.
 
 **In the web app:**
 
-1. Open **Organization settings** for `$ORG_A`, then **WhatsApp**. **Expect:** two sections, **Internal communications number** and **External communications numbers**, each with what it's for, an example, a **Connect a number** form and its own list.
+1. With `$ORG_A` chosen in the sidebar's organization switcher, click **WhatsApp** in the sidebar, just under **Shopify products** (Step 1.19). **Expect:** a page headed **WhatsApp**, and two sections, **Internal communications number** and **External communications numbers**, each with what it's for, an example, a **Connect a number** form and its own list.
 2. In the **Internal communications number** section, enter setup step 1's three values (Phone number ID, WhatsApp Business Account ID, access token) and press **Connect number**. There's no App secret field. **Expect:** `<number> is connected: messages to it now reach this app.` Your number appears in this section's list, with **Credentials verified** and **App subscribed**.
 
 **Show** the stored number and the forms published for it:
@@ -2030,7 +2245,7 @@ In the ngrok terminal, **expect:** `GET /api/whatsapp/webhook/ 200 OK`, and from
 docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppMessage; print(json.dumps(list(WhatsAppMessage.objects.filter(contact__wa_id='$MY_NUMBER').order_by('-pk').values()[:3]), indent=4, default=str))"
 ```
 
-**Expect:** your `hi` first, with `"direction": "INBOUND"` and `"status": "PROCESSED"`, and no `OUTBOUND` row after it. The tab's row for the number now also shows **Message received**.
+**Expect:** your `hi` first, with `"direction": "INBOUND"` and `"status": "PROCESSED"`, and no `OUTBOUND` row after it. The WhatsApp page's row for the number now also shows **Message received**.
 
 #### 4. Link your phone from the profile page (user stories 1 and 3)
 
@@ -2058,7 +2273,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 - **Why:** the number belongs to one organization, so there's nothing to pick (maintainer's decision, 2026-10-22), and every screen offers a way back (D17).
 
-**On the phone:** send `hi`. **Expect:** `You're working in <your organization>. What would you like to do?`, with a **Menu** button. It opens **Items**, **New item**, **Products** and **Rename organization**, then **Main menu**. There's no **Organizations** and no **Create organization**.
+**On the phone:** send `hi`. **Expect:** `You're working in Organization: <your organization>. What would you like to do?` (Step 1.20), with a **Menu** button. It opens **Items**, **New item**, **Products** and **Rename organization**, then **Main menu**. There's no **Organizations** and no **Create organization**.
 
 ### What the team can do on the phone
 
@@ -2194,22 +2409,22 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 Link again from the profile page (check 4) before going on.
 
-### The WhatsApp tab and the profile page
+### The WhatsApp page and the profile page
 
-#### 14. What each role sees on the tab (user story 11)
+#### 14. What each role sees on the WhatsApp page (user story 11)
 
 - **Why:** only `whatsapp.manage` connects, tests, troubleshoots and disconnects numbers; `whatsapp.view` sees their status.
 - **Acts on:** numbers that are already there. Nothing new gets connected in this check:
   - your real test number, connected as the internal number in check 1
   - four fake demo numbers, `100000000000801` to `100000000000804`, which `whatsapp_seed_demo` created as external numbers before check 6. Their tokens are fake, so they never reach Meta.
 
-1. **Look only.** As yourself, open the WhatsApp tab. **Expect:**
+1. **Look only.** As yourself, click **WhatsApp** in the sidebar. **Expect:** **Organization settings** has no WhatsApp tab any more (Step 1.19), and the WhatsApp page shows:
    - **Internal communications number:** your real test number, with its three proofs.
    - **External communications numbers:** the four fake demo numbers. 801 has **Credentials verified** only, 802 also **App subscribed**, 803 all three proofs, and 804 is **Disconnected**.
    - **Send test message**, **Troubleshoot** and **Disconnect** on every connected number, and both forms.
 2. **An empty form is stopped in the browser.** In the external section, press **Connect number** without typing anything. **Expect:** three "… is required" messages, and nothing sent.
 3. **A second internal number is refused.** This tries, on purpose, to add another internal number while yours is connected. In the internal section, type the made-up values `100000000000999`, `200000000000999` and `EAAGfake`, and press **Connect number**. **Expect:** `Your organization's team already texts <your number>. Disconnect it first to connect another internal communications number.` Nothing is connected, Meta isn't asked, and your real number is unchanged.
-4. **A Member only looks.** Log out and log in as `whatsapp-member@example.com` (password `WhatsAppMember123!`). Open the same tab. **Expect:** the same numbers and proofs, and no forms and no buttons.
+4. **A Member only looks.** Log out and log in as `whatsapp-member@example.com` (password `WhatsAppMember123!`). Click **WhatsApp** in the sidebar. **Expect:** the same numbers and proofs, and no forms and no buttons.
 
 #### 15. One link per organization on the profile page (user stories 1 and 3)
 
@@ -2223,7 +2438,7 @@ Link again from the profile page (check 4) before going on.
 
 - **Why:** the repairs act on Meta's side, so only a real number proves them.
 
-As yourself, on the WhatsApp tab, under your internal number:
+As yourself, on the WhatsApp page, under your internal number:
 
 1. Type your own number into **Send a test message to** and press **Send test message**. **Expect:** `Sent. Meta's message id: wamid.…`, and Meta's hello_world template on your phone.
 2. Press **Troubleshoot**. **Expect:** Meta's status, `CONNECTED`, and its code verification, quality rating, display name review and verified name.
@@ -2238,6 +2453,27 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 ```
 
 **Expect:** one whole row per repair, newest first, each with `"operation"` and `"outcome"` in its `metadata`, and Meta's error code when Meta refused.
+
+### PayFast, released with these steps
+
+#### 17. PayFast's stored values are their names, and its pages read them (PayFast plan section 14)
+
+- **Why:** migration `payfast` 0004 rewrote every PayFast status, kind and frequency to its name, on real data, so the rows and the pages that read them must both show it worked. It ran when the stack restarted in setup step 5.
+- **Acts on:** `$ORG_A`'s PayFast subscription, checkouts and payments, as your local database holds them (there may be none), and every PayFast row for the old-values count.
+
+**Show** your organization's PayFast rows, whole, then how many rows in the whole database still hold an old value:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.payfast.models import PayFastCheckout, PayFastPayment, PayFastSubscription; [print(json.dumps(list(model.objects.filter(tenant__name='$ORG_A').values()), indent=4, default=str)) for model in (PayFastSubscription, PayFastCheckout, PayFastPayment)]; print('Rows with an old value:', PayFastSubscription.objects.filter(status__in=['active', 'trialing', 'past_due', 'cancelled']).count() + PayFastSubscription.objects.filter(frequency__in=['3', '6']).count() + PayFastCheckout.objects.filter(kind__in=['subscription', 'donation']).count() + PayFastCheckout.objects.filter(status__in=['pending', 'complete']).count() + PayFastCheckout.objects.filter(frequency__in=['3', '6']).count() + PayFastPayment.objects.filter(kind__in=['subscription', 'donation']).count())"
+```
+
+**Expect:**
+
+- the subscription's whole row with `"status"` one of `ACTIVE`, `TRIALING`, `PAST_DUE` or `CANCELLED`, and `"frequency"` `MONTHLY`, `ANNUAL`, or `null` on the free plan
+- checkouts with `"kind"` `SUBSCRIPTION` or `DONATION` and `"status"` `PENDING` or `COMPLETE`, and payments with `"kind"` in capitals; `"payment_status"` is PayFast's own `COMPLETE` or `CANCELLED`, unchanged
+- `Rows with an old value: 0`
+
+**In the web app,** only if `packages/backend/.env` has `PAYMENT_BACKEND=payfast`: open **Subscriptions** in the sidebar, then **Transaction history**. **Expect:** the same plan, price and dates as before the restart (a trial still says **Free trial**), and donations still labelled **Donation**.
 
 > **Human checks end here.** The sections below are reference, not steps to run.
 

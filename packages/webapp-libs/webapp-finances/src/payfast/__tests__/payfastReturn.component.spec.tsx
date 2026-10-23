@@ -14,6 +14,7 @@ const tenantMock = () => fillCommonQueryWithUser(currentUserFactory({ tenants: [
 
 // PayFast sends the buyer back here after paying. The payment only counts once PayFast's ITN has
 // reached our backend, which can be a moment later, so the page waits for the checkout to complete.
+// The checkout's status is its stored name, PENDING or COMPLETE (PayFast plan section 14).
 const renderReturnPage = (query: string, mocks: any[]) =>
   render(
     <Routes>
@@ -33,14 +34,14 @@ const renderReturnPage = (query: string, mocks: any[]) =>
 
 describe('PayFast return page', () => {
   it('goes to the subscription page once the subscription checkout is confirmed', async () => {
-    renderReturnPage('?kind=subscription&m=m-1', [fillCheckoutStatusQuery('complete', 'm-1', tenantId)]);
+    renderReturnPage('?kind=subscription&m=m-1', [fillCheckoutStatusQuery('COMPLETE', 'm-1', tenantId)]);
 
     expect(await screen.findByText('subscriptions page')).toBeInTheDocument();
     expect(await screen.findByTestId('toast-1')).toHaveTextContent(/payment successful/i);
   });
 
   it('goes home once a donation is confirmed, like the Stripe donation page', async () => {
-    renderReturnPage('?kind=donation&m=m-2', [fillCheckoutStatusQuery('complete', 'm-2', tenantId)]);
+    renderReturnPage('?kind=donation&m=m-2', [fillCheckoutStatusQuery('COMPLETE', 'm-2', tenantId)]);
 
     expect(await screen.findByText('home page')).toBeInTheDocument();
   });
@@ -51,7 +52,7 @@ describe('PayFast return page', () => {
 
     // Plan section 12, issue 6: after a donation, the way out is Home, as on success.
     it('offers Home after a donation', async () => {
-      renderReturnPage('?kind=donation&m=m-4', [fillCheckoutStatusQuery('pending', 'm-4', tenantId)]);
+      renderReturnPage('?kind=donation&m=m-4', [fillCheckoutStatusQuery('PENDING', 'm-4', tenantId)]);
       await act(() => jest.advanceTimersByTimeAsync(60000));
 
       expect(await screen.findByText(/still waiting for payfast/i)).toBeInTheDocument();
@@ -61,7 +62,7 @@ describe('PayFast return page', () => {
     });
 
     it('offers the subscription page after a subscription checkout', async () => {
-      renderReturnPage('?kind=subscription&m=m-5', [fillCheckoutStatusQuery('pending', 'm-5', tenantId)]);
+      renderReturnPage('?kind=subscription&m=m-5', [fillCheckoutStatusQuery('PENDING', 'm-5', tenantId)]);
       await act(() => jest.advanceTimersByTimeAsync(60000));
 
       expect(await screen.findByRole('link', { name: /go to my subscription/i })).toBeInTheDocument();
@@ -69,7 +70,7 @@ describe('PayFast return page', () => {
   });
 
   it('keeps waiting while PayFast has not confirmed yet', async () => {
-    renderReturnPage('?kind=donation&m=m-3', [fillCheckoutStatusQuery('pending', 'm-3', tenantId)]);
+    renderReturnPage('?kind=donation&m=m-3', [fillCheckoutStatusQuery('PENDING', 'm-3', tenantId)]);
 
     expect(await screen.findByText(/confirming your payment/i)).toBeInTheDocument();
     expect(screen.queryByText('home page')).not.toBeInTheDocument();

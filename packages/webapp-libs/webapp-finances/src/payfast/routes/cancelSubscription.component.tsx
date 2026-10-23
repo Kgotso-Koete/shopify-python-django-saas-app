@@ -67,7 +67,7 @@ export const PayfastCancelSubscription = () => {
   const isYearly = subscription?.effectivePlan === SubscriptionPlanName.YEARLY;
   // As on the current subscription page: a trial charges nothing yet, and a plan switch shows what
   // PayFast will charge from the next billing period.
-  const isTrialing = subscription?.status === 'trialing';
+  const isTrialing = subscription?.status === 'TRIALING';
   const hasPendingPrice = Boolean(subscription?.pendingPlan && subscription?.pendingAmount);
   const isPendingYearly = subscription?.pendingPlan === SubscriptionPlanName.YEARLY;
 

@@ -1,6 +1,14 @@
+import { TenantType } from '@sb/webapp-api-client/constants';
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
+import { composeMockedQueryResult } from '@sb/webapp-api-client/tests/utils';
 import { useMediaQuery } from '@sb/webapp-core/hooks';
 import { getLocalePath } from '@sb/webapp-core/utils';
+import { currentUserPermissionsQuery } from '@sb/webapp-tenants/routes/tenantSettings/tenantRoles/tenantRoles.graphql';
+import { tenantFactory } from '@sb/webapp-tenants/tests/factories/tenant';
+import {
+  createMockRouterProps,
+  render as renderInTenant,
+} from '@sb/webapp-tenants/tests/utils/rendering';
 import { screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
@@ -129,6 +137,58 @@ describe('Sidebar: Component', () => {
         render(<Component />, { apolloMocks });
         expect(await screen.findByText(/admin panel/i)).toBeInTheDocument();
       });
+    });
+  });
+
+  // WhatsApp plan Step 1.19: the WhatsApp page has its own item, just under Shopify products, for
+  // members with whatsapp.view (the same permission its route needs).
+  describe('the WhatsApp item', () => {
+    const tenantId = 'tenant-sidebar-whatsapp-1';
+
+    const renderWithPermissions = (permissions: string[]) =>
+      renderInTenant(
+        <LayoutContext.Provider
+          value={{
+            isSidebarAvailable: true,
+            isSideMenuOpen: true,
+            isSidebarCollapsed: false,
+            setSideMenuOpen: () => null,
+            setSidebarCollapsed: () => null,
+            toggleSidebar: () => null,
+          }}
+        >
+          <Sidebar />
+        </LayoutContext.Provider>,
+        {
+          apolloMocks: [
+            fillCommonQueryWithUser(
+              currentUserFactory({
+                tenants: [tenantFactory({ id: tenantId, name: 'Test Org', type: TenantType.ORGANIZATION })],
+              })
+            ),
+            composeMockedQueryResult(currentUserPermissionsQuery, {
+              variables: { tenantId },
+              data: { currentUserPermissions: permissions },
+            }),
+          ],
+          routerProps: createMockRouterProps(RoutesConfig.home, { tenantId }),
+        }
+      );
+
+    it('comes right after Shopify products and opens the WhatsApp page', async () => {
+      renderWithPermissions(['shopify.view', 'whatsapp.view']);
+
+      const whatsapp = await screen.findByRole('link', { name: /^whatsapp$/i });
+      expect(whatsapp).toHaveAttribute('href', expect.stringMatching(new RegExp(`/${tenantId}/whatsapp$`)));
+      const labels = screen.getAllByRole('link').map((link) => link.textContent);
+      expect(labels[labels.indexOf('Shopify products') + 1]).toBe('WhatsApp');
+    });
+
+    it('is hidden without whatsapp.view', async () => {
+      renderWithPermissions(['shopify.view']);
+
+      expect(await screen.findByRole('link', { name: /shopify products/i })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /^whatsapp$/i })).not.toBeInTheDocument();
     });
   });
 });

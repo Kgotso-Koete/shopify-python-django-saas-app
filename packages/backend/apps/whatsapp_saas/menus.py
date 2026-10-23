@@ -66,7 +66,7 @@ NO_ITEMS_PERMISSION_TEXT = "You don't have permission to change this organizatio
 FORM_EXPIRED_TEXT = "That form has expired, so nothing was changed."
 FORMS_NOT_SET_UP_TEXT = (
     "Forms aren't set up on this number yet, so this can't be done here for now. An admin can set "
-    "them up by connecting the number again on the website's WhatsApp tab."
+    "them up by connecting the number again on the website's WhatsApp page."
 )
 
 
@@ -86,7 +86,8 @@ class InternalNumberHandler:
             rows.append(Row(turn.choice(PRODUCTS), "Products", "Browse and search your Shopify store"))
         if use_cases.can_rename_organization(turn.user, tenant):
             rows.append(Row(turn.choice(ORGANIZATION_RENAME), "Rename organization", f"Rename {tenant.name}"))
-        body = f"You're working in {tenant.name}. What would you like to do?"
+        # "Organization:" says what the name is: a personal organization is named after an email (Step 1.20).
+        body = f"You're working in Organization: {tenant.name}. What would you like to do?"
         return [list_message(body, button_label="Menu", section_title="Main menu", rows=rows)]
 
     def on_choice(self, turn, kind: str, data: dict) -> list[dict]:

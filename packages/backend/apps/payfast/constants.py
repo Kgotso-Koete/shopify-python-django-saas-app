@@ -22,11 +22,24 @@ CURRENCY = "ZAR"  # PayFast only supports South African rand.
 CENTS = Decimal("0.01")
 
 
-class Frequency(models.IntegerChoices):
-    """PayFast subscription `frequency` codes (https://developers.payfast.co.za/docs#subscriptions)."""
+class Frequency(models.TextChoices):
+    """
+    How often a subscription is billed, stored as its member names (PayFast plan section 14, agents.md
+    section 5.3b). PayFast's own codes for them are in PAYFAST_FREQUENCY_CODES.
+    """
 
-    MONTHLY = 3, "Monthly"
-    ANNUAL = 6, "Annual"
+    MONTHLY = "MONTHLY", "Monthly"
+    ANNUAL = "ANNUAL", "Annual"
+
+
+# PayFast's subscription `frequency` codes (https://developers.payfast.co.za/docs#subscriptions):
+# 3 - Monthly, 6 - Annual. Only what's sent to PayFast; never stored.
+PAYFAST_FREQUENCY_CODES = {Frequency.MONTHLY: 3, Frequency.ANNUAL: 6}
+
+
+def payfast_frequency_code(frequency: str) -> int:
+    """PayFast's code for `frequency`, for the checkout form."""
+    return PAYFAST_FREQUENCY_CODES[Frequency(frequency)]
 
 
 @dataclass(frozen=True)
@@ -35,7 +48,7 @@ class PayFastPlan:
 
     name: str
     amount: Decimal
-    frequency: Optional[int]
+    frequency: Optional[str]
 
     @property
     def is_paid(self) -> bool:

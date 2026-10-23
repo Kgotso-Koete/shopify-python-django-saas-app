@@ -91,10 +91,6 @@ export const App = () => {
                 <Route element={<PermissionAuthRoute permissions="backup.view" />}>
                   <Route path={RoutesConfig.tenant.settings.backup} element={<TenantBackupSettings />} />
                 </Route>
-                {/* WhatsApp numbers - requires whatsapp.view (WhatsApp plan Step 1.6) */}
-                <Route element={<PermissionAuthRoute permissions="whatsapp.view" />}>
-                  <Route path={RoutesConfig.tenant.settings.whatsapp} element={<WhatsAppSettings />} />
-                </Route>
               </Route>
             </Route>
             {/* Billing/Subscriptions - requires billing.view */}
@@ -139,6 +135,10 @@ export const App = () => {
               <Route path={RoutesConfig.shopify.index} element={<ShopifyShops />} />
               {/* A specific path outranks shopify/* in React Router, whatever the order. */}
               <Route path={RoutesConfig.shopify.products} element={<ShopifyProducts />} />
+            </Route>
+            {/* WhatsApp numbers, its own page since WhatsApp plan Step 1.19 - protected by whatsapp.view */}
+            <Route element={<PermissionAuthRoute permissions="whatsapp.view" />}>
+              <Route path={RoutesConfig.whatsapp} element={<WhatsAppSettings />} />
             </Route>
             <Route path={RoutesConfig.tenant.accessDenied} element={<AccessDenied />} />
             <Route path="*" element={<NotFound />} />

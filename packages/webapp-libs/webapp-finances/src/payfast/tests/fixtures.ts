@@ -10,7 +10,10 @@ import {
   paymentConfigQuery,
 } from '../payfast.graphql';
 
-/** Apollo mocks for the PayFast GraphQL API, shaped like the backend's responses (apps/payfast/schema.py). */
+/**
+ * Apollo mocks for the PayFast GraphQL API, shaped like the backend's responses (apps/payfast/schema.py).
+ * Statuses and kinds are the enums' stored names, such as ACTIVE and DONATION (PayFast plan section 14).
+ */
 
 export const fillPaymentConfigQuery = (backend: 'stripe' | 'payfast') =>
   composeMockedQueryResult(paymentConfigQuery, {
@@ -42,7 +45,7 @@ export const freeSubscription: PayfastSubscriptionMock = {
   effectivePlan: 'free_plan',
   pendingPlan: null,
   pendingAmount: null,
-  status: 'active',
+  status: 'ACTIVE',
   amount: '0.00',
   currentPeriodEnd: null,
   trialEnd: null,
@@ -56,7 +59,7 @@ export const monthlySubscription: PayfastSubscriptionMock = {
   effectivePlan: 'monthly_plan',
   pendingPlan: null,
   pendingAmount: null,
-  status: 'active',
+  status: 'ACTIVE',
   amount: '199.00',
   currentPeriodEnd: '2099-01-31T10:00:00+00:00',
   trialEnd: null,

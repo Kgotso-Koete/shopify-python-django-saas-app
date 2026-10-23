@@ -61,7 +61,7 @@ export const WhatsAppProfileSection = () => {
     return (
       <p className="text-sm text-muted-foreground">
         <FormattedMessage
-          defaultMessage="Use this app from WhatsApp once one of your organizations connects its internal communications number. An admin connects it on the organization's WhatsApp tab."
+          defaultMessage="Use this app from WhatsApp once one of your organizations connects its internal communications number. An admin connects it on the organization's WhatsApp page."
           id="WhatsAppProfile / No internal number"
         />
       </p>
@@ -73,10 +73,14 @@ export const WhatsAppProfileSection = () => {
       {links.map((link) => (
         <section key={link.tenantId} className="space-y-3 rounded-md border p-4" data-testid={`whatsapp-link-${link.tenantId}`}>
           <p className="text-sm">
+            {/* Elements passed as values reach React as a list, so each needs a key (Step 1.21). */}
             <FormattedMessage
               defaultMessage="{organization}: its team texts {number}."
               id="WhatsAppProfile / Organization"
-              values={{ organization: <strong>{link.organizationName}</strong>, number: <strong>{link.internalNumber}</strong> }}
+              values={{
+                organization: <strong key="organization">{link.organizationName}</strong>,
+                number: <strong key="number">{link.internalNumber}</strong>,
+              }}
             />
           </p>
           {link.linked ? <LinkedNumber link={link} /> : <LinkANumber tenantId={link.tenantId} onCheckAgain={() => void refetch()} />}
@@ -153,9 +157,9 @@ const LinkANumber = ({ tenantId, onCheckAgain }: { tenantId: string; onCheckAgai
               defaultMessage="From {number}, send this code on WhatsApp to the number above, as {message}. It works once, until {time}."
               id="WhatsAppProfile / Link / Instructions"
               values={{
-                number: <strong>{started.maskedNumber}</strong>,
-                message: <code>link {started.code}</code>,
-                time: <FormattedTime value={String(started.expiresAt)} />,
+                number: <strong key="number">{started.maskedNumber}</strong>,
+                message: <code key="message">link {started.code}</code>,
+                time: <FormattedTime key="time" value={String(started.expiresAt)} />,
               }}
             />
           </p>
@@ -222,8 +226,8 @@ const LinkedNumber = ({ link }: { link: Link }) => {
           defaultMessage="Linked to {number} since {date}."
           id="WhatsAppProfile / Linked"
           values={{
-            number: <strong>{maskedNumber}</strong>,
-            date: <FormattedDate value={String(linkedAt)} dateStyle="medium" />,
+            number: <strong key="number">{maskedNumber}</strong>,
+            date: <FormattedDate key="date" value={String(linkedAt)} dateStyle="medium" />,
           }}
         />
       </p>

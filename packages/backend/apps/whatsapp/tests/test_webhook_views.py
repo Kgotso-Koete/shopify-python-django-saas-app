@@ -210,6 +210,56 @@ class TestSignatures:
         assert WhatsAppMessage.objects.count() == 0
 
 
+class TestRefusalsAreLogged:
+    """Step 1.22: a 403 says why in the log, without the secret, the signature or the body."""
+
+    LOGGER = "apps.whatsapp.views"
+
+    def refusal_logs(self, caplog):
+        return [record for record in caplog.records if record.name == self.LOGGER and record.levelname == "WARNING"]
+
+    def assert_nothing_secret_logged(self, caplog, *values):
+        for value in values:
+            assert value not in caplog.text
+
+    def test_a_signature_that_does_not_match_is_logged(self, client, acme_account, delay, caplog):
+        body = payloads.envelope(payloads.messages_change(payloads.text_message()))
+        raw_body = json.dumps(body).encode("utf-8")
+
+        with caplog.at_level("WARNING", logger=self.LOGGER):
+            post_signed(client, body, secret="wrong-secret")
+
+        [record] = self.refusal_logs(caplog)
+        assert "doesn't match WHATSAPP_APP_SECRET" in record.getMessage()
+        self.assert_nothing_secret_logged(caplog, APP_SECRET, sign(raw_body, "wrong-secret"), "wamid.TEXT1")
+
+    def test_a_missing_signature_is_logged(self, client, acme_account, delay, caplog):
+        raw_body = json.dumps(payloads.envelope(payloads.messages_change(payloads.text_message()))).encode("utf-8")
+
+        with caplog.at_level("WARNING", logger=self.LOGGER):
+            client.post(WEBHOOK_URL, data=raw_body, content_type="application/json")
+
+        [record] = self.refusal_logs(caplog)
+        assert "no X-Hub-Signature-256 header" in record.getMessage()
+        self.assert_nothing_secret_logged(caplog, APP_SECRET, "wamid.TEXT1")
+
+    def test_an_empty_secret_setting_is_logged(self, client, settings, acme_account, delay, caplog):
+        settings.WHATSAPP_APP_SECRET = ""
+        body = payloads.envelope(payloads.messages_change(payloads.text_message()))
+
+        with caplog.at_level("WARNING", logger=self.LOGGER):
+            post_signed(client, body, secret="")
+
+        [record] = self.refusal_logs(caplog)
+        assert "WHATSAPP_APP_SECRET is empty" in record.getMessage()
+
+    def test_an_accepted_post_logs_no_warning(self, client, acme_account, delay, caplog):
+        with caplog.at_level("WARNING", logger=self.LOGGER):
+            post_signed(client, payloads.envelope(payloads.messages_change(payloads.text_message())))
+
+        assert self.refusal_logs(caplog) == []
+
+
 class TestStatuses:
     def test_a_status_updates_the_message_we_sent(self, client, acme_account, delay):
         sent = MessageFactory(

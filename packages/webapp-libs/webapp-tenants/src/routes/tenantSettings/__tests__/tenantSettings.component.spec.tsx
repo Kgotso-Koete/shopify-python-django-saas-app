@@ -87,23 +87,13 @@ describe('TenantSettings: Component', () => {
     expect(await screen.findByRole('tab', { name: /general/i })).toBeInTheDocument();
   });
 
-  // The WhatsApp tab, from @sb/webapp-whatsapp (WhatsApp plan Step 1.6).
-  it('should render WhatsApp tab when user has whatsapp.view permission', async () => {
+  // WhatsApp has its own page in the sidebar since WhatsApp plan Step 1.19, so there's no tab here,
+  // even for a member who may see it.
+  it('should never render a WhatsApp tab, even with whatsapp.view permission', async () => {
     const apolloMocks = [
       fillCommonQueryWithUser(user),
       createPermissionsMock(tenant.id, ['whatsapp.view', 'org.settings.view']),
     ];
-    const routerProps = createMockRouterProps(RoutesConfig.tenant.settings.whatsapp, {
-      tenantId: tenant.id,
-    });
-
-    render(<Component />, { apolloMocks, routerProps });
-
-    expect(await screen.findByRole('tab', { name: /whatsapp/i })).toBeInTheDocument();
-  });
-
-  it('should not render WhatsApp tab without whatsapp.view permission', async () => {
-    const apolloMocks = [fillCommonQueryWithUser(user), createPermissionsMock(tenant.id, ['org.settings.view'])];
     const routerProps = createMockRouterProps(RoutesConfig.tenant.settings.general, {
       tenantId: tenant.id,
     });

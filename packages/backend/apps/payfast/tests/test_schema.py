@@ -103,7 +103,7 @@ class TestActiveSubscriptionQuery:
         data = executed["data"]["payfastActiveSubscription"]
         assert data["plan"] == "monthly_plan"
         assert data["effectivePlan"] == "monthly_plan"
-        assert data["status"] == "active"
+        assert data["status"] == "ACTIVE"
         assert data["amount"] == "199.00"
         assert data["hasCard"] is True
         assert data["canActivateTrial"] is False
@@ -188,7 +188,7 @@ class TestPaymentsQuery:
         pay_fast_payment_factory(
             tenant=tenant,
             pf_payment_id="2",
-            kind="subscription",
+            kind="SUBSCRIPTION",
             plan="monthly_plan",
             amount_gross=Decimal("199.00"),
             item_name="Monthly plan",
@@ -203,7 +203,7 @@ class TestPaymentsQuery:
 
         nodes = [edge["node"] for edge in executed["data"]["payfastPayments"]["edges"]]
         assert sorted(node["pfPaymentId"] for node in nodes) == ["1", "2"]
-        assert {node["pfPaymentId"]: node["kind"] for node in nodes} == {"1": "donation", "2": "subscription"}
+        assert {node["pfPaymentId"]: node["kind"] for node in nodes} == {"1": "DONATION", "2": "SUBSCRIPTION"}
 
     def test_member_without_billing_view_is_denied(self, member_client, tenant):
         executed = member_client.query(self.QUERY, variable_values={"tenantId": tenant_id(tenant)})
@@ -225,7 +225,7 @@ class TestCheckoutStatusQuery:
             self.QUERY, variable_values={"tenantId": tenant_id(tenant), "mPaymentId": str(checkout.m_payment_id)}
         )
 
-        assert executed["data"]["payfastCheckoutStatus"] == "complete"
+        assert executed["data"]["payfastCheckoutStatus"] == "COMPLETE"
 
     def test_another_tenants_checkout_is_invisible(self, owner_client, tenant, pay_fast_checkout_factory):
         checkout = pay_fast_checkout_factory()  # belongs to a different tenant
@@ -402,6 +402,23 @@ class TestCancelSubscriptionMutation:
             "cancelAtPeriodEnd": True,
         }
         payfast_api.cancel.assert_called_once_with(subscription.token)
+
+    def test_the_audit_entry_names_the_statuses_as_stored(
+        self, owner_client, tenant, pay_fast_subscription_factory, payfast_api, mocker
+    ):
+        # PayFast plan section 14: the entry uses the enum's stored names, as the database does.
+        import datetime
+
+        from django.utils import timezone
+
+        pay_fast_subscription_factory(
+            tenant=tenant, monthly=True, current_period_end=timezone.now() + datetime.timedelta(days=10)
+        )
+        log_action = mocker.patch("apps.payfast.schema.log_action")
+
+        owner_client.mutate(self.MUTATION, variable_values={"input": {"tenantId": tenant_id(tenant)}})
+
+        assert log_action.call_args.kwargs["changes"] == {"status": {"old": "ACTIVE", "new": "CANCELLED"}}
 
     def test_member_without_billing_manage_is_denied(self, member_client, tenant, payfast_api):
         executed = member_client.mutate(self.MUTATION, variable_values={"input": {"tenantId": tenant_id(tenant)}})

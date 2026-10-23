@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.0.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.3.0...7.0.0) (2026-10-23)
+
+### ⚠ BREAKING CHANGES
+
+- PayFast's enums are stored with their member names, and the PayFast GraphQL API returns them: `payfastActiveSubscription.status` is `ACTIVE`, `TRIALING`, `PAST_DUE` or `CANCELLED`; `payfastCheckoutStatus` is `PENDING` or `COMPLETE`; `payfastPayments.kind` is `SUBSCRIPTION` or `DONATION`. Code outside this web app that compares against the old lowercase values must change. Migration `payfast` 0004 rewrites existing rows (the frequency columns become text: `MONTHLY` or `ANNUAL` instead of PayFast's codes 3 and 6) and can be reversed. The checkout form still sends PayFast its codes. No setting or environment variable changes
+- The organization settings WhatsApp tab (`/<organization>/tenant/settings/whatsapp`) is gone; the WhatsApp page is at `/<organization>/whatsapp`
+
+### Features
+
+- WhatsApp has its own page, with a **WhatsApp** item in the sidebar just under **Shopify products**, for members with `whatsapp.view`. Organization settings no longer has a WhatsApp tab
+- WhatsApp main menu: `You're working in Organization: <name>. What would you like to do?`, so a personal organization, named after its owner's email, reads as an organization
+
+### Bug Fixes
+
+- WhatsApp webhook: a POST refused with 403 now logs why (the signature doesn't match `WHATSAPP_APP_SECRET`, is missing, or the setting is empty), never the secret, the signature or the body
+- The profile page's WhatsApp section no longer makes React warn "Each child in a list should have a unique key"
+- The PayFast cancel audit entry uses the stored names, `ACTIVE` to `CANCELLED`
+
+### Documentation
+
+- WhatsApp plan: Steps 1.19 to 1.22 with their RED and GREEN, and the human checks updated for the WhatsApp page, the new menu text and the PayFast values (check 17)
+- PayFast plan section 14: done, with its RED and GREEN
+- WhatsApp operator guide: the WhatsApp page in the sidebar, and what a 403 in the webhook's log means
+
 ## [6.3.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.2.0...6.3.0) (2026-10-23)
 
 ### Features
