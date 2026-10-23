@@ -29,12 +29,13 @@ AMOUNT_FIELD = {"max_digits": 10, "decimal_places": 2}
 
 
 class PayFastSubscription(TimestampedMixin, models.Model):
+    # Every enum here is stored as its member names (PayFast plan section 14, agents.md section 5.3b).
     class Status(models.TextChoices):
-        ACTIVE = "active", "Active"
-        TRIALING = "trialing", "Trialing"
+        ACTIVE = "ACTIVE", "Active"
+        TRIALING = "TRIALING", "Trialing"
         # A renewal charge is overdue: PayFast is retrying it (it sends no failure notification).
-        PAST_DUE = "past_due", "Past due"
-        CANCELLED = "cancelled", "Cancelled"
+        PAST_DUE = "PAST_DUE", "Past due"
+        CANCELLED = "CANCELLED", "Cancelled"
 
     # How long a past-due subscription keeps its paid plan after the unpaid renewal date, while
     # PayFast retries the charge (https://developers.payfast.co.za/docs#recurring_billing).
@@ -51,7 +52,8 @@ class PayFastSubscription(TimestampedMixin, models.Model):
     token = models.CharField(max_length=64, blank=True, default="", db_index=True)
     # The recurring amount in ZAR, as agreed at checkout (a later price change doesn't affect it).
     amount = models.DecimalField(default=Decimal("0.00"), **AMOUNT_FIELD)
-    frequency = models.PositiveSmallIntegerField(null=True, blank=True, choices=Frequency.choices)
+    # Empty (NULL) on the free plan, which isn't billed.
+    frequency = models.CharField(max_length=16, null=True, blank=True, choices=Frequency.choices)
     current_period_start = models.DateTimeField(null=True, blank=True)
     current_period_end = models.DateTimeField(null=True, blank=True)
     trial_end = models.DateTimeField(null=True, blank=True)
@@ -121,12 +123,12 @@ class PayFastCheckout(TimestampedMixin, models.Model):
     """
 
     class Kind(models.TextChoices):
-        SUBSCRIPTION = "subscription", "Subscription"
-        DONATION = "donation", "Donation"
+        SUBSCRIPTION = "SUBSCRIPTION", "Subscription"
+        DONATION = "DONATION", "Donation"
 
     class Status(models.TextChoices):
-        PENDING = "pending", "Pending"
-        COMPLETE = "complete", "Complete"
+        PENDING = "PENDING", "Pending"
+        COMPLETE = "COMPLETE", "Complete"
 
     m_payment_id = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)
     kind = models.CharField(max_length=16, choices=Kind.choices)
@@ -137,7 +139,7 @@ class PayFastCheckout(TimestampedMixin, models.Model):
     amount = models.DecimalField(**AMOUNT_FIELD)
     # The subscription's recurring amount and frequency; empty for donations.
     recurring_amount = models.DecimalField(null=True, blank=True, **AMOUNT_FIELD)
-    frequency = models.PositiveSmallIntegerField(null=True, blank=True, choices=Frequency.choices)
+    frequency = models.CharField(max_length=16, null=True, blank=True, choices=Frequency.choices)
     is_trial = models.BooleanField(default=False)
     # For a plan change: the token of the subscription this checkout replaces (cancelled once the
     # new subscription is confirmed). Empty for a first subscription or a donation.
@@ -155,8 +157,8 @@ class PayFastPayment(TimestampedMixin, models.Model):
     """One transaction PayFast confirmed through an ITN. Shown in the tenant's transaction history."""
 
     class Kind(models.TextChoices):
-        SUBSCRIPTION = "subscription", "Subscription"
-        DONATION = "donation", "Donation"
+        SUBSCRIPTION = "SUBSCRIPTION", "Subscription"
+        DONATION = "DONATION", "Donation"
 
     tenant = models.ForeignKey("multitenancy.Tenant", on_delete=models.CASCADE, related_name="payfast_payments")
     kind = models.CharField(max_length=16, choices=Kind.choices)

@@ -1,13 +1,13 @@
-// Tests for the number troubleshooting panel in the WhatsApp tab (WhatsApp plan D18, Step 1.6b, user story 23).
+// Tests for the number troubleshooting panel on the WhatsApp page (WhatsApp plan D18, Steps 1.6b and 1.19,
+// user story 23).
 //
-// Kind of test: integration (agents.md section 2.5). Why: the panel renders inside the real tab, with the
+// Kind of test: integration (agents.md section 2.5). Why: the panel renders inside the real page, with the
 // real Apollo hooks, router and permission check; the backend is Apollo's MockedProvider, answering with
 // the shapes apps/whatsapp/schema.py sends, Meta's explained errors included.
 import type { MockedResponse } from '@apollo/client/testing';
 import { TenantType as TenantTypeField } from '@sb/webapp-api-client/constants';
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
 import { composeMockedQueryResult } from '@sb/webapp-api-client/tests/utils';
-import { RoutesConfig } from '@sb/webapp-tenants/config/routes';
 import { currentUserPermissionsQuery } from '@sb/webapp-tenants/routes/tenantSettings/tenantRoles/tenantRoles.graphql';
 import { tenantFactory } from '@sb/webapp-tenants/tests/factories/tenant';
 import { createMockRouterProps, render } from '@sb/webapp-tenants/tests/utils/rendering';
@@ -15,6 +15,7 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GraphQLError } from 'graphql';
 
+import { RoutesConfig } from '../../../config/routes';
 import {
   registerWhatsAppNumberMutation,
   requestWhatsAppVerificationCodeMutation,
@@ -85,7 +86,7 @@ const renderTab = (permissions: string[], mocks: MockedResponse[]) =>
       accountsMock(),
       ...mocks,
     ],
-    routerProps: createMockRouterProps(RoutesConfig.tenant.settings.whatsapp, { tenantId }),
+    routerProps: createMockRouterProps(RoutesConfig.whatsapp, { tenantId }),
   });
 
 const MANAGE = ['whatsapp.view', 'whatsapp.manage'];

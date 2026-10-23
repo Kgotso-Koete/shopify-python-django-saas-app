@@ -429,7 +429,7 @@ class TestProcessItnPlanChange:
         # Without this the customer would be charged by both subscriptions.
         payfast_api.cancel.assert_called_once_with(old_token)
         assert paid_subscription.superseded_token == ""
-        assert PayFastCheckout.objects.get(m_payment_id=switch_checkout.m_payment_id).status == "complete"
+        assert PayFastCheckout.objects.get(m_payment_id=switch_checkout.m_payment_id).status == "COMPLETE"
 
     def test_first_charge_of_the_new_subscription_applies_the_new_plan(
         self, paid_subscription, switch_checkout, payfast_api

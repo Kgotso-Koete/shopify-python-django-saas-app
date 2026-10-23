@@ -41,7 +41,7 @@ describe('PayFast current subscription', () => {
   });
 
   it('shows the trial end while trialing', async () => {
-    renderContent({ ...monthlySubscription, status: 'trialing', trialEnd: '2099-01-31T10:00:00+00:00' });
+    renderContent({ ...monthlySubscription, status: 'TRIALING', trialEnd: '2099-01-31T10:00:00+00:00' });
 
     expect(await screen.findByText(/free trial expiry date/i)).toBeInTheDocument();
   });
@@ -56,7 +56,7 @@ describe('PayFast current subscription', () => {
   // Plan section 12, issue 5: during a trial nothing is charged yet, so the page says what the first
   // charge will be. After a switch during a trial, that is the new plan's price, not the old one's.
   it('shows the first charge after the trial instead of the current price', async () => {
-    renderContent({ ...monthlySubscription, status: 'trialing', trialEnd: '2099-01-31T10:00:00+00:00' });
+    renderContent({ ...monthlySubscription, status: 'TRIALING', trialEnd: '2099-01-31T10:00:00+00:00' });
 
     const price = await screen.findByText(/free trial, then/i);
     expect(price).toHaveTextContent(/199\.00 \/ month/);
@@ -65,7 +65,7 @@ describe('PayFast current subscription', () => {
   it('shows the switched plan and its price as the first charge after a trial', async () => {
     renderContent({
       ...monthlySubscription,
-      status: 'trialing',
+      status: 'TRIALING',
       trialEnd: '2099-01-31T10:00:00+00:00',
       pendingPlan: 'yearly_plan',
       pendingAmount: '10.00',
@@ -80,7 +80,7 @@ describe('PayFast current subscription', () => {
   it('says a cancelled trial will not be charged', async () => {
     renderContent({
       ...monthlySubscription,
-      status: 'trialing',
+      status: 'TRIALING',
       trialEnd: '2099-01-31T10:00:00+00:00',
       cancelAtPeriodEnd: true,
     });

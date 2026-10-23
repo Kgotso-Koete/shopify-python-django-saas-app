@@ -142,7 +142,8 @@ class TestWithoutMeta:
 
         output = publish()
 
-        assert "WhatsApp tab" in output
+        # The website's WhatsApp page, in the sidebar since Step 1.19.
+        assert "WhatsApp page" in output
         assert not WhatsAppFlow.objects.exists()
 
 

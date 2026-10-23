@@ -168,5 +168,6 @@ class TestFormsThatCantBeUsed:
 
         screens = send(contact, press=menu.press("New item"))
 
-        # Connecting the number publishes them (Step 1.17); an admin can connect it again.
-        assert "WhatsApp tab" in screens[0].body
+        # Connecting the number publishes them (Step 1.17); an admin can connect it again, on the
+        # website's WhatsApp page (Step 1.19).
+        assert "WhatsApp page" in screens[0].body

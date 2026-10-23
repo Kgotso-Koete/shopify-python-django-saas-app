@@ -5,7 +5,7 @@ description: Run the WhatsApp channel locally and in production, from Meta's tes
 
 # WhatsApp
 
-Every WhatsApp number belongs to an organization, which connects it in **Organization settings → WhatsApp**. That tab has two forms:
+Every WhatsApp number belongs to an organization, which connects it on its **WhatsApp** page, in the sidebar under **Shopify products**. That page has two forms:
 
 - **Internal communications number:** the organization's team texts it to run the organization from WhatsApp. Each member links their phone on their profile page, then uses menus and forms, or an AI assistant that calls the same operations. An organization has one.
 - **External communications numbers:** its store customers text them. Answering customers comes in a later phase; until then their messages are stored.
@@ -88,11 +88,13 @@ Then, in the Meta app, under **WhatsApp → Configuration → Webhook → Edit**
 
 Press **Verify and save**: Meta calls the URL with the token, and saves it only if it gets its challenge back. Then, under **Webhook fields → Manage**, subscribe to `messages`. Every number's webhooks come here, signed with `WHATSAPP_APP_SECRET`.
 
+If the tunnel shows `403 Forbidden` for Meta's posts, the backend's log says why, in a line starting `WhatsApp webhook refused with 403`: the signature doesn't match `WHATSAPP_APP_SECRET` (usually the wrong App secret in `.env`), the signature is missing, or the setting is empty. Restart the backend after changing `.env`.
+
 Reference: https://developers.facebook.com/docs/graph-api/webhooks/getting-started
 
-## 3a. Connecting a number on the WhatsApp tab
+## 3a. Connecting a number on the WhatsApp page
 
-As an organization admin, in **Organization settings → WhatsApp**, in the form for the number's purpose, enter the Phone number ID, the WhatsApp Business Account ID and an access token, and press **Connect number**. Meta is asked about the number, then the service's app is subscribed to its WhatsApp Business account, so its messages reach the webhook; nothing is saved unless Meta accepts both. The number's row shows **Credentials verified** and **App subscribed**.
+As an organization admin, on the **WhatsApp** page in the sidebar, in the form for the number's purpose, enter the Phone number ID, the WhatsApp Business Account ID and an access token, and press **Connect number**. Meta is asked about the number, then the service's app is subscribed to its WhatsApp Business account, so its messages reach the webhook; nothing is saved unless Meta accepts both. The number's row shows **Credentials verified** and **App subscribed**.
 
 A second internal communications number is refused until the first is disconnected. Later, Meta's Embedded Signup popup will replace typing the three values.
 
@@ -135,6 +137,6 @@ A sender that never gets a reply usually means the worker isn't running: check `
 
 ## 8. When a number is stuck with Meta
 
-An organization admin with `whatsapp.manage` can repair a number from **Organization settings → WhatsApp → Troubleshoot**: Meta's status for it, a verification code by SMS or voice call, registration with its two-step PIN, and re-subscribing the app. Meta allows 10 registration attempts per number in 72 hours, so register only when Meta's status says the number isn't registered. The operator has the same tools in the Django admin, for when an organization asks for help. Every repair is written to the organization's activity log, without the PIN or code.
+An organization admin with `whatsapp.manage` can repair a number from the **WhatsApp** page, with the number's **Troubleshoot** button: Meta's status for it, a verification code by SMS or voice call, registration with its two-step PIN, and re-subscribing the app. Meta allows 10 registration attempts per number in 72 hours, so register only when Meta's status says the number isn't registered. The operator has the same tools in the Django admin, for when an organization asks for help. Every repair is written to the organization's activity log, without the PIN or code.
 
 Reference: https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/registration.md

@@ -22,7 +22,7 @@ from common.action_logging.service import log_action
 from common.graphql import exceptions
 from common.graphql.acl import permission_classes, requires
 from . import constants, services
-from .models import PayFastCheckout, PayFastPayment
+from .models import PayFastCheckout, PayFastPayment, PayFastSubscription
 
 # Billing intervals as the web app names them, per PayFast frequency.
 INTERVALS = {constants.Frequency.MONTHLY: "month", constants.Frequency.ANNUAL: "year"}
@@ -276,7 +276,8 @@ class PayFastCancelSubscriptionMutation(relay.ClientIDMutation):
         except services.PayFastError as error:
             raise validation_error(str(error)) from error
 
-        # Same audit entry as the Stripe CancelActiveSubscriptionMutation.
+        # The Stripe CancelActiveSubscriptionMutation's audit entry, with the statuses as this app
+        # stores them (PayFast plan section 14).
         log_action(
             tenant_id=tenant.pk,
             action_type=ActionType.DELETE,
@@ -284,7 +285,12 @@ class PayFastCancelSubscriptionMutation(relay.ClientIDMutation):
             entity_id=str(tenant.pk),
             entity_name="Subscription",
             actor_user=info.context.user,
-            changes={"status": {"old": "active", "new": "cancelled"}},
+            changes={
+                "status": {
+                    "old": PayFastSubscription.Status.ACTIVE.value,
+                    "new": PayFastSubscription.Status.CANCELLED.value,
+                }
+            },
         )
         return cls(active_subscription=subscription)
 

@@ -57,6 +57,11 @@ class TestTheMainMenu:
         assert "Items" in menu.titles
         assert WhatsAppConversation.objects.get(contact=contact).tenant == acme
 
+    def test_its_text_names_the_organization_as_an_organization(self, contact):
+        # Step 1.20: a personal organization is named after its owner's email, so "Organization:"
+        # says what the name is.
+        assert main_menu(contact).body == "You're working in Organization: Acme. What would you like to do?"
+
     def test_there_is_no_organization_to_pick_or_create(self, contact):
         menu = main_menu(contact)
 

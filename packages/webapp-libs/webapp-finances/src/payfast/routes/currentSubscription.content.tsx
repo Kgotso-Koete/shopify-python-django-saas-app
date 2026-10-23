@@ -51,7 +51,8 @@ export const PayfastCurrentSubscriptionContent = () => {
   if (!subscription) return null;
 
   const isYearly = subscription.effectivePlan === SubscriptionPlanName.YEARLY;
-  const isTrialing = subscription.status === 'trialing';
+  // The subscription's stored status name (PayFast plan section 14).
+  const isTrialing = subscription.status === 'TRIALING';
   const isPendingYearly = subscription.pendingPlan === SubscriptionPlanName.YEARLY;
   const hasPendingPrice = Boolean(subscription.pendingPlan && subscription.pendingAmount);
 

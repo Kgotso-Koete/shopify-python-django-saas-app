@@ -68,7 +68,11 @@ def _receive_events(request):
         return HttpResponseBadRequest("The body is not JSON.")
 
     secret = settings.WHATSAPP_APP_SECRET
-    if not secret or not signature_is_valid(raw_body, request.META.get("HTTP_X_HUB_SIGNATURE_256"), secret):
+    signature = request.META.get("HTTP_X_HUB_SIGNATURE_256")
+    if not secret or not signature_is_valid(raw_body, signature, secret):
+        # Step 1.22: say why, so a wrong App secret in .env is found without guessing. Never the
+        # secret, the signature or the body: the log shows only which check failed.
+        logger.warning("WhatsApp webhook refused with 403: %s.", _refusal_reason(secret, signature))
         return HttpResponseForbidden()
 
     # Signed but unusable: acknowledged, because a retry would never get better.
@@ -88,3 +92,12 @@ def _receive_events(request):
     for message_id in store_events(events, accounts_by_number):
         transaction.on_commit(partial(process_inbound_message.delay, message_id))
     return HttpResponse(status=200)
+
+
+def _refusal_reason(secret: str, signature: str | None) -> str:
+    """Which of the signature checks a refused POST failed, in words for the log."""
+    if not secret:
+        return "WHATSAPP_APP_SECRET is empty, so no signature can be checked"
+    if not signature:
+        return "the request has no X-Hub-Signature-256 header"
+    return "its X-Hub-Signature-256 signature doesn't match WHATSAPP_APP_SECRET (is it our Meta app's App secret?)"

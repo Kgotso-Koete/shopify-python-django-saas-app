@@ -21,9 +21,9 @@ pytestmark = pytest.mark.django_db
 
 class TestFrequency:
     def test_frequency_codes_match_payfast_docs(self):
-        # https://developers.payfast.co.za/docs#subscriptions : 3 - Monthly, 6 - Annual
-        assert constants.Frequency.MONTHLY == 3
-        assert constants.Frequency.ANNUAL == 6
+        # https://developers.payfast.co.za/docs#subscriptions : 3 - Monthly, 6 - Annual. Stored as the
+        # names since PayFast plan section 14; the codes are only what's sent to PayFast.
+        assert constants.PAYFAST_FREQUENCY_CODES == {constants.Frequency.MONTHLY: 3, constants.Frequency.ANNUAL: 6}
 
 
 class TestPlanPrices:

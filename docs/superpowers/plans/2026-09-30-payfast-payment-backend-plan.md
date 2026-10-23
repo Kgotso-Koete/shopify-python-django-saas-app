@@ -944,6 +944,7 @@ The kinds are defined in agents.md section 2.5. Each file's docstring says why i
   - [`test_checks.py`](../../../packages/backend/apps/payfast/tests/test_checks.py): a broken configuration fails at startup.
 - **Unit:**
   - [`test_constants.py`](../../../packages/backend/apps/payfast/tests/test_constants.py)
+  - [`test_enums.py`](../../../packages/backend/apps/payfast/tests/test_enums.py): every enum stores its member names (section 14).
   - [`test_signature.py`](../../../packages/backend/apps/payfast/tests/test_signature.py)
   - [`test_client.py`](../../../packages/backend/apps/payfast/tests/test_client.py): PayFast's HTTP is a fake session.
   - [`test_itn.py`](../../../packages/backend/apps/payfast/tests/test_itn.py): PayFast's validate endpoint, DNS and API client mocked.
@@ -951,6 +952,7 @@ The kinds are defined in agents.md section 2.5. Each file's docstring says why i
   - The test database:
     - [`test_models.py`](../../../packages/backend/apps/payfast/tests/test_models.py)
     - [`test_commands.py`](../../../packages/backend/apps/payfast/tests/test_commands.py)
+    - [`test_enum_migration.py`](../../../packages/backend/apps/payfast/tests/test_enum_migration.py): section 14's data migration, run on rows; nothing faked.
   - [`test_services.py`](../../../packages/backend/apps/payfast/tests/test_services.py): the test database, with the PayFast API mocked.
   - [`test_tasks.py`](../../../packages/backend/apps/payfast/tests/test_tasks.py): the test database, with the maintenance service patched. Its beat-schedule tests are sanity.
   - [`test_schema.py`](../../../packages/backend/apps/payfast/tests/test_schema.py): the GraphQL API, with the PayFast API mocked.
@@ -959,7 +961,7 @@ The kinds are defined in agents.md section 2.5. Each file's docstring says why i
 - **Smoke:**
   - [`test_smoke.py`](../../../packages/backend/apps/payfast/tests/test_smoke.py): one tenant's whole journey across GraphQL and the ITN webhook. Only PayFast's servers are faked.
 
-## 14. Planned: enums stored with exactly their names (agents.md section 5.3b)
+## 14. Enums stored with exactly their names (agents.md section 5.3b)
 
 Added on 2026-10-22. Use case: whoever reads a subscription, checkout or payment row in the database, an admin checking a customer's billing for example, sees what each value means. The maintainer's rule: "Every enum in the application (for commits we pair programme on) should be mirrored in the database, no ambiguity, no deviations, no nonsense." It comes after the WhatsApp plan's Step 1.17, unless the maintainer wants it sooner.
 
@@ -982,3 +984,22 @@ PayFast is already released (6.0.0), so these data migrations will run on a prod
   - Each data migration converts old rows and back, called directly, never with `transaction=True`.
   - The checkout form still sends PayFast's frequency codes 3 and 6.
   - The return page's component test expects `COMPLETE`.
+- **Done, 2026-10-23,** on the WhatsApp branch, released with the WhatsApp plan's Steps 1.19 to 1.22 (maintainer's choice). Run by the AI agent in TDD cycles, with the maintainer's go-ahead.
+  - **Backend RED:**
+    - New: [`test_enums.py`](../../../packages/backend/apps/payfast/tests/test_enums.py) and [`test_enum_migration.py`](../../../packages/backend/apps/payfast/tests/test_enum_migration.py). Changed to the new values: [`test_constants.py`](../../../packages/backend/apps/payfast/tests/test_constants.py), [`test_schema.py`](../../../packages/backend/apps/payfast/tests/test_schema.py) (plus the audit entry's test), [`test_services.py`](../../../packages/backend/apps/payfast/tests/test_services.py) and [`test_smoke.py`](../../../packages/backend/apps/payfast/tests/test_smoke.py).
+    - `test_enum_migration.py` couldn't import its migration. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/payfast -q -p no:warnings > logs/payfast-section-14-backend-red.log 2>&1`
+    - The rest: `13 failed, 216 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/payfast -q -p no:warnings --ignore=apps/payfast/tests/test_enum_migration.py > logs/payfast-section-14-backend-red-rest.log 2>&1`
+  - **Backend GREEN:**
+    - [`constants.py`](../../../packages/backend/apps/payfast/constants.py): `Frequency` is a `TextChoices`, and `PAYFAST_FREQUENCY_CODES` with `payfast_frequency_code()` give PayFast's codes. [`services.py`](../../../packages/backend/apps/payfast/services.py) uses them for the checkout form's `frequency`.
+    - [`models.py`](../../../packages/backend/apps/payfast/models.py): the new values; both `frequency` fields are text, NULL on the free plan.
+    - [`schema.py`](../../../packages/backend/apps/payfast/schema.py): the cancel audit entry uses the enum (`ACTIVE` to `CANCELLED`). Stripe's entry keeps its own lowercase values.
+    - [`0004_enum_values_are_member_names.py`](../../../packages/backend/apps/payfast/migrations/0004_enum_values_are_member_names.py), hand-written: the frequency columns become text, the rows are rewritten, then the other fields' choices. The reverse undoes them in the opposite order.
+    - `234 passed`, on a fresh test database so the migration ran. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/payfast --create-db -q -p no:warnings > logs/payfast-section-14-backend-green.log 2>&1`
+    - `apps/finances`: `69 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/finances -q -p no:warnings > logs/payfast-section-14-finances.log 2>&1`
+    - No migration missing: `No changes detected`. Command: `docker compose run --rm -T backend python manage.py makemigrations --check --dry-run > logs/payfast-section-14-makemigrations-check.log 2>&1`
+    - Black: `536 files would be left unchanged`. Command: `docker compose run --rm -T backend black --check . > logs/payfast-section-14-black.log 2>&1`
+  - **Web RED:** the fixtures and the return page, current subscription, cancel and transaction history specs expect the new values: `9 failed, 49 passed`. Command: `pnpm nx run webapp-finances:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=payfast > logs/payfast-section-14-web-red.log 2>&1`
+    - One of the nine, `routes.spec.tsx`'s "the current subscription tab is the PayFast one", timed out loading the page while the folder ran; on its own it passed 2 times out of 2 (`logs/payfast-section-14-web-routes-*.log`). It doesn't read these values.
+  - **Web GREEN:** the return page, current subscription, cancel page and transaction history compare against `COMPLETE`, `TRIALING` and `DONATION`. `webapp-finances`: `100 passed`; lint and type-check exit code `0`. Command: `pnpm nx run webapp-finances:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/payfast-section-14-web-green.log 2>&1; pnpm nx run webapp-finances:lint --skip-nx-cache > logs/payfast-section-14-webapp-finances-lint.log 2>&1; pnpm nx run webapp-finances:type-check --skip-nx-cache > logs/payfast-section-14-webapp-finances-type-check.log 2>&1`
+  - **Not changed:** the `?kind=subscription` and `?kind=donation` in the return page's address are the web app's own parameters, not stored values. `client.update()` still takes PayFast's code: it's the edge where PayFast's values go out, and nothing calls it.
+  - **Seen, not fixed:** the cancel page's spec logs React's "unique key" warning, from a `FormattedMessage` value in `PayfastCancelSubscription`, as WhatsApp Step 1.21 fixed on the profile page.

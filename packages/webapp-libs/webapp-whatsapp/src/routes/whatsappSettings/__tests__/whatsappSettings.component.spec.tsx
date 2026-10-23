@@ -1,15 +1,14 @@
-// Tests for the WhatsApp tab in organization settings (WhatsApp plan Steps 1.6 and 1.17, user story 11):
-// two forms, one for the internal communications number the team texts and one for the external
-// communications numbers store customers text, each with its own examples, button and list.
+// Tests for the organization's WhatsApp page, in the sidebar (WhatsApp plan Steps 1.6, 1.17 and 1.19,
+// user story 11): two forms, one for the internal communications number the team texts and one for the
+// external communications numbers store customers text, each with its own examples, button and list.
 //
-// Kind of test: integration (agents.md section 2.5). Why: the tab renders with the real Apollo hooks,
+// Kind of test: integration (agents.md section 2.5). Why: the page renders with the real Apollo hooks,
 // router and permission check; the backend is Apollo's MockedProvider, answering with the shapes
 // apps/whatsapp/schema.py sends, its errors included.
 import type { MockedResponse } from '@apollo/client/testing';
 import { TenantType as TenantTypeField } from '@sb/webapp-api-client/constants';
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
 import { composeMockedQueryResult } from '@sb/webapp-api-client/tests/utils';
-import { RoutesConfig } from '@sb/webapp-tenants/config/routes';
 import { currentUserPermissionsQuery } from '@sb/webapp-tenants/routes/tenantSettings/tenantRoles/tenantRoles.graphql';
 import { tenantFactory } from '@sb/webapp-tenants/tests/factories/tenant';
 import { createMockRouterProps, render } from '@sb/webapp-tenants/tests/utils/rendering';
@@ -17,6 +16,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GraphQLError } from 'graphql';
 
+import { RoutesConfig } from '../../../config/routes';
 import {
   connectWhatsAppAccountMutation,
   disconnectWhatsAppAccountMutation,
@@ -86,7 +86,7 @@ const VIEW_ONLY = ['whatsapp.view'];
 const renderTab = (permissions: string[], mocks: MockedResponse[]) =>
   render(<WhatsAppSettings />, {
     apolloMocks: [userMock(), permissionsMock(permissions), ...mocks],
-    routerProps: createMockRouterProps(RoutesConfig.tenant.settings.whatsapp, { tenantId }),
+    routerProps: createMockRouterProps(RoutesConfig.whatsapp, { tenantId }),
   });
 
 const connectionInput = (purpose = EXTERNAL) => ({
@@ -112,6 +112,14 @@ const connectButton = async (purpose = EXTERNAL) =>
   within(await section(purpose)).findByRole('button', { name: /connect number/i });
 
 describe('WhatsAppSettings: Component', () => {
+  // Step 1.19: its own page, reached from the sidebar, so it carries its own heading.
+  it('is a page of its own, with a heading saying what it is for', async () => {
+    renderTab(VIEW_ONLY, [accountsMock([])]);
+
+    expect(await screen.findByRole('heading', { level: 1, name: /^whatsapp$/i })).toBeInTheDocument();
+    expect(screen.getByText(/the numbers your team and your customers text/i)).toBeInTheDocument();
+  });
+
   describe('the two forms', () => {
     it('explains each kind of number with examples', async () => {
       renderTab(MANAGE, [accountsMock([])]);

@@ -68,10 +68,35 @@ const renderSection = (mocks: MockedResponse[]) =>
 const organization = (tenantId = 'acme-id') => screen.findByTestId(`whatsapp-link-${tenantId}`);
 
 describe('WhatsAppProfileSection: Component', () => {
+  // Step 1.21. First in the file on purpose: React warns about a missing key only once per component,
+  // so a test that rendered these messages earlier would hide the warning from this one.
+  it('renders an organization, a link code and a linked number without a React key warning', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    renderSection([
+      linksMock([LINKED, link({ tenantId: 'beta-id', organizationName: 'Beta', internalNumber: '+27 00 000 0806' })]),
+      composeMockedQueryResult(startWhatsAppLinkMutation, {
+        variables: { input: { tenantId: 'beta-id', phoneNumber: '083 123 4567' } },
+        data: { startWhatsAppLink: STARTED },
+      }),
+    ]);
+
+    // The organization line and the linked number render first, then the link code's instructions.
+    const beta = within(await organization('beta-id'));
+    await user.type(beta.getByLabelText(/your whatsapp number/i), '083 123 4567');
+    await user.click(beta.getByRole('button', { name: /get a link code/i }));
+    expect(await beta.findByText('123456')).toBeInTheDocument();
+
+    const keyWarnings = consoleError.mock.calls.filter(([message]) => String(message).includes('unique "key"'));
+    consoleError.mockRestore();
+    expect(keyWarnings).toEqual([]);
+  });
+
   it('says who connects a number when none of the user’s organizations has one', async () => {
     renderSection([linksMock([])]);
 
-    expect(await screen.findByText(/an admin connects it on the organization's whatsapp tab/i)).toBeInTheDocument();
+    // The organization's WhatsApp page, in the sidebar since Step 1.19.
+    expect(await screen.findByText(/an admin connects it on the organization's whatsapp page/i)).toBeInTheDocument();
   });
 
   it('shows each organization, with the number its team texts', async () => {

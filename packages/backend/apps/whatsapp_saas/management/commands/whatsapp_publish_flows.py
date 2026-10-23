@@ -29,7 +29,7 @@ class Command(BaseCommand):
         ).order_by("pk")
         if not internal_numbers:
             self.stdout.write(
-                "There's no internal communications number yet. Connect one on an organization's WhatsApp tab."
+                "There's no internal communications number yet. Connect one on an organization's WhatsApp page."
             )
             return
 

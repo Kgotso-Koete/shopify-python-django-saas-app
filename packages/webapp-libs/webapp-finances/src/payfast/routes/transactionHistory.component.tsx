@@ -25,9 +25,9 @@ const PayfastTransactionHistoryEntry = ({ payment }: { payment: Payment }) => {
   const formatZar = useFormatZar();
   const planName = useSubscriptionPlanDisplayName(payment.plan as SubscriptionPlanName);
 
-  // The same labels as the Stripe history.
+  // The same labels as the Stripe history. The kind is its stored name (PayFast plan section 14).
   const description =
-    payment.kind === 'donation'
+    payment.kind === 'DONATION'
       ? intl.formatMessage({ defaultMessage: 'Donation', id: 'Stripe / Transaction History / Donation payment description' })
       : intl.formatMessage(
           { defaultMessage: '{planName} plan', id: 'Stripe / Transaction History / Subscription payment description' },

@@ -45,7 +45,8 @@ export const PayfastReturn = () => {
     pollInterval: POLL_INTERVAL_MS,
     fetchPolicy: 'network-only',
   });
-  const isComplete = data?.payfastCheckoutStatus === 'complete';
+  // The checkout's stored status name, PENDING or COMPLETE (PayFast plan section 14).
+  const isComplete = data?.payfastCheckoutStatus === 'COMPLETE';
 
   useEffect(() => {
     const timer = setTimeout(() => {

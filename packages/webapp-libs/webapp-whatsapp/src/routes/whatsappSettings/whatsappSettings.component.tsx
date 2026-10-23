@@ -1,19 +1,23 @@
 import { useQuery } from '@apollo/client/react';
 import { AccountPurpose } from '@sb/webapp-api-client/graphql';
+import { PageLayout } from '@sb/webapp-core/components/pageLayout';
+import { Paragraph } from '@sb/webapp-core/components/typography';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@sb/webapp-core/components/ui/card';
 import { usePermissionCheck } from '@sb/webapp-tenants/hooks';
 import { useCurrentTenant } from '@sb/webapp-tenants/providers';
 import { AlertTriangle, MessageCircle, Users } from 'lucide-react';
 import { ReactNode } from 'react';
-import { FormattedMessage } from 'react-intl';
+import { Helmet } from 'react-helmet-async';
+import { FormattedMessage, useIntl } from 'react-intl';
 
 import { whatsAppAccountsQuery } from '../../graphql/whatsappAccounts.graphql';
 import { AccountRow, WhatsAppAccount } from './accountRow.component';
 import { ConnectNumberForm } from './connectNumberForm.component';
 
 /**
- * The WhatsApp tab in organization settings (WhatsApp plan Steps 1.6 and 1.17, user story 11). Every
- * number belongs to the organization, and the tab has a form for each kind, each with its own examples,
+ * The organization's WhatsApp page (WhatsApp plan Steps 1.6, 1.17 and 1.19, user story 11), in the
+ * sidebar under Shopify products; it was a tab in organization settings until Step 1.19. Every number
+ * belongs to the organization, and the page has a form for each kind, each with its own examples,
  * Connect number button and list: the internal communications number its team texts, of which it has
  * one, and the external communications numbers its store customers text.
  *
@@ -22,6 +26,7 @@ import { ConnectNumberForm } from './connectNumberForm.component';
  * a courtesy, not the protection.
  */
 export const WhatsAppSettings = () => {
+  const intl = useIntl();
   const { data: currentTenant } = useCurrentTenant();
   const tenantId = currentTenant?.id ?? '';
   const { hasPermission: canManage } = usePermissionCheck('whatsapp.manage');
@@ -37,8 +42,39 @@ export const WhatsAppSettings = () => {
   const shared = { tenantId, canManage, reload, loading: loading && !data, failed: Boolean(error) };
 
   return (
+    // The same page shell as the Shopify products page, its neighbour in the sidebar.
+    <PageLayout>
+      <Helmet title={intl.formatMessage({ defaultMessage: 'WhatsApp', id: 'WhatsAppSettings / page title' })} />
+      <div className="mx-auto w-full max-w-5xl space-y-8">
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="h-6 w-6 text-primary" />
+            <h1 className="text-3xl font-bold tracking-tight">
+              <FormattedMessage defaultMessage="WhatsApp" id="WhatsAppSettings / Title" />
+            </h1>
+          </div>
+          <Paragraph className="text-lg text-muted-foreground">
+            <FormattedMessage
+              defaultMessage="The numbers your team and your customers text, connected to this app"
+              id="WhatsAppSettings / Subheader"
+            />
+          </Paragraph>
+        </div>
+        <WhatsAppNumbers accounts={accounts} shared={shared} />
+      </div>
+    </PageLayout>
+  );
+};
+
+type SharedProps = Pick<NumberSectionProps, 'tenantId' | 'canManage' | 'reload' | 'loading' | 'failed'>;
+// As whatsAppAccountsQuery returns them: each with its purpose, which picks its section.
+type ListedAccount = WhatsAppAccount & { purpose: AccountPurpose };
+
+/** The two kinds of number, each in its own section, with one load error above them. */
+const WhatsAppNumbers = ({ accounts, shared }: { accounts: ListedAccount[]; shared: SharedProps }) => {
+  return (
     <div className="space-y-6">
-      {error && (
+      {shared.failed && (
         // A failed load must not look like "no numbers connected".
         <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="whatsapp-accounts-error">
           <AlertTriangle className="h-4 w-4 text-amber-500" />

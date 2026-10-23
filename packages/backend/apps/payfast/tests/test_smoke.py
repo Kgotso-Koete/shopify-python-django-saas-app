@@ -98,11 +98,11 @@ def test_a_tenants_journey_from_trial_to_cancellation(
     """
     assert (
         graphql(graphene_client, status_query, tenantId=tenant_id, m=checkout["mPaymentId"])["payfastCheckoutStatus"]
-        == "complete"
+        == "COMPLETE"
     )
     subscription = graphql(graphene_client, subscription_query, tenantId=tenant_id)["payfastActiveSubscription"]
     assert subscription["effectivePlan"] == "monthly_plan"
-    assert subscription["status"] == "trialing"
+    assert subscription["status"] == "TRIALING"
 
     # 4. The owner switches to yearly: a new R0 PayFast subscription that bills from the end of the
     #    trial, and once PayFast confirms it, the old subscription is cancelled.
@@ -169,5 +169,5 @@ def test_a_tenants_journey_from_trial_to_cancellation(
         tenantId=tenant_id,
     )
     assert [edge["node"] for edge in history["payfastPayments"]["edges"]] == [
-        {"pfPaymentId": "102", "kind": "donation"}
+        {"pfPaymentId": "102", "kind": "DONATION"}
     ]
