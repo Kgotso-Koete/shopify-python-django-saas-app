@@ -451,6 +451,11 @@ module.exports = {
             'introduction/features/ai-agent',
             'introduction/features/cms',
             'introduction/features/graphql',
+            {
+              type: 'doc',
+              id: 'features/whatsapp/index',
+              label: 'WhatsApp',
+            },
           ],
         },
         {

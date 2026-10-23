@@ -1,3 +1,10 @@
+"""
+Tests for the Shopify GraphQL API in apps/shopify/schema.py: listing, claiming and installing stores.
+
+Kind of test: integration (agents.md section 2.5). Why: queries and mutations go through the real
+GraphQL schema, permissions and test database; nothing is faked.
+"""
+
 import pytest
 from django.conf import settings
 from django.core.signing import TimestampSigner

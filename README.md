@@ -33,6 +33,18 @@
 
 ---
 
+> ### 🤖 AI AGENTS: READ [`docs/superpowers/agents.md`](docs/superpowers/agents.md) FIRST
+>
+> **Any AI coding agent working in this repository must read
+> [`docs/superpowers/agents.md`](docs/superpowers/agents.md) before doing anything else, every
+> session.** It holds the standing rules for how the human maintainer and AI agents work here:
+> who runs commands, strict test-driven RED/GREEN cycles, additive changes only, how commits and
+> plans are done, and more. It is the only source of truth for those rules, and it wins over an
+> agent's own defaults. The concrete values for this repository (branch, CI, verification
+> commands) are the dev flow bindings in [`CLAUDE.md`](CLAUDE.md).
+
+---
+
 > ### 📚 LOCAL HOW-TO GUIDES — START HERE
 >
 > **The comprehensive development guides for this codebase live inside the repository at
@@ -239,20 +251,20 @@ Run one command at a time, never side by side: `pnpm nx run-many` runs three pro
 
 #### Backend
 
-The backend tests live in 12 modules: the Django apps in `packages/backend/apps/` that have tests, plus `common`. `apps/content` and `apps/websockets` have no tests, so they aren't in the lists; when an app gets its first tests, add its folder to the lists below. The 12 modules add up to the same total as `pnpm nx run backend:test` (1007 on 2026-10-12). pytest's last line names every non-zero count, so a module with skipped tests shows `N skipped`, and one without shows nothing about skips. `-e DATABASE_URL=` keeps the tests on the local database even if your `.env` points `DATABASE_URL` elsewhere. The backend's `setup.cfg` already runs pytest with `-v`, so the logs always list every test. pytest prints no total in its last line, so the summaries take it from the `collected N items` line.
+The backend tests live in 15 modules: the Django apps in `packages/backend/apps/` that have tests, plus `common`. `apps/content` and `apps/websockets` have no tests, so they aren't in the lists; when an app gets its first tests, add its folder to the lists below. The 15 modules add up to the same total as `pnpm nx run backend:test` (1706 on 2026-10-23). pytest's last line names every non-zero count, so a module with skipped tests shows `N skipped`, and one without shows nothing about skips. `-e DATABASE_URL=` keeps the tests on the local database even if your `.env` points `DATABASE_URL` elsewhere. The backend's `setup.cfg` already runs pytest with `-v`, so the logs always list every test. pytest prints no total in its last line, so the summaries take it from the `collected N items` line.
 
 **Every module, one at a time.** Each module runs in its own container and gets its own log, `logs/backend-<module>.log`.
 
 Summary, one line per module (`apps/shopify: 88 tests | 88 passed, 45 warnings in 33.37s`):
 
 ```shell
-mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/shopify apps/sso apps/translations apps/users common; do f=logs/backend-$(basename $a).log; docker compose run --rm -T -e DATABASE_URL= backend pytest $a > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "$a: $n tests |${r:- no test results, see $f}"; done
+mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/phone_verification apps/shopify apps/sso apps/translations apps/users apps/whatsapp apps/whatsapp_saas common; do f=logs/backend-$(basename $a).log; docker compose run --rm -T -e DATABASE_URL= backend pytest $a > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "$a: $n tests |${r:- no test results, see $f}"; done
 ```
 
 Verbose, every test live:
 
 ```shell
-mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/shopify apps/sso apps/translations apps/users common; do docker compose run --rm -T -e DATABASE_URL= backend pytest $a 2>&1 | tee logs/backend-$(basename $a).log; echo "$a exit code: ${PIPESTATUS[0]}"; done
+mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/phone_verification apps/shopify apps/sso apps/translations apps/users apps/whatsapp apps/whatsapp_saas common; do docker compose run --rm -T -e DATABASE_URL= backend pytest $a 2>&1 | tee logs/backend-$(basename $a).log; echo "$a exit code: ${PIPESTATUS[0]}"; done
 ```
 
 **Before committing: the whole backend as CI runs it.** `pnpm nx run backend:test` also runs the `black` formatter and the missing-migrations check before the tests, which the module loop doesn't. `workers:test` runs the Celery workers' tests (its script runs pytest without `-v`, so its log has no per-test lines).
@@ -287,26 +299,26 @@ mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/s
 
 #### Frontend
 
-The frontend is 15 Nx projects (`webapp` and 14 libraries in `packages/webapp-libs`), each with its own `lint`, `type-check` and `test` targets, so each is run by name. `--watchAll=false` makes Jest run once and exit, `--maxWorkers=2` limits each Jest run's memory, and `--skip-nx-cache` makes Nx really run the tests instead of replaying an earlier result. In the verbose form, every Jest flag goes after a bare `--`, and only Nx's own `--skip-nx-cache` before it: Nx has a `--verbose` flag of its own, so Jest's must come after `--`, and once `--` is there Nx passes on only what follows it, silently dropping Jest flags placed before it (the log's `> nx run ...` line shows what was passed on).
+The frontend is 16 Nx projects (`webapp` and 15 libraries in `packages/webapp-libs`), each with its own `lint`, `type-check` and `test` targets, so each is run by name. `--watchAll=false` makes Jest run once and exit, `--maxWorkers=2` limits each Jest run's memory, and `--skip-nx-cache` makes Nx really run the tests instead of replaying an earlier result. In the verbose form, every Jest flag goes after a bare `--`, and only Nx's own `--skip-nx-cache` before it: Nx has a `--verbose` flag of its own, so Jest's must come after `--`, and once `--` is there Nx passes on only what follows it, silently dropping Jest flags placed before it (the log's `> nx run ...` line shows what was passed on).
 
 **Every project, one at a time.** Each project gets its own log, `logs/<project>.log`.
 
 Summary, two lines per project (`webapp-shopify: Test Suites: 2 passed, 2 total` and `webapp-shopify: Tests: 13 passed, 13 total`):
 
 ```shell
-mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1; s=$(sed 's/\x1b\[[0-9;]*m//g' logs/$p.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"); echo "${s:-$p: no test results, see logs/$p.log}"; done
+mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify webapp-whatsapp; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1; s=$(sed 's/\x1b\[[0-9;]*m//g' logs/$p.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"); echo "${s:-$p: no test results, see logs/$p.log}"; done
 ```
 
 Verbose, every test live, listed under its file's `PASS` or `FAIL` line:
 
 ```shell
-mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --verbose 2>&1 | tee logs/$p.log; echo "$p test exit code: ${PIPESTATUS[0]}"; done
+mkdir -p logs; for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify webapp-whatsapp; do pnpm nx run $p:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --verbose 2>&1 | tee logs/$p.log; echo "$p test exit code: ${PIPESTATUS[0]}"; done
 ```
 
 The summary of the last run, read from the logs (after a verbose run, for example):
 
 ```shell
-for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify; do sed 's/\x1b\[[0-9;]*m//g' logs/$p.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"; done
+for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify webapp-whatsapp; do sed 's/\x1b\[[0-9;]*m//g' logs/$p.log | grep -E "(Test Suites|Tests):" | sed "s/^/$p: /"; done
 ```
 
 **One project or one test file.** Leave out `--testPathPattern` for the whole project; with it, Jest runs only the test files whose path contains that text.
@@ -331,7 +343,7 @@ CI's `test-lib` job runs each frontend library's tests from a hand-written list 
 mkdir -p logs; (node .github/workflows/scripts/check-test-lib-matrix.test.js && node .github/workflows/scripts/check-test-lib-matrix.js) 2>&1 | tee logs/test-lib-matrix.log; echo "test-lib-matrix exit code: ${PIPESTATUS[0]}"
 ```
 
-Expect `check-test-lib-matrix.test.js: all assertions passed`, then `All 14 webapp libraries with a test target are in the test-lib matrix.` and exit code 0. Run it after adding a frontend library or changing `webapp.yml`'s list.
+Expect `check-test-lib-matrix.test.js: all assertions passed`, then `All 15 webapp libraries with a test target are in the test-lib matrix.` and exit code 0. Run it after adding a frontend library or changing `webapp.yml`'s list.
 
 The full set (frontend lint and type-check, all tests, and the check that CI runs every library's tests), with logs saved to the gitignored `logs/` folder, is in section 8 of [`docs/superpowers/plans/2026-10-07-restore-green-test-suite-plan.md`](docs/superpowers/plans/2026-10-07-restore-green-test-suite-plan.md).
 

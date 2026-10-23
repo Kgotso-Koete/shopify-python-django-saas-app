@@ -81,6 +81,10 @@
         "packages/webapp-libs/webapp-tenants/src/index.ts"
       ],
       "@sb/webapp-tenants/*": ["packages/webapp-libs/webapp-tenants/src/*"],
+      "@sb/webapp-whatsapp": [
+        "packages/webapp-libs/webapp-whatsapp/src/index.ts"
+      ],
+      "@sb/webapp-whatsapp/*": ["packages/webapp-libs/webapp-whatsapp/src/*"],
       "webapp-libs/webapp-shopify/webapp-shopify": [
         "packages/webapp-libs/webapp-shopify/webapp-shopify/src/index.ts"
       ]

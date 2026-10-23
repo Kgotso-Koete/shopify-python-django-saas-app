@@ -4,6 +4,9 @@ Unit tests for apps/payfast/client.py, the PayFast Subscriptions and Refunds API
 The HTTP session is a fake, so these tests pin exactly what we send to api.payfast.co.za:
 endpoint, method, headers (merchant-id, version, timestamp, signature), body and the sandbox flag.
 Reference: https://developers.payfast.co.za/api
+
+Kind of test: unit (agents.md section 2.5). Why: the API client on its own, with no database;
+PayFast's HTTP is a fake session.
 """
 
 from decimal import Decimal

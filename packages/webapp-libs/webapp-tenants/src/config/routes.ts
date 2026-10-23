@@ -10,6 +10,8 @@ export const RoutesConfig = {
       activityLogs: 'activity-logs',
       roles: 'roles',
       backup: 'backup',
+      // The WhatsApp tab (WhatsApp plan Step 1.6); its screens are in @sb/webapp-whatsapp.
+      whatsapp: 'whatsapp',
     }),
     accessDenied: 'access-denied',
   }),

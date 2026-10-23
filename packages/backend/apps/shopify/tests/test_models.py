@@ -1,3 +1,10 @@
+"""
+Tests for apps/shopify/models.py: stores, OAuth states and webhook deliveries.
+
+Kind of test: integration (agents.md section 2.5). Why: rows are saved in and read back from the
+test database; nothing is faked.
+"""
+
 import pytest
 from cryptography.fernet import Fernet
 from django.conf import settings

@@ -93,6 +93,9 @@ LOCAL_APPS = [
     # Always installed, whichever PAYMENT_BACKEND is active, so its tables and migrations are stable.
     "apps.payfast",
     "apps.shopify",
+    "apps.whatsapp",
+    "apps.phone_verification",
+    "apps.whatsapp_saas",
 ]
 
 INSTALLED_APPS = (
@@ -807,6 +810,41 @@ SHOPIFY_AUTH_TIMEOUT = env.int("SHOPIFY_AUTH_TIMEOUT", default=600)  # 10 minute
 # Switch to "celery" when handlers start doing slow work (API calls, syncing products).
 SHOPIFY_WEBHOOK_DISPATCH = env("SHOPIFY_WEBHOOK_DISPATCH", default="sync")
 SHOPIFY_ENABLED = bool(SHOPIFY_API_KEY and SHOPIFY_API_SECRET)
+
+# ==============================================================================
+# WHATSAPP CONFIGURATION
+# ==============================================================================
+# WhatsApp channel (apps.whatsapp; design in docs/superpowers/plans/2026-10-06-whatsapp-first-channel-plan.md).
+# Always defined so apps.whatsapp imports safely; the apps.whatsapp system check reports missing or
+# invalid values only when WHATSAPP_ENABLED.
+WHATSAPP_ENABLED = env.bool("WHATSAPP_ENABLED", default=False)
+# Meta Graph API version for every request to Meta (https://developers.facebook.com/docs/graph-api/changelog).
+WHATSAPP_GRAPH_API_VERSION = env("WHATSAPP_GRAPH_API_VERSION", default="v26.0")
+# Our Meta app, which every organization's number is connected to (plan Step 1.18): its App secret
+# signs every number's webhooks, and Meta sends its verify token back when it checks the webhook URL.
+# Each number's access token comes from the form on its organization's WhatsApp tab, stored encrypted.
+WHATSAPP_APP_SECRET = env("WHATSAPP_APP_SECRET", default="")
+WHATSAPP_VERIFY_TOKEN = env("WHATSAPP_VERIFY_TOKEN", default="")
+# Fernet key for WhatsApp credentials at rest; generate like BACKUP_MASTER_KEY above.
+WHATSAPP_TOKEN_ENCRYPTION_KEY = env("WHATSAPP_TOKEN_ENCRYPTION_KEY", default="")
+# Where replies go: "LOG" (the default) stores them without calling Meta, "META" sends them. The
+# values are apps.whatsapp.constants.SendBackend's member names (agents.md section 5.3b).
+WHATSAPP_SEND_BACKEND = env("WHATSAPP_SEND_BACKEND", default="LOG")
+# Strict ordering (plan D21): each reply waits for Meta's "sent" status on the one before, not only
+# for Meta to accept it. Off by default; it adds a few seconds per reply.
+WHATSAPP_SEND_WAIT_FOR_SENT_STATUS = env.bool("WHATSAPP_SEND_WAIT_FOR_SENT_STATUS", default=False)
+# Mode for users who haven't chosen one: "WHATSAPP_FORM" (menus and forms) or "AGENTIC" (AI assistant),
+# apps.whatsapp.constants.ConversationMode's member names.
+WHATSAPP_DEFAULT_CONVERSATION_MODE = env("WHATSAPP_DEFAULT_CONVERSATION_MODE", default="WHATSAPP_FORM")
+# Country code given to a local phone number (one leading 0) when it's stored as international
+# digits, e.g. "083 123 4567" -> "27831234567" (plan D19). 1 to 3 digits, no "+".
+WHATSAPP_DEFAULT_COUNTRY_CODE = env("WHATSAPP_DEFAULT_COUNTRY_CODE", default="27")
+# How long a WhatsApp linking code works, and how long an idle conversation keeps its menu state.
+WHATSAPP_LINK_CODE_TTL_SECONDS = env.int("WHATSAPP_LINK_CODE_TTL_SECONDS", default=600)  # 10 minutes
+WHATSAPP_CONVERSATION_TTL_SECONDS = env.int("WHATSAPP_CONVERSATION_TTL_SECONDS", default=1800)  # 30 minutes
+# AI assistant model (empty means OPENAI_MODEL) and its cap on tool calls per inbound message.
+WHATSAPP_AI_MODEL = env("WHATSAPP_AI_MODEL", default="")
+WHATSAPP_AI_MAX_TOOL_CALLS = env.int("WHATSAPP_AI_MAX_TOOL_CALLS", default=5)
 
 # Translations settings
 # Translations use the same storage backend as the rest of the app (STORAGE_BACKEND)

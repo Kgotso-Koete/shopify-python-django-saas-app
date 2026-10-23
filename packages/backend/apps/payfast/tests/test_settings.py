@@ -8,6 +8,9 @@ uses the live set, anything else ("local", "test", "qa", ...) uses the sandbox s
 the code only ever reads the resolved, unsuffixed names (PAYFAST_MERCHANT_ID, ...).
 
 See docs/superpowers/plans/2026-09-30-payfast-payment-backend-plan.md section 3.1 and section 7.
+
+Kind of test: sanity (agents.md section 2.5). Why: they prove each setting reads its environment
+variable, in a fresh subprocess; nothing is faked.
 """
 
 import pytest

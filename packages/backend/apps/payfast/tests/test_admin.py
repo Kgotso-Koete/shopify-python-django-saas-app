@@ -5,6 +5,9 @@ the Stripe admin refund view (apps/finances/views_admin.py).
 
 Refunds use the PayFast Refunds API (https://developers.payfast.co.za/api#refunds), which PayFast
 does not offer in its sandbox, so here the API is always the `payfast_api` mock.
+
+Kind of test: integration (agents.md section 2.5). Why: requests go through the Django admin pages
+with Django's test client, against the test database; the PayFast Refunds API is mocked.
 """
 
 from decimal import Decimal

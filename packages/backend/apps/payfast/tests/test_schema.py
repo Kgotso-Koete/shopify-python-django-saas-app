@@ -5,6 +5,9 @@ Integration tests for the PayFast GraphQL API (apps/payfast/schema.py), through 
 Permissions mirror the Stripe resolvers in apps/finances/schema.py: reading billing data needs
 `billing.view`, changing it needs `billing.manage` (both Owner-only by default), and public data
 (plans, donation amounts, which backend is active) needs nothing.
+
+Kind of test: integration (agents.md section 2.5). Why: queries and mutations go through the real
+GraphQL schema, permissions and test database; the PayFast API is mocked.
 """
 
 from decimal import Decimal

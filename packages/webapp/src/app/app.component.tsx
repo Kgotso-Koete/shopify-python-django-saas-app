@@ -21,6 +21,7 @@ import { SaasIdeas } from '@sb/webapp-generative-ai/routes';
 import { ShopifyShops, ShopifyLink, ShopifyProducts } from '@sb/webapp-shopify/routes';
 import { PermissionAuthRoute } from '@sb/webapp-tenants/components/routes/permissionAuthRoute';
 import { TenantBackupSettings } from '@sb/webapp-backup';
+import { WhatsAppSettings } from '@sb/webapp-whatsapp';
 import {
   AccessDenied,
   AddTenantForm,
@@ -89,6 +90,10 @@ export const App = () => {
                 {/* Backup settings - requires backup.view */}
                 <Route element={<PermissionAuthRoute permissions="backup.view" />}>
                   <Route path={RoutesConfig.tenant.settings.backup} element={<TenantBackupSettings />} />
+                </Route>
+                {/* WhatsApp numbers - requires whatsapp.view (WhatsApp plan Step 1.6) */}
+                <Route element={<PermissionAuthRoute permissions="whatsapp.view" />}>
+                  <Route path={RoutesConfig.tenant.settings.whatsapp} element={<WhatsAppSettings />} />
                 </Route>
               </Route>
             </Route>

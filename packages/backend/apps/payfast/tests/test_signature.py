@@ -10,6 +10,9 @@ Tests for apps/payfast/signature.py: the three MD5 signatures PayFast uses.
 
 The oracle for the expected values is PayFast's own published reference implementation (PHP, since
 PayFast's server is PHP), reproduced below in Python, rather than our own code.
+
+Kind of test: unit (agents.md section 2.5). Why: plain functions checked against PayFast's reference
+implementation, with no database or network; nothing is faked.
 """
 
 import hashlib

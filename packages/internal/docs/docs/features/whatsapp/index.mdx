@@ -1,0 +1,140 @@
+---
+title: WhatsApp
+description: Run the WhatsApp channel locally and in production, from Meta's test number to the AI assistant
+---
+
+# WhatsApp
+
+Every WhatsApp number belongs to an organization, which connects it in **Organization settings → WhatsApp**. That tab has two forms:
+
+- **Internal communications number:** the organization's team texts it to run the organization from WhatsApp. Each member links their phone on their profile page, then uses menus and forms, or an AI assistant that calls the same operations. An organization has one.
+- **External communications numbers:** its store customers text them. Answering customers comes in a later phase; until then their messages are stored.
+
+Every number is connected to one Meta app: the service's own, whose App secret and webhook verify token are set in the environment by whoever runs the service. Each number's access token comes from its form, stored encrypted.
+
+This guide is for whoever runs the service. The design, decisions and checks are in `docs/superpowers/plans/2026-10-06-whatsapp-first-channel-plan.md`.
+
+## How it fits together
+
+- **Meta calls us** at one webhook, `/api/whatsapp/webhook/`. It checks Meta's signature, stores each message once, and queues it for the Celery worker. It answers Meta within a second, whatever happens next.
+- **The worker decides each reply** (`apps/whatsapp/services/router.py`): on an internal number, the menus, a form or the assistant for a linked member of its organization, and nothing for anyone else, except to `link <code>`.
+- **Replies go out in order** through a queue per contact (`apps/whatsapp/services/outbox.py`), sent by `apps/whatsapp/client.py` with plain HTTP requests to Meta's Graph API.
+- **Every write is confirmed** by the user's own press on **Confirm**, whether the menus or the assistant asked for it.
+
+## 1. The service's Meta app and a test number
+
+Whoever runs the service does this once; organizations never make a Meta app.
+
+1. At https://developers.facebook.com/apps, create an app of type **Business**, and add the **WhatsApp** product. Meta gives it a test number.
+2. In **WhatsApp → API Setup**, note:
+   - the test number's **Phone number ID**
+   - the **WhatsApp Business Account ID**
+   - an access token: **Generate access token** gives one that lasts about 24 hours. For anything longer-lived, use a System User's token, from Business Settings → **System users**.
+   - the test number itself, digits only, with its country code
+3. Under **To**, add every phone that will text the test number, and enter the code Meta sends each one. A test number can only message the numbers listed there.
+4. In **App settings → Basic**, note the **App secret**. It signs every webhook Meta sends.
+
+## 2. The environment variables
+
+Put these in `packages/backend/.env`, which git ignores. Never commit real values.
+
+```shell
+WHATSAPP_ENABLED=True
+WHATSAPP_APP_SECRET=<the service's Meta app's App secret>
+WHATSAPP_VERIFY_TOKEN=<a long random string you choose>
+WHATSAPP_TOKEN_ENCRYPTION_KEY=<a Fernet key>
+WHATSAPP_SEND_BACKEND=META
+OPENAI_API_KEY=<an OpenAI key, for the assistant>
+```
+
+Generate the encryption key, which encrypts every stored access token, and a verify token:
+
+```shell
+docker compose run --rm -T backend python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+The `WHATSAPP_PLATFORM_*` settings no longer exist: delete them from `.env` if they're there.
+
+The other settings have safe defaults, set in `packages/backend/.env.shared`:
+
+| Setting                              | Default         | What it does                                                                                                                                     |
+| ------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `WHATSAPP_SEND_BACKEND`              | `LOG`           | `LOG` stores replies without sending them; `META` sends them.                                                                                    |
+| `WHATSAPP_DEFAULT_CONVERSATION_MODE` | `WHATSAPP_FORM` | What a user gets before choosing: menus (`WHATSAPP_FORM`) or the assistant (`AGENTIC`).                                                          |
+| `WHATSAPP_AI_MODEL`                  | `gpt-5.1`       | The assistant's model. It must support function calling: the backend refuses to start with an instruct model when the default mode is `AGENTIC`. |
+| `WHATSAPP_AI_MAX_TOOL_CALLS`         | `5`             | The assistant's tool calls per message.                                                                                                          |
+| `WHATSAPP_CONVERSATION_TTL_SECONDS`  | `1800`          | How long menus and forms last without a message.                                                                                                 |
+| `WHATSAPP_LINK_CODE_TTL_SECONDS`     | `600`           | How long a linking code works.                                                                                                                   |
+| `WHATSAPP_DEFAULT_COUNTRY_CODE`      | `27`            | The country code for numbers typed without one, such as `083 123 4567`.                                                                          |
+| `WHATSAPP_GRAPH_API_VERSION`         | `v26.0`         | Meta's Graph API version.                                                                                                                        |
+
+Values are written exactly as shown, in capitals: they're the names the database stores, and the old lowercase values such as `meta` are refused.
+
+With `WHATSAPP_ENABLED=True`, a missing or malformed value stops the backend at startup with a `whatsapp.E00x` error that says what to fix.
+
+## 3. The webhook, once, in the service's Meta app
+
+Meta must reach the webhook over public HTTPS. Locally, start a tunnel to the backend's port:
+
+```shell
+ngrok http --url=<your ngrok domain> 5001
+```
+
+Then, in the Meta app, under **WhatsApp → Configuration → Webhook → Edit**:
+
+- **Callback URL:** `https://<your ngrok domain>/api/whatsapp/webhook/`
+- **Verify token:** your `WHATSAPP_VERIFY_TOKEN`
+
+Press **Verify and save**: Meta calls the URL with the token, and saves it only if it gets its challenge back. Then, under **Webhook fields → Manage**, subscribe to `messages`. Every number's webhooks come here, signed with `WHATSAPP_APP_SECRET`.
+
+Reference: https://developers.facebook.com/docs/graph-api/webhooks/getting-started
+
+## 3a. Connecting a number on the WhatsApp tab
+
+As an organization admin, in **Organization settings → WhatsApp**, in the form for the number's purpose, enter the Phone number ID, the WhatsApp Business Account ID and an access token, and press **Connect number**. Meta is asked about the number, then the service's app is subscribed to its WhatsApp Business account, so its messages reach the webhook; nothing is saved unless Meta accepts both. The number's row shows **Credentials verified** and **App subscribed**.
+
+A second internal communications number is refused until the first is disconnected. Later, Meta's Embedded Signup popup will replace typing the three values.
+
+Reference: https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-customers-as-a-tech-provider.md
+
+## 4. Linking a phone
+
+Each team member opens their profile page, picks the organization, types their phone number and presses **Get a link code**, then sends `link <code>` from that phone to the internal number. **Open WhatsApp** opens the chat with the message typed. Anyone who isn't linked gets no reply, so store customers who find the number hear nothing.
+
+## 5. The forms
+
+The menus' forms (new item, edit item, rename the organization) are WhatsApp Flows. Connecting an internal number publishes them to its WhatsApp Business account, in the background. After a form's JSON in `apps/whatsapp_saas/flows/` changes, publish it again to every internal number:
+
+```shell
+docker compose run --rm -T backend python manage.py whatsapp_publish_flows
+```
+
+A form is published again only when its JSON changes. With `WHATSAPP_SEND_BACKEND=LOG`, nothing reaches Meta and fake ids are stored, so the menus work locally. If Meta refuses a form, the command prints Meta's validation errors.
+
+For local data without Meta, `whatsapp_seed_demo --email <your email>` seeds demo numbers of both kinds, a linked user and items.
+
+## 6. Sending for real
+
+With `WHATSAPP_SEND_BACKEND=META`, replies reach the user's phone. With `LOG`, they're stored and marked sent with ids starting `log.`, which is what tests and local development use.
+
+To see what a contact was sent, and why a message failed:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppMessage; print(json.dumps(list(WhatsAppMessage.objects.filter(direction='OUTBOUND').order_by('-pk').values('contact__wa_id', 'status', 'error_code', 'payload')[:5]), indent=4, default=str))"
+```
+
+A sender that never gets a reply usually means the worker isn't running: check `docker compose ps celery_default`.
+
+## 7. Costs and the 24-hour rule
+
+- **The 24-hour window:** free-form replies can only be sent within 24 hours of the user's last message. After that, only approved templates can be sent, and Meta answers anything else with error `131047`. Every conversation here starts with the user texting, so replies fall inside the window. https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages.md
+- **Pricing:** Meta charges per message. Since 2026-10-01, replies inside the window are also charged at the utility rate, though Meta's main pricing page still calls them free. Assume every reply costs money. https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/non-template-messages.md
+- **The assistant** also costs OpenAI tokens for every message: the history sent is the last 20 turns, and each tool call is one more request.
+- **Throughput:** about one message every 6 seconds to the same user (error `131056`). https://developers.facebook.com/documentation/business-messaging/whatsapp/throughput.md
+
+## 8. When a number is stuck with Meta
+
+An organization admin with `whatsapp.manage` can repair a number from **Organization settings → WhatsApp → Troubleshoot**: Meta's status for it, a verification code by SMS or voice call, registration with its two-step PIN, and re-subscribing the app. Meta allows 10 registration attempts per number in 72 hours, so register only when Meta's status says the number isn't registered. The operator has the same tools in the Django admin, for when an organization asks for help. Every repair is written to the organization's activity log, without the PIN or code.
+
+Reference: https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/registration.md

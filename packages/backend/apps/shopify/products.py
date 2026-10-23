@@ -27,10 +27,19 @@ class ShopifyTryAgainLater(Exception):
 
 
 # Admin API 2026-10. featuredImage and priceRange are deprecated, so featuredMedia and priceRangeV2.
-# Paging forward is first + after; backward is last + before.
+# Paging forward is first + after; backward is last + before. `query` is Shopify's search filter; free
+# text in it is "a case-insensitive search of multiple fields", and an omitted one lists everything.
+# sortKey and reverse set the order; omitted, Shopify sorts by id:
+# https://shopify.dev/docs/api/admin-graphql/latest/queries/products
 PRODUCTS_QUERY = """
-query Products($first: Int, $after: String, $last: Int, $before: String) {
-  products(first: $first, after: $after, last: $last, before: $before) {
+query Products(
+  $first: Int, $after: String, $last: Int, $before: String, $query: String,
+  $sortKey: ProductSortKeys, $reverse: Boolean
+) {
+  products(
+    first: $first, after: $after, last: $last, before: $before, query: $query,
+    sortKey: $sortKey, reverse: $reverse
+  ) {
     nodes {
       id
       title
@@ -66,11 +75,20 @@ query Products($first: Int, $after: String, $last: Int, $before: String) {
 """
 
 
-def fetch_products(shop, first: int, after: str | None = None, before: str | None = None) -> dict[str, Any]:
+def fetch_products(
+    shop,
+    first: int,
+    after: str | None = None,
+    before: str | None = None,
+    query: str | None = None,
+    newest_first: bool = False,
+) -> dict[str, Any]:
     """
     One page of the shop's products. `first` is the page size, capped at MAX_PAGE_SIZE; pass the
     previous page's end cursor as `after` for the next page, or its start cursor as `before` for the
-    previous one.
+    previous one. `query`, optional, searches the products (added for the WhatsApp menus, WhatsApp
+    plan Step 1.12); blank or None lists them all, as before. `newest_first` lists the most recently
+    created first (WhatsApp plan Step 1.12b); without it, Shopify's own order, as before.
     """
     # The messages are fixed texts: they reach the browser, so nothing from Shopify's reply goes in.
     if shop.uninstalled_at or shop.needs_reinstall:
@@ -83,6 +101,11 @@ def fetch_products(shop, first: int, after: str | None = None, before: str | Non
         variables = {"first": page_size}
         if after:
             variables["after"] = after
+    if query and query.strip():
+        variables["query"] = query.strip()
+    if newest_first:
+        variables["sortKey"] = "CREATED_AT"
+        variables["reverse"] = True
 
     try:
         # admin_client_for flags the store needs_reinstall when Shopify rejects its refresh token.

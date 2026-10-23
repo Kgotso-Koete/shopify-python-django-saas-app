@@ -29,4 +29,12 @@ describe('Profile: Component', () => {
     const roleBadges = screen.getAllByText(/user/i);
     expect(roleBadges.length).toBeGreaterThan(0);
   });
+
+  // The WhatsApp section, from @sb/webapp-whatsapp (WhatsApp plan Step 1.14).
+  it('should show the WhatsApp section', async () => {
+    render(<Component />, { apolloMocks: [fillCommonQueryWithUser(currentUserFactory())] });
+
+    // Upstream's CardTitle is a div, not a heading, so the card is found by its words.
+    expect(await screen.findByText(/link your whatsapp number, and choose menus or the ai assistant/i)).toBeInTheDocument();
+  });
 });

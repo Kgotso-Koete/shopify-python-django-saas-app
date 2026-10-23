@@ -29,11 +29,21 @@ export const TenantSettings = () => {
   const { hasPermission: canViewSecurity, loading: loadingSecurity } = usePermissionCheck('security.view');
   const { hasPermission: canViewActivityLogs, loading: loadingLogs } = usePermissionCheck('security.logs.view');
   const { hasPermission: canViewBackup, loading: loadingBackup } = usePermissionCheck('backup.view');
-  
+  // The WhatsApp tab, from @sb/webapp-whatsapp (WhatsApp plan Step 1.6).
+  const { hasPermission: canViewWhatsApp, loading: loadingWhatsApp } = usePermissionCheck('whatsapp.view');
+
   // Personal tenants don't have RBAC, so allow access to backup settings
   const canViewBackupSettings = canViewBackup || isPersonal;
 
-  const isLoading = loadingMembers || loadingRoles || loadingSettings || loadingBilling || loadingSecurity || loadingLogs || loadingBackup;
+  const isLoading =
+    loadingMembers ||
+    loadingRoles ||
+    loadingSettings ||
+    loadingBilling ||
+    loadingSecurity ||
+    loadingLogs ||
+    loadingBackup ||
+    loadingWhatsApp;
 
   // Determine the first available tab based on permissions
   const availableTabs = useMemo(() => {
@@ -45,8 +55,18 @@ export const TenantSettings = () => {
     if (canViewSecurity) tabs.push({ path: RoutesConfig.tenant.settings.security, permission: 'security.view' });
     if (canViewActivityLogs) tabs.push({ path: RoutesConfig.tenant.settings.activityLogs, permission: 'security.logs.view' });
     if (canViewBackupSettings) tabs.push({ path: RoutesConfig.tenant.settings.backup, permission: 'backup.view' });
+    if (canViewWhatsApp) tabs.push({ path: RoutesConfig.tenant.settings.whatsapp, permission: 'whatsapp.view' });
     return tabs;
-  }, [canViewMembers, canViewRoles, canViewSettings, canViewBilling, canViewSecurity, canViewActivityLogs, canViewBackupSettings]);
+  }, [
+    canViewMembers,
+    canViewRoles,
+    canViewSettings,
+    canViewBilling,
+    canViewSecurity,
+    canViewActivityLogs,
+    canViewBackupSettings,
+    canViewWhatsApp,
+  ]);
 
   // Redirect to first available tab if current path is not accessible
   useEffect(() => {
@@ -131,6 +151,13 @@ export const TenantSettings = () => {
               <Link to={generateTenantPath(RoutesConfig.tenant.settings.backup)} replace>
                 <TabsTrigger value={generateTenantPath(RoutesConfig.tenant.settings.backup)}>
                   <FormattedMessage defaultMessage="Backups" id="Tenant settings / Backups" />
+                </TabsTrigger>
+              </Link>
+            )}
+            {canViewWhatsApp && (
+              <Link to={generateTenantPath(RoutesConfig.tenant.settings.whatsapp)} replace>
+                <TabsTrigger value={generateTenantPath(RoutesConfig.tenant.settings.whatsapp)}>
+                  <FormattedMessage defaultMessage="WhatsApp" id="Tenant settings / WhatsApp" />
                 </TabsTrigger>
               </Link>
             )}

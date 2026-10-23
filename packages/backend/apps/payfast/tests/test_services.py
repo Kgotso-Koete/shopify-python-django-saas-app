@@ -6,6 +6,9 @@ allow it. Same plans, one trial per tenant, plan changes at the end of the perio
 the end of the period, the same emails. The PayFast API is always the `payfast_api` mock, so no
 request leaves the test. ITN security checks are tested in test_itn.py; here `process_itn` receives
 data that already passed them.
+
+Kind of test: integration (agents.md section 2.5). Why: the services write checkouts, payments and
+subscriptions in the test database; the PayFast API is mocked.
 """
 
 import datetime

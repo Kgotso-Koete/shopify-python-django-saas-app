@@ -1,5 +1,8 @@
 """
 Tests for the Shopify verification functions (HMAC and shop domain validation).
+
+Kind of test: unit (agents.md section 2.5). Why: plain functions, with no database or network;
+nothing is faked.
 """
 
 import hmac

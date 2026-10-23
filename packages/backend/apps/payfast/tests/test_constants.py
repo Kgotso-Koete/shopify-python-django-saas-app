@@ -3,6 +3,9 @@ Tests for apps/payfast/constants.py: plan prices, donation amounts and PayFast U
 
 Plan identities (free_plan, monthly_plan, yearly_plan) are shared with the Stripe implementation
 (apps/finances/constants.py); only the ZAR prices and PayFast frequencies are PayFast-specific.
+
+Kind of test: unit (agents.md section 2.5). Why: plain functions and values, with no database or
+network; nothing is faked.
 """
 
 from decimal import Decimal

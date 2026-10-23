@@ -930,3 +930,55 @@ were fixed test-first (RED before GREEN) on 2026-10-02; each item ends with what
    called while a transaction is open. `cancel_subscription` calls PayFast first and locks the row afterwards;
    `process_itn` runs follow-up API calls (`_cancel_superseded`) after its transaction commits. A test fixture
    (`api_called_outside_transactions`) fails any test that calls the API inside a transaction.
+
+## 13. Verification Plan
+
+Added on 2026-10-17. Sections 5 and 11 already hold how each step was verified and the human checks, so this section holds only the kinds of test.
+
+### Kinds of test
+
+The kinds are defined in agents.md section 2.5. Each file's docstring says why it's that kind and what's faked. All are in [`apps/payfast/tests/`](../../../packages/backend/apps/payfast/tests/).
+
+- **Sanity:**
+  - [`test_settings.py`](../../../packages/backend/apps/payfast/tests/test_settings.py): each setting reads its environment variable.
+  - [`test_checks.py`](../../../packages/backend/apps/payfast/tests/test_checks.py): a broken configuration fails at startup.
+- **Unit:**
+  - [`test_constants.py`](../../../packages/backend/apps/payfast/tests/test_constants.py)
+  - [`test_signature.py`](../../../packages/backend/apps/payfast/tests/test_signature.py)
+  - [`test_client.py`](../../../packages/backend/apps/payfast/tests/test_client.py): PayFast's HTTP is a fake session.
+  - [`test_itn.py`](../../../packages/backend/apps/payfast/tests/test_itn.py): PayFast's validate endpoint, DNS and API client mocked.
+- **Integration:**
+  - The test database:
+    - [`test_models.py`](../../../packages/backend/apps/payfast/tests/test_models.py)
+    - [`test_commands.py`](../../../packages/backend/apps/payfast/tests/test_commands.py)
+  - [`test_services.py`](../../../packages/backend/apps/payfast/tests/test_services.py): the test database, with the PayFast API mocked.
+  - [`test_tasks.py`](../../../packages/backend/apps/payfast/tests/test_tasks.py): the test database, with the maintenance service patched. Its beat-schedule tests are sanity.
+  - [`test_schema.py`](../../../packages/backend/apps/payfast/tests/test_schema.py): the GraphQL API, with the PayFast API mocked.
+  - [`test_views.py`](../../../packages/backend/apps/payfast/tests/test_views.py): the ITN route, with PayFast's validate endpoint and DNS faked.
+  - [`test_admin.py`](../../../packages/backend/apps/payfast/tests/test_admin.py): the admin pages, with the PayFast Refunds API mocked.
+- **Smoke:**
+  - [`test_smoke.py`](../../../packages/backend/apps/payfast/tests/test_smoke.py): one tenant's whole journey across GraphQL and the ITN webhook. Only PayFast's servers are faked.
+
+## 14. Planned: enums stored with exactly their names (agents.md section 5.3b)
+
+Added on 2026-10-22. Use case: whoever reads a subscription, checkout or payment row in the database, an admin checking a customer's billing for example, sees what each value means. The maintainer's rule: "Every enum in the application (for commits we pair programme on) should be mirrored in the database, no ambiguity, no deviations, no nonsense." It comes after the WhatsApp plan's Step 1.17, unless the maintainer wants it sooner.
+
+PayFast is already released (6.0.0), so these data migrations will run on a production database. Each one gets a reverse, and the release notes say so.
+
+- **What changes, each stored as its member names:**
+  - [`PayFastSubscription.Status`](../../../packages/backend/apps/payfast/models.py): `ACTIVE`, `TRIALING`, `PAST_DUE`, `CANCELLED`
+  - `PayFastCheckout.Kind` and `PayFastPayment.Kind`: `SUBSCRIPTION`, `DONATION`
+  - `PayFastCheckout.Status`: `PENDING`, `COMPLETE`
+  - [`Frequency`](../../../packages/backend/apps/payfast/constants.py): stored as `MONTHLY` and `ANNUAL`, instead of PayFast's codes 3 and 6. The codes are looked up only where the checkout form is built for PayFast (`services.py`). `PayFastSubscription.frequency` and `PayFastCheckout.frequency` become text fields.
+- **What follows from it:**
+  - The web app's PayFast return page reads `payfastCheckoutStatus` and expects `complete`; it changes to `COMPLETE` in the same step.
+  - The hard-coded audit-log entry `"active"` → `"cancelled"` in `schema.py` uses the enum instead.
+  - GraphQL turns a frequency into "month" or "year" from the enum's names, not the codes.
+- **Left as they are:**
+  - `PayFastPayment.payment_status`: PayFast's own `COMPLETE` or `CANCELLED`, stored as received. They aren't an enum of ours, and they already read as their names.
+  - The plan names, which are upstream's (`apps/finances/constants.py`).
+- **Tests first:**
+  - Every PayFast enum stores exactly its member names.
+  - Each data migration converts old rows and back, called directly, never with `transaction=True`.
+  - The checkout form still sends PayFast's frequency codes 3 and 6.
+  - The return page's component test expects `COMPLETE`.

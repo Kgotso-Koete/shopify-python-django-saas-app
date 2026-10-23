@@ -93,6 +93,7 @@ jobs:
           - webapp-ai-assistant
           - webapp-backup
           - webapp-shopify
+          - webapp-whatsapp
     steps:
       - uses: actions/checkout@v3
         with:

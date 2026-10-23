@@ -9,6 +9,10 @@ PayFast's docs require these checks, and say "you should not continue the proces
 3. the amount matches what we expected (done in services.process_itn, which knows the expectation);
 4. PayFast's /eng/query/validate endpoint confirms the data.
 We also check that the ITN is for our merchant account.
+
+Kind of test: unit (agents.md section 2.5). Why: the ITN checks on their own, on requests built
+with RequestFactory and no route or database; PayFast's validate endpoint, DNS and API client are
+mocked.
 """
 
 from unittest import mock

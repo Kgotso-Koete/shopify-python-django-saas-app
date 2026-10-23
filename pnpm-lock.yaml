@@ -735,6 +735,9 @@ importers:
       '@sb/webapp-tenants':
         specifier: workspace:*
         version: link:../webapp-libs/webapp-tenants
+      '@sb/webapp-whatsapp':
+        specifier: workspace:*
+        version: link:../webapp-libs/webapp-whatsapp
       '@storybook/addon-docs':
         specifier: ^10.1.11
         version: 10.1.11(@types/react@19.2.7)(esbuild@0.25.12)(rollup@4.54.0)(storybook@10.1.11(@testing-library/dom@10.1.0)(prettier@3.7.4)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(vite@6.4.1(@types/node@20.12.12)(jiti@2.6.1)(less@4.1.3)(sass@1.77.2)(stylus@0.59.0)(terser@5.46.0)(yaml@2.4.2))(webpack@5.105.0(@swc/core@1.15.7(@swc/helpers@0.5.23))(esbuild@0.25.12))
@@ -1260,6 +1263,21 @@ importers:
         version: link:../webapp-notifications
       lucide-react:
         specifier: ^0.378.0
+        version: 0.378.0(react@19.2.3)
+
+  packages/webapp-libs/webapp-whatsapp:
+    dependencies:
+      '@sb/webapp-api-client':
+        specifier: workspace:*
+        version: link:../webapp-api-client
+      '@sb/webapp-core':
+        specifier: workspace:*
+        version: link:../webapp-core
+      '@sb/webapp-tenants':
+        specifier: workspace:*
+        version: link:../webapp-tenants
+      lucide-react:
+        specifier: 0.378.0
         version: 0.378.0(react@19.2.3)
 
   packages/workers:

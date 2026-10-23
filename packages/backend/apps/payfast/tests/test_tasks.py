@@ -2,6 +2,10 @@
 Tests for the daily maintenance entry points: the Celery task, its beat schedule entry, and the
 equivalent management command for deployments without Celery (docs/superpowers/agents.md, 4.1).
 What the maintenance does is tested in test_services.py::TestDailyMaintenance.
+
+Kind of test: integration (agents.md section 2.5). Why: the task and command run against the test
+database, with the maintenance service patched. The exception is the beat-schedule tests, which are
+sanity: they read settings in a fresh subprocess.
 """
 
 from io import StringIO

@@ -3,6 +3,9 @@ Tests for reading a store's products from the Shopify Admin API (plan step 11, s
 
 The Admin API is never called: `admin_client_for` is replaced by a fake client whose `graphql()`
 returns a canned response, as test_client.py does with `requests.post`.
+
+Kind of test: integration (agents.md section 2.5). Why: products are read for a store row in the
+test database, which is flagged when its token is rejected; the Shopify Admin API is faked.
 """
 
 import pytest
@@ -152,6 +155,64 @@ def test_previous_page_sends_last_with_before(shop, fake_client):
     fetch_products(shop, first=12, before="cursor-start")
 
     assert sent_variables(fake_client) == {"last": 12, "before": "cursor-start"}
+
+
+# Search, added for the WhatsApp menus (WhatsApp plan Step 1.12, asked for and approved on
+# 2026-10-18). Free text in Shopify's `query` argument is "a case-insensitive search of multiple
+# fields": https://shopify.dev/docs/api/admin-graphql/latest/queries/products
+
+
+def test_a_search_sends_the_words_as_shopify_s_query(shop, fake_client):
+    fetch_products(shop, first=7, query="blue shirt")
+
+    assert sent_variables(fake_client) == {"first": 7, "query": "blue shirt"}
+    assert "query: $query" in sent_query(fake_client)
+
+
+def test_a_search_pages_like_any_list(shop, fake_client):
+    fetch_products(shop, first=7, after="cursor-end", query="shirt")
+
+    assert sent_variables(fake_client) == {"first": 7, "after": "cursor-end", "query": "shirt"}
+
+
+@pytest.mark.parametrize("query", [None, "", "   "])
+def test_no_search_words_means_no_query_as_before(shop, fake_client, query):
+    # The website's products page passes none, so what it sends is unchanged.
+    fetch_products(shop, first=12, query=query)
+
+    assert sent_variables(fake_client) == {"first": 12}
+
+
+# Newest first, added for the WhatsApp menus (WhatsApp plan Step 1.12b, chosen on 2026-10-20 for
+# WhatsApp only). ProductSortKeys has CREATED_AT, and `reverse` reverses the order:
+# https://shopify.dev/docs/api/admin-graphql/latest/queries/products
+
+
+def test_newest_first_sorts_by_creation_date_reversed(shop, fake_client):
+    fetch_products(shop, first=7, newest_first=True)
+
+    assert sent_variables(fake_client) == {"first": 7, "sortKey": "CREATED_AT", "reverse": True}
+    assert "sortKey: $sortKey" in sent_query(fake_client)
+    assert "reverse: $reverse" in sent_query(fake_client)
+
+
+def test_newest_first_pages_and_searches_like_any_list(shop, fake_client):
+    fetch_products(shop, first=7, before="cursor-start", query="shirt", newest_first=True)
+
+    assert sent_variables(fake_client) == {
+        "last": 7,
+        "before": "cursor-start",
+        "query": "shirt",
+        "sortKey": "CREATED_AT",
+        "reverse": True,
+    }
+
+
+def test_without_newest_first_no_order_is_sent_as_before(shop, fake_client):
+    # The website's products page doesn't ask for it, so its order is unchanged.
+    fetch_products(shop, first=12, newest_first=False)
+
+    assert sent_variables(fake_client) == {"first": 12}
 
 
 def test_page_info_comes_back_unchanged(shop, fake_client):

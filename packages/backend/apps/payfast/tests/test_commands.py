@@ -1,5 +1,8 @@
 """
 Tests for the PayFast management commands (apps/payfast/management/commands/).
+
+Kind of test: integration (agents.md section 2.5). Why: the commands write rows in the test
+database; nothing is faked.
 """
 
 import pytest

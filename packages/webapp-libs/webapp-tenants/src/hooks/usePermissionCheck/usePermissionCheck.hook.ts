@@ -166,6 +166,9 @@ export type PermissionCode =
   // Shopify
   | 'shopify.view'
   | 'shopify.manage'
+  // WhatsApp (apps/whatsapp/permissions.py)
+  | 'whatsapp.view'
+  | 'whatsapp.manage'
   // Wildcards
   | 'org.*'
   | 'members.*'

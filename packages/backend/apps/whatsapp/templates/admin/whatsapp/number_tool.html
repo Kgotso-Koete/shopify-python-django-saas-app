@@ -1,0 +1,20 @@
+{% extends "admin/base_site.html" %} {% block content %}
+<p>
+  Number
+  <strong
+    >{{ account.display_phone_number|default:account.phone_number_id }}</strong
+  >
+  (phone number id {{ account.phone_number_id }}).
+</p>
+
+{% if warning %}
+<p class="errornote">{{ warning }}</p>
+{% endif %} {% if error %}
+<p class="errornote">{{ error }}</p>
+{% endif %}
+
+<form method="post">
+  {% csrf_token %} {{ form.as_p }}
+  <input type="submit" class="default" value="{{ submit_label }}" />
+</form>
+{% endblock %}

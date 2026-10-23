@@ -4,6 +4,9 @@ Tests for webhook dispatch mode (sync vs celery).
 With SHOPIFY_WEBHOOK_DISPATCH=sync, the handler runs inline in the web request.
 With SHOPIFY_WEBHOOK_DISPATCH=celery, the handler is enqueued as a Celery task
 and the view returns 200 immediately.
+
+Kind of test: integration (agents.md section 2.5). Why: posts go through the real route with
+Django's test client, against the test database; the Celery task is patched.
 """
 
 import base64
