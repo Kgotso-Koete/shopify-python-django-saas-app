@@ -9,11 +9,11 @@ The maintainer's decisions (plan Step 1.5, 2026-10-17):
 - a number with a row in another organization is refused, even after that one disconnected it; the
   operator frees it in the Django admin
 
-Since Step 1.17 the form says what the number is for. An organization has one active internal
-communications number, which its team texts, and any number of external communications numbers. A
-number is one or the other until one number for both (plan Step 2.7). Once a number is saved, the
-app that answers numbers of its purpose may set it up, through its handler's optional
-on_connected(account): apps.whatsapp_saas publishes its forms that way.
+Since Step 1.17 the form says what the number is for. An organization has one active number its team
+texts, and any number of external communications numbers. Since Step 2.7 a number can serve both, and
+is then the team's number; an admin changes a connected number's role with change_purpose. Once a
+number is saved, the app that answers each audience it serves may set it up, through its handler's
+optional on_connected(account): apps.whatsapp_saas publishes its forms that way.
 
 Since Step 1.18 every number is on our one Meta app, whose App secret and verify token are settings.
 The form takes the number's id, its WhatsApp Business account's id and an access token; connecting
@@ -37,8 +37,9 @@ from django.utils import timezone
 from .. import registry
 from ..client import PermanentSendError, RetryableSendError, TokenRejectedError, WhatsAppClient, send_backend
 from ..constants import AccountPurpose, ConnectionMethod, MessageDirection
-from ..models import WhatsAppAccount, WhatsAppMessage
+from ..models import WhatsAppAccount, WhatsAppIdentity, WhatsAppMessage
 from ..phone_numbers import InvalidPhoneNumber, normalize_phone_number
+from . import identity
 
 # Meta's sample template, approved on every new WhatsApp Business account; its get-started guide
 # sends it as the first message: https://developers.facebook.com/documentation/business-messaging/whatsapp/get-started.md
@@ -98,20 +99,15 @@ def connect_account(*, tenant, purpose: str, phone_number_id: str, waba_id: str,
             code="already_connected",
             field="phone_number_id",
         )
-    if existing is not None and existing.purpose != purpose:
+    if existing is not None and existing.is_active and existing.purpose != purpose:
+        # A disconnected number may come back with any role (plan Step 2.7, decision 2).
         raise AccountError(
             f"This number is already your organization's {existing.get_purpose_display().lower()} number. "
-            "A number is one or the other for now.",
+            "Change whom it serves with Change on its row instead.",
             code="connected_for_the_other_purpose",
             field="phone_number_id",
         )
-    internal = WhatsAppAccount.objects.internal_for(tenant)
-    if purpose == AccountPurpose.INTERNAL_COMMUNICATIONS and internal is not None and internal != existing:
-        raise AccountError(
-            f"Your organization's team already texts {internal.display_phone_number or internal.phone_number_id}. "
-            "Disconnect it first to connect another internal communications number.",
-            code="internal_number_exists",
-        )
+    _check_one_team_number(tenant, purpose, existing)
 
     # Checked with an unsaved account, so a refused id or token leaves nothing behind.
     candidate = WhatsAppAccount(phone_number_id=values["phone_number_id"], waba_id=values["waba_id"])
@@ -122,6 +118,7 @@ def connect_account(*, tenant, purpose: str, phone_number_id: str, waba_id: str,
     _ask_meta(lambda: WhatsAppClient(candidate).subscribe_app())
 
     account = existing or WhatsAppAccount(purpose=purpose, tenant=tenant)
+    account.purpose = purpose
     account.phone_number_id = values["phone_number_id"]
     account.waba_id = values["waba_id"]
     account.access_token = values["access_token"]
@@ -133,11 +130,66 @@ def connect_account(*, tenant, purpose: str, phone_number_id: str, waba_id: str,
     account.is_active = True
     account.save()
 
-    # Told only once the row is committed, so a task it queues always finds the account.
-    on_connected = getattr(registry.handler_for(purpose), "on_connected", None)
-    if on_connected is not None:
-        transaction.on_commit(partial(on_connected, account))
+    _set_up(account, _audiences(purpose))
     return ConnectedAccount(account=account)
+
+
+@transaction.atomic
+def change_purpose(*, tenant, account_id, purpose: str) -> WhatsAppAccount:
+    """
+    Change whom a connected number serves: the team, customers, or both (plan Step 2.7, decisions 2
+    and 3). It keeps its credentials, history and Meta registration. When it stops serving the team,
+    its members' links are removed and their conversations forgotten, as if each had sent `unlink`;
+    when it stops serving customers, its store link and store customers stay, unused. When it starts
+    serving an audience, that audience's handler sets it up (on_connected), e.g. publishing forms.
+    """
+    if purpose not in AccountPurpose.values:
+        raise AccountError("Choose whom the number serves.", code="invalid_purpose", field="purpose")
+    account = find_account(tenant, account_id, for_update=True)
+    if not account.is_active:
+        raise AccountError("This number is disconnected. Connect it again first.", code="not_connected")
+    if account.purpose == purpose:
+        return account
+    _check_one_team_number(tenant, purpose, account)
+
+    before = set(_audiences(account.purpose))
+    account.purpose = purpose
+    account.save(update_fields=["purpose", "updated_at"])
+    if AccountPurpose.INTERNAL_COMMUNICATIONS in before and not AccountPurpose.serves_team(purpose):
+        # A link is a permission to act for the organization; it doesn't stay behind the wall.
+        for linked in WhatsAppIdentity.objects.filter(account=account).select_related("user"):
+            identity.unlink(linked.user, account)
+    _set_up(account, [audience for audience in _audiences(purpose) if audience not in before])
+    return account
+
+
+def _check_one_team_number(tenant, purpose: str, account: WhatsAppAccount | None) -> None:
+    """An organization's team texts one number (Step 1.17), internal or serving both (Step 2.7)."""
+    team_number = WhatsAppAccount.objects.internal_for(tenant)
+    if AccountPurpose.serves_team(purpose) and team_number is not None and team_number != account:
+        raise AccountError(
+            f"Your organization's team already texts {team_number.display_phone_number or team_number.phone_number_id}. "
+            "An organization has one number for its team: change or disconnect that one first.",
+            code="internal_number_exists",
+        )
+
+
+def _audiences(purpose: str) -> list[str]:
+    """The handlers' purposes a number with `purpose` serves: the team's, the customers', or both."""
+    audiences = []
+    if AccountPurpose.serves_team(purpose):
+        audiences.append(AccountPurpose.INTERNAL_COMMUNICATIONS)
+    if AccountPurpose.serves_customers(purpose):
+        audiences.append(AccountPurpose.EXTERNAL_COMMUNICATIONS)
+    return audiences
+
+
+def _set_up(account: WhatsAppAccount, audiences: list[str]) -> None:
+    """Tell each audience's handler about the number, once the row is committed, so a task it queues finds it."""
+    for audience in audiences:
+        on_connected = getattr(registry.handler_for(audience), "on_connected", None)
+        if on_connected is not None:
+            transaction.on_commit(partial(on_connected, account))
 
 
 @transaction.atomic

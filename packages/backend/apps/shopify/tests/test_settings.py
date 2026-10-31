@@ -56,6 +56,8 @@ class TestShopifySettings:
         assert values == {
             "SHOPIFY_API_KEY": "''",
             "SHOPIFY_API_SECRET": "''",
+            # Reading products only. Selling on WhatsApp opts in to the storefront scopes through
+            # SHOPIFY_SCOPES, so upgrading never breaks an install (WhatsApp plan Step 2.1b, option A).
             "SHOPIFY_SCOPES": "['read_products']",
             "SHOPIFY_API_VERSION": "'2026-10'",
             "SHOPIFY_TOKEN_ENCRYPTION_KEY": "''",

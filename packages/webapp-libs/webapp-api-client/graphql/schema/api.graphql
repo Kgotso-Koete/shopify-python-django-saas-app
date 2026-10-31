@@ -36,6 +36,8 @@ that will be handled by the multipart request spec
 """
 scalar Upload
 type Query {
+  whatsAppStorefronts(tenantId: ID!): [WhatsAppStorefrontType!]!
+  whatsAppEligibleStores(tenantId: ID!): [String!]!
   whatsAppLinks: [WhatsAppLinkType!]!
   whatsAppNumberStatus(tenantId: ID!, accountId: ID!): WhatsAppNumberStatusType!
   whatsAppAccounts(tenantId: ID!): [WhatsAppAccountType!]!
@@ -120,6 +122,15 @@ type Query {
     "The ID of the object"
     id: ID!
   ): Node
+}
+"""
+One external number, the store it sells from and its customers' mode; shopDomain and
+conversationMode are null while no store is chosen.
+"""
+type WhatsAppStorefrontType {
+  accountId: ID!
+  shopDomain: String
+  conversationMode: ConversationMode
 }
 """
 The logged-in user's link on one organization's internal number, with their phone masked to its
@@ -1451,6 +1462,10 @@ type FileFieldType {
   name: String
 }
 type ApiMutation {
+  "Make one of the organization's external numbers sell from one of its stores, or change it."
+  chooseWhatsAppStore(input: ChooseWhatsAppStoreInput!): ChooseWhatsAppStore
+  "Menus or the assistant for every customer of one of the organization's external numbers."
+  setWhatsAppStorefrontMode(input: SetWhatsAppStorefrontModeInput!): SetWhatsAppStorefrontMode
   "Issue a link code for the logged-in user's number; it works only when sent from that number."
   startWhatsAppLink(input: StartWhatsAppLinkInput!): StartWhatsAppLink
   """
@@ -1472,6 +1487,11 @@ type ApiMutation {
   sendWhatsAppTestMessage(input: SendWhatsAppTestMessageInput!): SendWhatsAppTestMessage
   "Wipe the number's secrets and mark it inactive; its history stays (maintainer's decision)."
   disconnectWhatsAppAccount(input: DisconnectWhatsAppAccountInput!): DisconnectWhatsAppAccount
+  """
+  Change whom a connected number serves: the team, customers, or both (plan Step 2.7). It keeps its
+  credentials, history and Meta registration; leaving the team unlinks its members.
+  """
+  changeWhatsAppNumberPurpose(input: ChangeWhatsAppNumberPurposeInput!): ChangeWhatsAppNumberPurpose
   requestWhatsAppVerificationCode(input: RequestWhatsAppVerificationCodeInput!): RequestWhatsAppVerificationCode
   verifyWhatsAppNumber(input: VerifyWhatsAppNumberInput!): VerifyWhatsAppNumber
   registerWhatsAppNumber(input: RegisterWhatsAppNumberInput!): RegisterWhatsAppNumber
@@ -1652,6 +1672,14 @@ type ApiMutation {
   createFavoriteContentfulDemoItem(input: CreateFavoriteContentfulDemoItemMutationInput!): CreateFavoriteContentfulDemoItemMutationPayload
   deleteFavoriteContentfulDemoItem(input: DeleteFavoriteContentfulDemoItemMutationInput!): DeleteFavoriteContentfulDemoItemMutationPayload
 }
+"Make one of the organization's external numbers sell from one of its stores, or change it."
+type ChooseWhatsAppStore {
+  storefront: WhatsAppStorefrontType!
+}
+"Menus or the assistant for every customer of one of the organization's external numbers."
+type SetWhatsAppStorefrontMode {
+  storefront: WhatsAppStorefrontType!
+}
 "Issue a link code for the logged-in user's number; it works only when sent from that number."
 type StartWhatsAppLink {
   code: String!
@@ -1686,6 +1714,13 @@ type SendWhatsAppTestMessage {
 }
 "Wipe the number's secrets and mark it inactive; its history stays (maintainer's decision)."
 type DisconnectWhatsAppAccount {
+  account: WhatsAppAccountType!
+}
+"""
+Change whom a connected number serves: the team, customers, or both (plan Step 2.7). It keeps its
+credentials, history and Meta registration; leaving the team unlinks its members.
+"""
+type ChangeWhatsAppNumberPurpose {
   account: WhatsAppAccountType!
 }
 type RequestWhatsAppVerificationCode {
@@ -2356,6 +2391,7 @@ enum ConversationMode {
 enum AccountPurpose {
   INTERNAL_COMMUNICATIONS
   EXTERNAL_COMMUNICATIONS
+  INTERNAL_AND_EXTERNAL_COMMUNICATIONS
 }
 "How an account's number was connected (plan section 8.2)."
 enum ConnectionMethod {
@@ -3061,6 +3097,16 @@ enum UsersUserProfileLanguageChoices {
   "Spanish"
   ES
 }
+input ChooseWhatsAppStoreInput {
+  tenantId: ID!
+  accountId: ID!
+  shopDomain: String!
+}
+input SetWhatsAppStorefrontModeInput {
+  tenantId: ID!
+  accountId: ID!
+  mode: ConversationMode!
+}
 input StartWhatsAppLinkInput {
   tenantId: ID!
   phoneNumber: String!
@@ -3087,6 +3133,11 @@ input SendWhatsAppTestMessageInput {
 input DisconnectWhatsAppAccountInput {
   tenantId: ID!
   accountId: ID!
+}
+input ChangeWhatsAppNumberPurposeInput {
+  tenantId: ID!
+  accountId: ID!
+  purpose: AccountPurpose!
 }
 input RequestWhatsAppVerificationCodeInput {
   tenantId: ID!

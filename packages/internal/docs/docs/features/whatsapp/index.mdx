@@ -5,10 +5,13 @@ description: Run the WhatsApp channel locally and in production, from Meta's tes
 
 # WhatsApp
 
-Every WhatsApp number belongs to an organization, which connects it on its **WhatsApp** page, in the sidebar under **Shopify products**. That page has two forms:
+Every WhatsApp number belongs to an organization, which connects it on its **WhatsApp** page, in the sidebar under **Shopify products**. The page's one form asks who texts the number:
 
-- **Internal communications number:** the organization's team texts it to run the organization from WhatsApp. Each member links their phone on their profile page, then uses menus and forms, or an AI assistant that calls the same operations. An organization has one.
-- **External communications numbers:** its store customers text them. Answering customers comes in a later phase; until then their messages are stored.
+- **Your team:** the organization's team texts it to run the organization from WhatsApp. Each member links their phone on their profile page, then uses menus and forms, or an AI assistant that calls the same operations. Anyone else gets no reply.
+- **Your customers:** store customers text it to shop from the store it sells from: browse, search, fill a cart and check out in the store's own Shopify checkout. Everyone is a customer there, members included.
+- **Both:** members who linked their phone get the team's menus, and anyone else shops.
+
+So an organization uses one number for both, or two numbers kept apart, and can move between the two by changing a number's role on its row. It has one number for its team (team, or both).
 
 Every number is connected to one Meta app: the service's own, whose App secret and webhook verify token are set in the environment by whoever runs the service. Each number's access token comes from its form, stored encrypted.
 
@@ -17,7 +20,7 @@ This guide is for whoever runs the service. The design, decisions and checks are
 ## How it fits together
 
 - **Meta calls us** at one webhook, `/api/whatsapp/webhook/`. It checks Meta's signature, stores each message once, and queues it for the Celery worker. It answers Meta within a second, whatever happens next.
-- **The worker decides each reply** (`apps/whatsapp/services/router.py`): on an internal number, the menus, a form or the assistant for a linked member of its organization, and nothing for anyone else, except to `link <code>`.
+- **The worker decides each reply** (`apps/whatsapp/services/router.py`): on a number serving the team, the menus, a form or the assistant for a linked member of its organization (`apps/whatsapp_saas`), and `link <code>` from anyone. On a number serving customers, everyone else is a store customer (`apps/whatsapp_shop`). A team-only number answers nobody else.
 - **Replies go out in order** through a queue per contact (`apps/whatsapp/services/outbox.py`), sent by `apps/whatsapp/client.py` with plain HTTP requests to Meta's Graph API.
 - **Every write is confirmed** by the user's own press on **Confirm**, whether the menus or the assistant asked for it.
 
@@ -94,19 +97,42 @@ Reference: https://developers.facebook.com/docs/graph-api/webhooks/getting-start
 
 ## 3a. Connecting a number on the WhatsApp page
 
-As an organization admin, on the **WhatsApp** page in the sidebar, in the form for the number's purpose, enter the Phone number ID, the WhatsApp Business Account ID and an access token, and press **Connect number**. Meta is asked about the number, then the service's app is subscribed to its WhatsApp Business account, so its messages reach the webhook; nothing is saved unless Meta accepts both. The number's row shows **Credentials verified** and **App subscribed**.
+As an organization admin, on the **WhatsApp** page in the sidebar, choose **Who texts this number?** (your team, your customers, or both), enter the Phone number ID, the WhatsApp Business Account ID and an access token, and press **Connect number**. Meta is asked about the number, then the service's app is subscribed to its WhatsApp Business account, so its messages reach the webhook; nothing is saved unless Meta accepts both. The number's row shows whom it serves, **Credentials verified** and **App subscribed**.
 
-A second internal communications number is refused until the first is disconnected. Later, Meta's Embedded Signup popup will replace typing the three values.
+A second number for the team is refused while the first serves it. To change whom a connected number serves, use **Who texts this number** and **Change** on its row: it keeps its credentials, history and Meta registration. When it stops serving the team, members linked on it are unlinked, and are customers there from then on; when it stops serving customers, its store is kept for when it serves them again. A disconnected number can be connected again with any role. Later, Meta's Embedded Signup popup will replace typing the three values.
 
 Reference: https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-customers-as-a-tech-provider.md
 
+## 3b. The store a number sells from
+
+Each number serving customers sells from one of the organization's connected Shopify stores. The connect form's **Store** picker offers the organization's stores that can sell on WhatsApp, preselected when there's only one; the number's row shows **Sells from …** or **No store chosen**, and an admin can change it there. A number with no store chosen gets no replies to its customers.
+
+A store can sell on WhatsApp once it holds the storefront scopes, which reach the Storefront API's products and cart. They're in two places, and both must list them:
+
+- **`SHOPIFY_SCOPES`** in `packages/backend/.env`, set to `read_products,unauthenticated_read_product_listings,unauthenticated_write_checkouts`. Its default is `read_products` alone, so selling on WhatsApp is opt-in and an upgrade never breaks installs. `unauthenticated_read_checkouts` isn't listed: the write scope grants it, and Shopify doesn't list it back.
+- **The app's released configuration on Shopify:** its version in Shopify's Dev Dashboard (https://dev.shopify.com/dashboard), or the `[access_scopes]` section of `shopify.app.toml` deployed with `shopify app deploy`. Shopify grants only the scopes listed there, whatever the install link asks for.
+
+A store installed before the scopes were added keeps working on the Shopify products page, but isn't offered for a WhatsApp number until it's reconnected on the **Shopify** page. On reconnecting, Shopify's approval page asks the merchant for "View products: Product listings, collections", "Edit Online Store: Checkout page", and "View customer data: Device and activity data, Geolocation, App events".
+
+For local data, run `whatsapp_shop_seed_demo` after `whatsapp_seed_demo` and `shopify_seed_demo`, with the same `--email`: two demo numbers then sell from the demo store, and one has no store chosen.
+
+Reference: https://shopify.dev/docs/apps/build/authentication-authorization/app-installation/manage-access-scopes
+
+## 3c. What customers get
+
+A customer texting a number serving customers gets the store's main menu: **Browse products** (newest first, only what can be bought, 7 to a page), **Search**, and **Your cart**. A product shows its picture, price and description, its options when it has several, and **Add to cart**, **Buy now** and **Back**. **Checkout** and **Buy now** send a link to the store's own Shopify checkout, where the customer pays: this service never sees a payment. Products and carts are read live through Shopify's Storefront API, with the store's Admin token used as a private Storefront token; nothing about products is stored.
+
+Under **Customers get** on the number's row, an admin chooses **Menus** (the default) or the **AI assistant**. The assistant answers in the customer's words, finds products and shows their screen, but never changes the cart: the customer's own press does. It calls OpenAI for every customer message, so it costs money; that's why the number's admins decide, not its customers.
+
+When Shopify asks to delete a customer's data (`customers/redact`), the store customer whose WhatsApp number is that customer's phone is deleted, with their messages, conversation and cart. `shop/redact` deletes every store customer of that store's numbers. A customer Meta gave no phone number (some username users) can't be matched by phone.
+
 ## 4. Linking a phone
 
-Each team member opens their profile page, picks the organization, types their phone number and presses **Get a link code**, then sends `link <code>` from that phone to the internal number. **Open WhatsApp** opens the chat with the message typed. Anyone who isn't linked gets no reply, so store customers who find the number hear nothing.
+Each team member opens their profile page, picks the organization, types their phone number and presses **Get a link code**, then sends `link <code>` from that phone to the team's number. **Open WhatsApp** opens the chat with the message typed. On a team-only number anyone who isn't linked gets no reply; on a number serving both, they're a customer.
 
 ## 5. The forms
 
-The menus' forms (new item, edit item, rename the organization) are WhatsApp Flows. Connecting an internal number publishes them to its WhatsApp Business account, in the background. After a form's JSON in `apps/whatsapp_saas/flows/` changes, publish it again to every internal number:
+The menus' forms (new item, edit item, rename the organization) are WhatsApp Flows. Connecting a number for the team, or changing one to serve the team, publishes them to its WhatsApp Business account, in the background. After a form's JSON in `apps/whatsapp_saas/flows/` changes, publish it again to every team number:
 
 ```shell
 docker compose run --rm -T backend python manage.py whatsapp_publish_flows

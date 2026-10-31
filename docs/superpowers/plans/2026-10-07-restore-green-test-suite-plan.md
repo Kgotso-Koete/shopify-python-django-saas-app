@@ -671,3 +671,4 @@ The Shopify library's Nx project was renamed from `webapp-libs-webapp-shopify` t
     accident) against the risk of drifting further from upstream. `codegen.ts` and `project.json` are
     upstream files, so every upstream merge that touches them would need resolving by hand. The
     workaround costs one command per commit; the fix is a permanent difference from upstream.
+  - **Happened again on 2026-10-31,** before the 7.1.0 commit: the watcher had stripped the patch, and `git restore` would have thrown away that release's own changes to the two files, so they were regenerated instead (the WhatsApp plan's "Pre-commit run, 2026-10-31"). The maintainer chose to fix it next, after 7.1.0 is merged, starting with a RED. The proposed fix: an `afterAllFileWrite` hook in `graphql/codegen.ts` that runs `patch-gql.js` in both modes, with tests that the hook is configured and that the committed `gql()` throws for an unknown query.

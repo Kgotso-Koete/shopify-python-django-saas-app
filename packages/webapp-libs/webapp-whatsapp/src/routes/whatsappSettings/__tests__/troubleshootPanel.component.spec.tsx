@@ -24,6 +24,7 @@ import {
   whatsAppNumberStatusQuery,
 } from '../../../graphql/numberTools.graphql';
 import { whatsAppAccountsQuery } from '../../../graphql/whatsappAccounts.graphql';
+import { whatsAppEligibleStoresQuery, whatsAppStorefrontsQuery } from '../../../graphql/whatsappStorefronts.graphql';
 import { WhatsAppSettings } from '../whatsappSettings.component';
 
 const tenantId = 'tenant-whatsapp-test-2';
@@ -85,6 +86,21 @@ const renderTab = (permissions: string[], mocks: MockedResponse[]) =>
       }),
       accountsMock(),
       ...mocks,
+      // The page also asks which store each external number sells from (Step 2.1b); none here.
+      {
+        ...composeMockedQueryResult(whatsAppStorefrontsQuery, {
+          variables: { tenantId },
+          data: { whatsAppStorefronts: [] },
+        }),
+        maxUsageCount: Number.POSITIVE_INFINITY,
+      },
+      {
+        ...composeMockedQueryResult(whatsAppEligibleStoresQuery, {
+          variables: { tenantId },
+          data: { whatsAppEligibleStores: [] },
+        }),
+        maxUsageCount: Number.POSITIVE_INFINITY,
+      },
     ],
     routerProps: createMockRouterProps(RoutesConfig.whatsapp, { tenantId }),
   });

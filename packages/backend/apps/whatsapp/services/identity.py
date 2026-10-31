@@ -13,7 +13,8 @@ linking checks that the user is a member of the number's organization. Membershi
 on every message (identity_for), so someone who leaves the organization is no longer answered.
 
 Anyone who isn't linked gets no reply, except to "link <code>" (maintainer's decision, 2026-10-22),
-so a store customer who finds the team's number hears nothing.
+so a store customer who finds the team's number hears nothing. A number serving both (plan Step 2.7)
+is the team's number too: members link on it, and anyone else there is a store customer.
 
 A conversation belongs to whoever is linked to the phone. Unlinking, and linking a phone afresh,
 forget it: the menus, unconfirmed writes and the assistant's history (Step 1.13), so the next person
@@ -98,6 +99,11 @@ def start_link(user, tenant, typed_number: str) -> LinkStarted:
     )
 
 
+def is_link_command(text: str) -> bool:
+    """Whether `text` is "link <code>", which links on any number the team texts."""
+    return LINK_COMMAND.match(text or "") is not None
+
+
 def handle_unlinked_message(contact, text: str) -> list[dict]:
     """
     The reply to anything an unlinked contact sends: a link command is tried; everything else gets
@@ -156,9 +162,9 @@ def is_member(user, tenant) -> bool:
 @transaction.atomic
 def _link(contact, code: str):
     account = contact.account
-    if account.purpose != AccountPurpose.INTERNAL_COMMUNICATIONS or not contact.wa_id:
-        # Linking happens on internal communications numbers only, and Meta must have told us the
-        # sender's number.
+    if not AccountPurpose.serves_team(account.purpose) or not contact.wa_id:
+        # Linking happens on the number the team texts only (internal, or serving both since Step 2.7),
+        # and Meta must have told us the sender's number.
         raise IdentityError("That code didn't work.", "no_code")
     try:
         user = check_code(phone_number=contact.wa_id, channel=Channel.WHATSAPP_INBOUND, code=code)

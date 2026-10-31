@@ -200,7 +200,8 @@ class TestOneInternalNumberPerOrganization:
             connect(organization, purpose=INTERNAL)
 
         assert raised.value.code == "internal_number_exists"
-        assert "Disconnect" in str(raised.value)
+        # Since Step 2.7 the first can also change whom it serves, instead of being disconnected.
+        assert "change or disconnect" in str(raised.value)
         meta_get.assert_not_called()
 
     def test_after_disconnecting_the_first_another_can_be_connected(self, organization, meta_get):

@@ -14,7 +14,7 @@ locally.
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.whatsapp.client import SendError
-from apps.whatsapp.constants import AccountPurpose
+from apps.whatsapp.constants import TEAM_PURPOSES
 from apps.whatsapp.models import WhatsAppAccount
 
 from ...publishing import publish_forms
@@ -24,9 +24,8 @@ class Command(BaseCommand):
     help = "Publish the WhatsApp Flows to every active internal communications number's WhatsApp Business account."
 
     def handle(self, *args, **options):
-        internal_numbers = WhatsAppAccount.objects.filter(
-            purpose=AccountPurpose.INTERNAL_COMMUNICATIONS, is_active=True
-        ).order_by("pk")
+        # The numbers the teams text: internal, or serving both (plan Step 2.7).
+        internal_numbers = WhatsAppAccount.objects.filter(purpose__in=TEAM_PURPOSES, is_active=True).order_by("pk")
         if not internal_numbers:
             self.stdout.write(
                 "There's no internal communications number yet. Connect one on an organization's WhatsApp page."

@@ -421,8 +421,10 @@ class TestOtherMessages:
         queued = WhatsAppMessage.objects.filter(contact=linked, direction=MessageDirection.OUTBOUND)
         assert [row.status for row in queued] == [MessageStatus.QUEUED]
 
-    def test_a_number_without_a_handler_is_processed_without_a_reply(self):
-        # Store customers arrive in phase 2; until then their numbers have no handler.
+    def test_a_number_without_a_handler_is_processed_without_a_reply(self, mocker):
+        # apps.whatsapp_shop registers the external numbers' handler (phase 2); without it, no reply.
+        mocker.patch.dict(registry._handlers, clear=False)
+        registry.unregister_handler(AccountPurpose.EXTERNAL_COMMUNICATIONS)
         contact = ContactFactory(account=ExternalAccountFactory())
 
         assert receive(contact, "hi") == []
@@ -434,6 +436,86 @@ class TestOtherMessages:
         router.route(message.pk)
 
         assert len(replies_to(linked)) == 1
+
+
+class FakeStoreHandler(FakeHandler):
+    """
+    Stands in for apps.whatsapp_shop's handler (phase 2): anyone texting an external number is a
+    store customer, and the handler decides whether the number answers, in which mode, and its help.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.answering = True
+        self.mode = ConversationMode.WHATSAPP_FORM
+
+    def answers(self, contact):
+        return self.answering
+
+    def conversation_mode(self, contact):
+        return self.mode
+
+    def help_text(self, turn):
+        return "STORE HELP"
+
+
+@pytest.fixture
+def store_handler():
+    fake = FakeStoreHandler()
+    real = registry.handler_for(AccountPurpose.EXTERNAL_COMMUNICATIONS)
+    registry.register_handler(AccountPurpose.EXTERNAL_COMMUNICATIONS, fake)
+    yield fake
+    registry.register_handler(AccountPurpose.EXTERNAL_COMMUNICATIONS, real)
+
+
+@pytest.fixture
+def customer(store_handler):
+    """Someone texting an organization's external number: no link, no membership (phase 2)."""
+    return ContactFactory(account=ExternalAccountFactory())
+
+
+class TestExternalNumbers:
+    def test_anyone_gets_the_handlers_main_menu_without_linking(self, customer, store_handler):
+        assert receive(customer, "hi") == ["MAIN MENU"]
+        assert store_handler.organizations == [customer.account.tenant]
+
+    def test_a_number_its_handler_wont_answer_gets_no_reply_at_all(self, customer, store_handler):
+        # E.g. no store chosen yet (user story 25): not even "menu expired" or help.
+        store_handler.answering = False
+
+        assert receive(customer, "hi") == []
+        assert receive(customer, "help") == []
+        assert receive(customer, action_id="c99", kind=MessageKind.BUTTON_REPLY) == []
+        assert store_handler.calls == []
+
+    def test_the_handler_sets_the_mode(self, customer, store_handler):
+        store_handler.mode = ConversationMode.AGENTIC
+
+        assert receive(customer, "anything blue?") == ["ASSISTANT anything blue?"]
+
+    def test_with_no_mode_from_the_handler_the_default_applies(self, customer, store_handler, settings):
+        store_handler.mode = ""
+        settings.WHATSAPP_DEFAULT_CONVERSATION_MODE = ConversationMode.AGENTIC
+
+        assert receive(customer, "anything blue?") == ["ASSISTANT anything blue?"]
+
+    def test_help_is_the_handlers_own(self, customer, store_handler):
+        assert receive(customer, "help") == ["STORE HELP"]
+
+    @pytest.mark.parametrize("word", ["mode ai", "mode menu", "unlink"])
+    def test_the_teams_words_are_ordinary_text(self, customer, store_handler, word):
+        # Only a linked member switches modes or unlinks; a store customer's words get the main menu.
+        assert receive(customer, word) == ["MAIN MENU"]
+
+    def test_a_handler_without_the_optional_methods_answers_in_the_default_mode(self, mocker):
+        # The internal numbers' handler offers none of them: it keeps working as before. No store_handler
+        # fixture here: patch.dict would snapshot its fake and put it back after the fixture's own undo.
+        plain = FakeHandler()
+        mocker.patch.dict(registry._handlers, {AccountPurpose.EXTERNAL_COMMUNICATIONS: plain})
+        contact = ContactFactory(account=ExternalAccountFactory())
+
+        assert receive(contact, "help")[0].startswith("Send *menu*")
+        assert receive(contact, "hi") == ["MAIN MENU"]
 
 
 class TestTheTask:

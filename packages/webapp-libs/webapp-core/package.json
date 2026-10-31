@@ -1,6 +1,6 @@
 {
   "name": "@sb/webapp-core",
-  "version": "7.0.0",
+  "version": "7.1.0",
   "type": "commonjs",
   "scripts": {
     "test": "jest",
