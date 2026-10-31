@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.1.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/7.0.0...7.1.0) (2026-10-31)
+
+### Features
+
+- WhatsApp store customers: anyone texting a number that serves customers shops from the Shopify store it sells from. **Browse products** lists products for sale, newest first, 7 to a page, and **Search** finds them by words. A product shows its picture, price and description, with its options to pick from when it has several. **Add to cart** keeps one cart per customer, **Buy now** sends a link for a one-item cart, and **Your cart** lists the lines and total with **Checkout** and **Empty cart**. Checkout is a link into the shop's own Shopify Checkout, so the app never sees a payment
+- Each number serving customers sells from one store, chosen in the connect form or changed on the number's row, from the organization's stores that can sell on WhatsApp. Its customers get **Menus** or the **AI assistant**, set on the row. The assistant finds products and shows their screens with their buttons, and only the customer's own press changes the cart
+- A number serves your team, your customers, or both (`INTERNAL_AND_EXTERNAL_COMMUNICATIONS`). On a number serving both, members who linked their phone get the team's menus and anyone else is a customer. With two numbers kept apart, the team's number answers only members, and on the customers' number everyone is a customer. **Change** on a number's row changes whom it serves without reconnecting it, and when a number stops serving the team, its members' links are removed. An organization still has one number serving its team. The WhatsApp page has one Connect form, asking "Who texts this number?", and one list
+- Shopify: a Storefront API client (`apps/shopify/storefront.py`) for products for sale, search, a product's variants and carts, sending the store's Admin token as a private Storefront token. The storefront scopes `unauthenticated_read_product_listings` and `unauthenticated_write_checkouts` are opt-in in `SHOPIFY_SCOPES`, whose default stays `read_products`, and the install's scope check counts a granted write scope for its read scope
+- Shopify's `customers/redact` and `shop/redact` webhooks send the `customer_redacted` and `shop_redacted` signals, and `apps.whatsapp_shop` deletes the matching store customers, with their messages and assistant history
+- Backend: the new `apps.whatsapp_shop` app (`StorefrontChannel`, `StoreCustomer`), the GraphQL fields `whatsAppStorefronts`, `whatsAppEligibleStores`, `chooseWhatsAppStore`, `setWhatsAppStorefrontMode` and `changeWhatsAppNumberPurpose`, the `whatsapp_shop_seed_demo` command, and migrations `whatsapp` 0017 and `whatsapp_shop` 0001 and 0002
+
+### Documentation
+
+- WhatsApp plan: Experiment 2.1a's results on a development store, Steps 2.1b to 2.7 with every RED and GREEN and its command, phase 2's human checks and their results, and Step 2.8, the 14 findings from those checks, to fix next. Among them: sold-out products are listed, a sold-out line in a cart makes later adds report a failure although they worked, and a number connected through another Meta app gets 403s on the webhook
+- WhatsApp operator guide: the three roles a number can have, the store a number sells from, what customers get, and the storefront scopes, which must be listed both in `SHOPIFY_SCOPES` and in the app's released configuration on Shopify
+- README: `apps/whatsapp_shop` in the backend test commands
+
 ## [7.0.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/6.3.0...7.0.0) (2026-10-23)
 
 ### ⚠ BREAKING CHANGES

@@ -20,6 +20,7 @@ from .constants import (
     MessageDirection,
     MessageKind,
     MessageStatus,
+    TEAM_PURPOSES,
 )
 from .crypto import decrypt_credential, encrypt_credential
 from .managers import WhatsAppAccountManager
@@ -35,7 +36,8 @@ class WhatsAppAccount(TimestampedMixin, models.Model):
 
     # A hashid, like CrudDemoItem's, because accounts are exposed through GraphQL (plan Step 1.5).
     id = hashid_field.HashidAutoField(primary_key=True)
-    purpose = models.CharField(max_length=32, choices=AccountPurpose.choices)
+    # Long enough for INTERNAL_AND_EXTERNAL_COMMUNICATIONS (plan Step 2.7).
+    purpose = models.CharField(max_length=40, choices=AccountPurpose.choices)
     # Every number is connected on an organization's WhatsApp tab. Deleting the organization deletes
     # its numbers, credentials included.
     tenant = models.ForeignKey(
@@ -72,11 +74,12 @@ class WhatsAppAccount(TimestampedMixin, models.Model):
 
     class Meta:
         constraints = [
-            # An organization's team texts one number (Step 1.17); a disconnected one doesn't count.
+            # An organization's team texts one number (Step 1.17), internal or serving both (Step 2.7); a
+            # disconnected one doesn't count.
             models.UniqueConstraint(
                 fields=["tenant"],
-                condition=Q(purpose=AccountPurpose.INTERNAL_COMMUNICATIONS, is_active=True),
-                name="whatsapp_account_one_active_internal_per_tenant",
+                condition=Q(purpose__in=TEAM_PURPOSES, is_active=True),
+                name="whatsapp_account_one_active_team_number_per_tenant",
             ),
         ]
 

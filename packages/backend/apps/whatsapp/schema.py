@@ -2,8 +2,8 @@
 The WhatsApp tab's GraphQL API (plan Step 1.5f, user story 11), modelled on apps/shopify/schema.py.
 
 - whatsAppAccounts lists the organization's numbers and their status; it needs whatsapp.view.
-- connectWhatsAppAccount, sendWhatsAppTestMessage and disconnectWhatsAppAccount need whatsapp.manage
-  (plan D16).
+- connectWhatsAppAccount, sendWhatsAppTestMessage, disconnectWhatsAppAccount and
+  changeWhatsAppNumberPurpose (Step 2.7) need whatsapp.manage (plan D16).
 
 The organization is always the one the tenant middleware checked the user belongs to
 (info.context.tenant), never one taken from the input. The work is in services/accounts.py; this
@@ -18,7 +18,7 @@ from common.acl.policies import IsAuthenticatedFullAccess, IsTenantMemberAccess
 from common.graphql import exceptions
 from common.graphql.acl import permission_classes, requires
 
-from .constants import AccountPurpose, ConnectionMethod, ConversationMode
+from .constants import TEAM_PURPOSES, AccountPurpose, ConnectionMethod, ConversationMode
 from .models import WhatsAppAccount, WhatsAppIdentity
 from .services import accounts, identity, number_tools
 from .services.accounts import AccountError
@@ -169,6 +169,34 @@ class DisconnectWhatsAppAccount(graphene.Mutation):
         except AccountError as error:
             raise _user_error(error) from error
         return cls(account=WhatsAppAccount.objects.get(tenant=tenant, pk=input.account_id))
+
+
+class ChangeWhatsAppNumberPurposeInput(graphene.InputObjectType):
+    tenant_id = graphene.ID(required=True)
+    account_id = graphene.ID(required=True)
+    purpose = graphene.Field(AccountPurposeEnum, required=True)
+
+
+class ChangeWhatsAppNumberPurpose(graphene.Mutation):
+    """
+    Change whom a connected number serves: the team, customers, or both (plan Step 2.7). It keeps its
+    credentials, history and Meta registration; leaving the team unlinks its members.
+    """
+
+    class Arguments:
+        input = ChangeWhatsAppNumberPurposeInput(required=True)
+
+    account = graphene.Field(WhatsAppAccountType, required=True)
+
+    @classmethod
+    def mutate(cls, root, info, input):
+        try:
+            account = accounts.change_purpose(
+                tenant=_tenant(info), account_id=input.account_id, purpose=AccountPurpose(input.purpose).value
+            )
+        except AccountError as error:
+            raise _user_error(error) from error
+        return cls(account=account)
 
 
 # The number troubleshooting tools (plan D18, Step 1.5b, user story 23): every one, the status
@@ -379,7 +407,8 @@ class IdentityQuery(graphene.ObjectType):
         user = info.context.user
         internal_numbers = (
             WhatsAppAccount.objects.filter(
-                purpose=AccountPurpose.INTERNAL_COMMUNICATIONS,
+                # The number each organization's team texts: internal, or serving both (Step 2.7).
+                purpose__in=TEAM_PURPOSES,
                 is_active=True,
                 tenant__user_memberships__in=TenantMembership.objects.filter(user=user),
             )
@@ -493,6 +522,9 @@ class Mutation(graphene.ObjectType):
     connect_whats_app_account = permission_classes(requires("whatsapp.manage"))(ConnectWhatsAppAccount.Field())
     send_whats_app_test_message = permission_classes(requires("whatsapp.manage"))(SendWhatsAppTestMessage.Field())
     disconnect_whats_app_account = permission_classes(requires("whatsapp.manage"))(DisconnectWhatsAppAccount.Field())
+    change_whats_app_number_purpose = permission_classes(requires("whatsapp.manage"))(
+        ChangeWhatsAppNumberPurpose.Field()
+    )
     request_whats_app_verification_code = permission_classes(requires("whatsapp.manage"))(
         RequestWhatsAppVerificationCode.Field()
     )

@@ -4,7 +4,9 @@ Deciding what every inbound message gets as a reply (plan Step 1.8a, section 8.5
 The order, for one stored inbound message:
 1. On an internal communications number, anyone but a linked member of its organization gets no
    reply, except to "link <code>" (Step 1.17, maintainer's decision of 2026-10-22). A linked member
-   always works in the number's organization.
+   always works in the number's organization. On an external number, anyone is a store customer, and
+   the handler says whether the number answers at all (phase 2). On a number serving both (Step 2.7),
+   linked members get the team's handler and anyone else the customers'.
 2. A button or list press is resolved through the conversation's choice map, whatever the mode. An
    unknown or expired id gets "that menu has expired" and the main menu (D17).
 3. A completed Flow goes to the handler (Step 1.11).
@@ -99,25 +101,39 @@ def route(message_id: int) -> None:
 def _replies_for(message) -> list[dict]:
     contact = message.contact
     payload = message.payload or {}
+    purpose = contact.account.purpose
     linked = None
-    if contact.account.purpose == AccountPurpose.INTERNAL_COMMUNICATIONS:
+    if AccountPurpose.serves_team(purpose):
         linked = identities.identity_for(contact)
-        if linked is None:
-            return identities.handle_unlinked_message(contact, payload.get("text", ""))
-    handler = registry.handler_for(contact.account.purpose)
+        text = payload.get("text", "")
+        if linked is None and (not AccountPurpose.serves_customers(purpose) or identities.is_link_command(text)):
+            # A team-only number answers strangers nothing; "link <code>" links on any team number.
+            return identities.handle_unlinked_message(contact, text)
+    # Linked members get the team's handler; everyone else on a number serving customers gets the
+    # customers' handler, members included on a customers-only number (plan Step 2.7: the wall).
+    audience = AccountPurpose.INTERNAL_COMMUNICATIONS if linked else AccountPurpose.EXTERNAL_COMMUNICATIONS
+    handler = registry.handler_for(audience)
     if handler is None:
-        # E.g. an external number before phase 2 adds store customers.
+        # E.g. an external number while apps.whatsapp_shop isn't installed.
+        return []
+    if hasattr(handler, "answers") and not handler.answers(contact):
+        # E.g. an external number with no store chosen (user story 25): no reply at all.
         return []
 
     conversation = _conversation_for(contact)
     # Every number belongs to one organization, and its conversations happen in it (Step 1.17).
     conversation.tenant = contact.account.tenant
+    if linked:
+        mode = linked.conversation_mode
+    else:
+        # A store customer's mode is the number's, which its handler knows (phase 2, decision 2).
+        mode = handler.conversation_mode(contact) if hasattr(handler, "conversation_mode") else ""
     turn = Turn(
         message=message,
         contact=contact,
         conversation=conversation,
         user=linked.user if linked else None,
-        mode=(linked.conversation_mode if linked else "") or settings.WHATSAPP_DEFAULT_CONVERSATION_MODE,
+        mode=mode or settings.WHATSAPP_DEFAULT_CONVERSATION_MODE,
         identity=linked,
     )
     try:
@@ -155,7 +171,8 @@ def _answer(turn, handler, payload) -> list[dict]:
     if escape == "menu":
         return handler.main_menu(turn)
     if escape == "help":
-        return text_reply(HELP_TEXT)
+        # A store customer's help leaves out the team's words (mode, unlink).
+        return text_reply(handler.help_text(turn) if hasattr(handler, "help_text") else HELP_TEXT)
     if escape == "cancel":
         _discard(turn)
         return text_reply("Cancelled.") + handler.main_menu(turn)

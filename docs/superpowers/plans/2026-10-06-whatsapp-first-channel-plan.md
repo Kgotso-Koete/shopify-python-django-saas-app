@@ -42,6 +42,7 @@
 | 22. Get my order receipt on WhatsApp (Step 3.3)                      | store customer              | my order's receipt in the chat after I pay                                | I have proof of what I bought without checking email                     | When Shopify reports the order paid, I get the order number, the total and a button to the order status page Shopify keeps for that order<br>The link is Shopify's own (`Order.statusPageUrl`); this app issues no tax invoice for store orders                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 23. Fix my number's registration myself (Steps 1.5b, 1.6b)           | organization admin          | tools to check and repair my number's registration with Meta              | a stuck number doesn't stop my business, and I don't need Meta's support | Needs `whatsapp.manage`<br>The WhatsApp tab shows Meta's own status for my number: `status`, `code_verification_status`, `quality_rating`, `name_status`, `verified_name`<br>I can request a verification code by SMS or voice, enter it, register the number with its 6-digit PIN, and re-subscribe the app to my account's webhooks<br>Before registering, I'm warned that Meta allows 10 attempts per 72 hours<br>Meta's errors are shown with their code, a plain explanation and a link to Meta's page<br>The PIN is never stored, and every action is written to the action log<br>The operator has the same tools for the platform number in the Django admin |
 | 24. Verify my number by receiving a code (Phase 6)                   | SaaS user                   | to receive a code on my number and type it on the website                 | I can prove my number even if I can't send a message first               | The code arrives as a WhatsApp authentication template with a copy-code button, or later by SMS, as `PHONE_VERIFICATION_CHANNEL` chooses (D20)<br>It uses the same code store as linking (user story 1): hashed, expiring, single-use and rate-limited<br>The default stays inbound linking, which needs no template and no SMS provider                                                                                                                                                                                                                                                                                                                             |
+| 25. Choose which store my number sells from (Step 2.1b)              | organization admin          | to pick the store each external number sells from                         | customers texting it see that store's products, and only those           | Needs `whatsapp.manage`<br>Only my organization's own stores are offered, and only active ones holding the storefront scopes<br>I choose the store in the connect form, and can change it later on the number's row<br>A number with no store chosen says so on its row, and its customers get no reply                                                                                                                                                                                                                                                                                                                                                              |
 
 ## 3. Deliberately out of scope
 
@@ -79,6 +80,7 @@
 - **D12. The AI uses OpenAI's Responses API with strict function tools.** History, including tool calls and their results, is stored in our database, so a human reply or an expired conversation can rebuild it, with `store: false` sent to OpenAI. The provider sits behind a small interface with a fake for tests, so no test calls OpenAI. Tool calls per message are capped, and no agent framework is added. The `openai` package is already a backend dependency.
   - **Changed on 2026-10-20 (the maintainer's rule, agents.md section 5.3a):** the provider calls OpenAI with plain HTTP requests through `requests`, not the `openai` SDK (Step 1.13e). Upstream's own uses of the SDK stay.
 - **D13. Store customers pay in Shopify Checkout, and that link is all this app does about payment (maintainer's decision, 2026-10-15).** We build a Storefront API cart with the store customer's phone on it and send its `checkoutUrl`. Which payment provider takes the money is between the store and Shopify; this app never asks or checks. Shopify's `orders/paid` webhook triggers the WhatsApp confirmation and the order status link (user story 22).
+  - **Confirmed on 2026-10-24 (Step 2.1, decision 3):** the Storefront cart stays, chosen as the long-term option over Admin API draft orders and cart permalinks, pending Step 2.1a's experiment on a dev store.
 - **D14. SaaS subscriptions keep our own PayFast flow,** through a single-use link to a page on this site that submits the signed form the backend already builds. PayFast's ITN stays the only proof of payment.
 - **D15. Invoices are generated with ReportLab (maintainer's choice, 2026-10-15),** in a Celery task, with no system packages added to the Docker image. Numbers come from a per-organization counter row locked with `select_for_update`, so there are no gaps. PDFs go to private storage and reach WhatsApp by uploading to Meta's media endpoint, never as a public link.
 - **D16. New permission codes.** `whatsapp.view` and `whatsapp.manage` (Step 1.5), and `whatsapp.inbox` (phase 5), are registered in `apps/whatsapp/permissions.py` and seeded by a data migration, as Shopify does (decision D7 of [the Shopify plan](2026-10-03-shopify-app-installation-plan.md)).
@@ -1691,16 +1693,97 @@ In TDD cycles, run by the AI agent (the maintainer's go-ahead for these cycles, 
 
 The organization's number is already connected and proven by the form (Steps 1.5 and 1.6). Phase 2 gives it something to say.
 
-- **Step 2.1 Storefront access.**
-  - New Shopify scopes `unauthenticated_read_product_listings`, `unauthenticated_write_checkouts` and `unauthenticated_read_checkouts`. Merchants approve them again.
-  - A Storefront token per store, created with `storefrontAccessTokenCreate` and stored encrypted in an `apps.whatsapp_shop` table rather than on `ShopifyShop`.
-  - A `StorefrontChannel` row tying the account to one of the organization's stores.
-  - Any change to `apps.shopify` is asked for separately.
+- **Step 2.1 Storefront access: the decisions (maintainer's, 2026-10-24).** Use case: a store customer texts the shop's own WhatsApp number and sees that shop's products, then one tap takes them into the shop's Shopify Checkout.
+  1. **One external number sells from one store.** A customer texting it only ever sees that store; an organization with two stores uses two numbers.
+  2. **The store is chosen in the connect form,** from the organization's connected Shopify stores, preselected when there's only one, and changeable later on the number's row. With no store connected, the form says to connect one on the Shopify page first.
+  3. **The cart is a Storefront API cart** (`cartCreate` with the buyer's phone, then its `checkoutUrl`), as D13 planned, chosen as the long-term option over Admin API draft orders and cart permalinks:
+     - Draft orders are "an order that a merchant creates on behalf of a customer" (https://shopify.dev/docs/api/admin-graphql/latest/objects/DraftOrder). Each chat cart would become one in the merchant's admin, purged after a year, with 5 a minute on dev stores. Moving to a Storefront cart later would mean rewriting cart and checkout.
+     - Cart permalinks need no new scope, but the docs list no phone field, and they "cannot bypass storefront passwords" (https://shopify.dev/docs/apps/build/checkout/create-cart-permalinks).
+     - All three keep payment in Shopify Checkout, as Shopify's API terms require (sections 2.3.18 and 2.3.24, https://www.shopify.com/legal/api-terms).
+  4. **The new scopes are added for every store that sells on WhatsApp.** `unauthenticated_read_product_listings` and `unauthenticated_write_checkouts` (https://shopify.dev/docs/api/usage/access-scopes) are listed in `SHOPIFY_SCOPES`. **Changed on 2026-10-29 (maintainer's choice, option A):** they're opt-in, and the default stays `read_products`, because Shopify grants only the scopes the app's released configuration lists (Step 2.1a, result 1): a new default would refuse every install and reconnect on an upgraded deployment until its Shopify configuration changed too. `unauthenticated_read_checkouts` isn't requested: the write scope already grants it, and Shopify doesn't list it back (Step 2.1a, result 2). Merchants approve them by going through the install link again (https://shopify.dev/docs/apps/build/authentication-authorization/app-installation/manage-access-scopes). A store installed before keeps working on the Shopify products page, but can't be picked for a WhatsApp number until it's reconnected on the Shopify page. This is a small change to `apps.shopify`.
+- **Step 2.1a An experiment on a dev store, before any design or code.** Shopify's docs leave five questions open, so they're answered by hand first and recorded here, each with its command. The commands are in section 13, "Experiment 2.1a".
+  - Which products a Storefront token sees, compared with the Admin API's list. The docs say channel context decides "which products and collections are published", but not what an app that owns no channel sees (https://shopify.dev/docs/storefronts/headless/building-with-the-storefront-api/in-context).
+  - Whether a token from `storefrontAccessTokenCreate` works ("inherits all of the unauthenticated access scopes from the app that creates it", https://shopify.dev/docs/api/admin-rest/latest/resources/storefrontaccesstoken), and whether the store's Admin token also works as a private Storefront token (`Shopify-Storefront-Private-Token`, https://shopify.dev/docs/api/storefront).
+  - Whether `cartCreate` with `buyerIdentity.phone` returns a `checkoutUrl` that opens Shopify Checkout with the phone filled in (https://shopify.dev/docs/api/storefront/latest/mutations/cartCreate).
+  - What happens with no `Shopify-Storefront-Buyer-IP` header, which a WhatsApp chat can't supply (https://shopify.dev/docs/api/storefront).
+  - Whether a password-protected dev store blocks the checkout link.
+  - **Result 1, 2026-10-28: Shopify grants only the scopes in the app's own configuration.** With the three `unauthenticated_*` scopes added to `SHOPIFY_SCOPES` alone, the install link asked for all four (it puts every `SHOPIFY_SCOPES` value in its `scope` parameter, [`services.py`](../../../packages/backend/apps/shopify/services.py)), but Shopify granted only `read_products`. The callback then refused: "Merchant did not grant all required scopes. Missing: {'unauthenticated_read_product_listings', 'unauthenticated_read_checkouts', 'unauthenticated_write_checkouts'}". So adding a scope takes both `SHOPIFY_SCOPES` and the app's released configuration on Shopify (its Dev Dashboard version, or `shopify.app.toml`). Step 2.1b's design and the operator guide must say so. Shopify's page says a Dev Dashboard app's scopes live in "your app's version in the Dev Dashboard", released to deploy them, but not that a link's other scopes are dropped (https://shopify.dev/docs/apps/build/authentication-authorization/app-installation/manage-access-scopes).
+  - **Result 2, 2026-10-28: a write scope's implied read scope isn't listed back.** With all four scopes in the app's released version, Shopify's approval page appeared and the merchant approved it, but the callback refused again: "Merchant did not grant all required scopes. Missing: {'unauthenticated_read_checkouts'}". Shopify: "Any scope that writes a resource also grants read access to it, so request the write scope only when your app needs both" (https://shopify.dev/docs/api/usage/access-scopes). So `unauthenticated_write_checkouts` was granted and covers reading, but the granted list leaves `unauthenticated_read_checkouts` out, and the callback's check compares the lists word for word ([`services.py`](../../../packages/backend/apps/shopify/services.py)). The docs don't say the granted list drops implied scopes; this run shows it does. So `SHOPIFY_SCOPES` requests only `read_products`, `unauthenticated_read_product_listings` and `unauthenticated_write_checkouts`. Whether the check should also learn that a write scope covers its read scope is a Step 2.1b decision.
+  - **Also seen on the approval page:** besides "View products: Product listings, collections" and "Edit Online Store: Checkout page", it asked for "View customer data: Device and activity data, Geolocation, App events", noting the app "may track and transmit app events on your storefront". That's what a merchant reads when granting storefront access, and the operator guide should say so.
+  - **Results 3 to 8, 2026-10-28,** from section 13's E3 to E8 on a Shopify development store with Shopify's generated test products, run by the maintainer with the commands below (each on one line, as run). The store held `read_products`, `unauthenticated_read_product_listings` and `unauthenticated_write_checkouts`.
+    - **Result 3: a Storefront token sees 13 of the Admin API's 17 products.** The Admin API (E3) listed 15 `ACTIVE`, 1 `DRAFT` and 1 `ARCHIVED`. The Storefront API (E5) left out the draft, the archived one, and two active ones, The Minimal Snowboard and The Hidden Snowboard, most likely because they aren't published to the store's sales channel (not confirmed: the response doesn't name a channel). Products that can't be bought are still listed, with `"availableForSale": false` (Gift Card, The Out of Stock Snowboard), so the chat must filter them out to keep user story 12. Prices came in the store's currency, `USD`.
+      - E3: `curl -s https://$SHOP_DOMAIN/admin/api/2026-10/graphql.json -H "X-Shopify-Access-Token: $ADMIN_TOKEN" -H 'Content-Type: application/json' -d "$(jq -n '{query: "{ products(first: 50) { nodes { id title handle status } } }"}')" | python3 -m json.tool`
+      - E5: `curl -s https://$SHOP_DOMAIN/api/2026-10/graphql.json -H "X-Shopify-Storefront-Access-Token: $SF_TOKEN" -H 'Content-Type: application/json' -d "$(jq -n '{query: "{ products(first: 50) { nodes { id title handle availableForSale variants(first: 5) { nodes { id title availableForSale price { amount currencyCode } } } } } }"}')" | python3 -m json.tool`
+    - **Result 4: `storefrontAccessTokenCreate` works.** It returned a 32-character token and `"userErrors": []`, and the token's `accessScopes` listed `unauthenticated_write_checkouts`, `unauthenticated_read_checkouts` and `unauthenticated_read_product_listings`, confirming result 2: the write scope grants the read one.
+      - E4: `curl -s https://$SHOP_DOMAIN/admin/api/2026-10/graphql.json -H "X-Shopify-Access-Token: $ADMIN_TOKEN" -H 'Content-Type: application/json' -d "$(jq -n --arg title 'WhatsApp experiment 2.1a' '{query: "mutation Create($input: StorefrontAccessTokenInput!) { storefrontAccessTokenCreate(input: $input) { storefrontAccessToken { id title accessToken accessScopes { handle } } userErrors { field message } } }", variables: {input: {title: $title}}}')" > logs/experiment-2.1a-token.json`
+    - **Result 5: the store's Admin token works as a private Storefront token.** Sent as `Shopify-Storefront-Private-Token`, it returned the same 13 products as E5. So the app may not need a separate Storefront token per store: the Admin token it already stores and refreshes can call the Storefront API from the server. A Step 2.1b decision.
+      - E6: `curl -s https://$SHOP_DOMAIN/api/2026-10/graphql.json -H "Shopify-Storefront-Private-Token: $ADMIN_TOKEN" -H 'Content-Type: application/json' -d "$(jq -n '{query: "{ products(first: 50) { nodes { id title handle availableForSale } } }"}')" | python3 -m json.tool`
+    - **Result 6: the buyer's country decides what goes in the cart.** With `countryCode: "ZA"` (E7), the line was set to quantity 0, total `0.0 USD`, `"userErrors": []`, and one warning: `MERCHANDISE_OUT_OF_STOCK`, "The product 'The Inventory Not Tracked Snowboard' is already sold out", for a product whose stock isn't even tracked. With no country (E7b), Shopify filled in the store's default, `US`, and the line kept quantity 1, `949.95 USD`, with no warnings. So Shopify reports "this store doesn't sell to that country" as sold out: the chat must tell the customer what really happened, and which country to send Shopify is a Step 2.1b decision (a WhatsApp number's country isn't necessarily where the goods go). Both carts kept the phone, `+` and country code, in `buyerIdentity`.
+      - E7: `curl -s https://$SHOP_DOMAIN/api/2026-10/graphql.json -H "X-Shopify-Storefront-Access-Token: $SF_TOKEN" -H 'Content-Type: application/json' -d "$(jq -n --arg variant "$VARIANT_ID" --arg phone "+$MY_NUMBER" '{query: "mutation Cart($input: CartInput!) { cartCreate(input: $input) { cart { id checkoutUrl buyerIdentity { phone countryCode } lines(first: 5) { nodes { quantity merchandise { ... on ProductVariant { id title } } } } cost { totalAmount { amount currencyCode } } } userErrors { field message code } warnings { code message target } } }", variables: {input: {lines: [{merchandiseId: $variant, quantity: 1}], buyerIdentity: {phone: $phone, countryCode: "ZA"}}}}')" | tee logs/experiment-2.1a-cart.json | python3 -m json.tool`
+      - E7b: the same, with `buyerIdentity: {phone: $phone}`, saved to `logs/experiment-2.1a-cart-no-country.json`.
+      - `$VARIANT_ID` was an available variant from E5's list, a product whose stock isn't tracked.
+    - **Result 7: no buyer IP was needed.** None of the Storefront requests sent `Shopify-Storefront-Buyer-IP`, and none was throttled or refused.
+    - **Result 8: checkout opens, but without the phone.** On a password-protected development store, both checkout links first opened the "Enter store password" page. Past it (E7c), E7b's link opened Shopify Checkout with the cart's product and total, the Test Payment Gateway, and delivery set to United States, the cart's country. The phone field ("Phone (optional)") and the email were empty: `buyerIdentity.phone` stays on the cart but didn't reach checkout's phone field on this store.
+      - E7c: `jq -r '.data.cartCreate.cart.checkoutUrl' logs/experiment-2.1a-cart-no-country.json`, opened in the browser after entering the store's password.
+    - **Tidy-up (E8):** the experiment's Storefront token was deleted (`storefrontAccessTokenDelete` returned its id and `"userErrors": []`), and `logs/experiment-2.1a-token.json` removed.
+  - **What Step 2.1b starts from:** the Storefront cart works, with or without a separate token (result 5), and needs no buyer IP (result 7). It must filter products not for sale (result 3), choose the country it sends Shopify and explain a dropped line (result 6), and request three scopes that are also in the app's released configuration (results 1 and 2). The phone not reaching checkout (result 8) matters for later steps: the receipt in Step 3.3 matches orders by a cart attribute, not by phone.
+- **Step 2.1b Each external number is tied to its store, and every store gets the new scopes (user story 25).** Use case: an organization admin connects the shop's WhatsApp number and picks the store it sells from, so customers texting it see that store and only that store. Designed on 2026-10-28 from Step 2.1a's results, one decision at a time (maintainer's decisions):
+  1. **The app sends the store's Admin token to the Storefront API, as a private token** (`Shopify-Storefront-Private-Token`, result 5). Nothing new is created or stored: the app already keeps and refreshes that token (`admin_client_for`). Shopify lists private tokens as the kind "used to query the API from a server" (https://shopify.dev/docs/api/storefront). A separate public token from `storefrontAccessTokenCreate` (result 4) would be one more secret per store.
+  2. **The cart tells Shopify no country** (result 6). Without `countryCode`, the cart uses the store's own default country, so the store's own prices and stock show, and the customer types the real delivery address in Shopify Checkout, which rechecks what ships there. A country taken from the phone number would be wrong for travellers and gifts, and where the store doesn't sell there, every line drops as "sold out".
+  3. **The install's scope check counts a granted write scope for its read scope** (result 2), following Shopify's "Any scope that writes a resource also grants read access to it" (https://shopify.dev/docs/api/usage/access-scopes). Listing a read scope and its write scope in `SHOPIFY_SCOPES` then works, instead of refusing every store with a message that looks like the merchant's fault.
+  4. **The number-to-store link is a store-channel table in a new `apps.whatsapp_shop` app:** one row per external number, pointing at the WhatsApp account and the Shopify store. Both options were weighed:
+     - **A column on `WhatsAppAccount`** would be simpler: one migration, no new app, and the store saved in the same call as the connect. But it's a foreign key to `apps.shopify`, so `apps.whatsapp`, the foundation every WhatsApp feature stands on (webhook, numbers, messages, send queue, linking, the assistant's runtime), couldn't run without Shopify installed, removing Shopify would mean a migration on the number's own table, and internal numbers would carry a column they never use.
+     - **The table** keeps that foundation free of Shopify, in the app D1 planned for store customers since 2026-10-15. Its cost is one more table, and two calls in the form (decision 5).
+     - **Where the benefit stops:** the team's Products menu in `apps.whatsapp_saas` already uses Shopify ([`use_cases.py`](../../../packages/backend/apps/whatsapp_saas/use_cases.py)), so a fork without Shopify still removes that menu. And D1 itself only keeps the channel from depending on `apps.whatsapp_saas` and `apps.whatsapp_shop`, not on `apps.shopify` (a correction to what was said in chat).
+  5. **The connect form makes two calls:** it connects the number (`apps.whatsapp`, as today), then chooses the store with `apps.whatsapp_shop`'s own mutation, which also changes the store later on the number's row. If the second call fails, the row says "no store chosen" with a picker, and customers get no reply until one is chosen.
+  - **TDD sub-steps,** each its own RED and GREEN:
+    - **2.1b-1 `apps.shopify`:** the install's scope check counts a write scope for its read scope ([`services.py`](../../../packages/backend/apps/shopify/services.py), tests in [`test_services_install.py`](../../../packages/backend/apps/shopify/tests/test_services_install.py)); the storefront scopes are listed in `SHOPIFY_SCOPES` to sell on WhatsApp, whose default stays `read_products` ([`config/settings.py`](../../../packages/backend/config/settings.py), with its loader test in [`apps/shopify/tests/test_settings.py`](../../../packages/backend/apps/shopify/tests/test_settings.py)). A store installed before keeps working on the products page.
+    - **2.1b-2 `apps.whatsapp_shop`, the new app:** the store-channel model and its service. A channel belongs to one external number only, and points at a store of the same organization. Choosing a store needs `whatsapp.manage`, and only offers active stores (not uninstalled, not needing reinstall) holding the two storefront scopes; anything else is refused with a reason. The app gets its `migrations/__init__.py` in the same GREEN as its model (agents.md section 4.2).
+    - **2.1b-3 GraphQL:** `apps.whatsapp_shop`'s mutation choosing (or changing) a number's store, and a query listing the organization's numbers with their stores and the stores that can be chosen. Then the schema and types are regenerated.
+    - **2.1b-4 web:** the external form gets a store picker (preselected when there's one eligible store; with none, a line pointing to the Shopify page) and makes the second call after connecting; each external number's row shows its store, or "no store chosen" with a picker.
+    - **2.1b-5 seed data and docs:** `whatsapp_seed_demo` links its demo external numbers to a demo store, and leaves one with no store. The operator guide says the scopes live in two places, `SHOPIFY_SCOPES` and the app's released configuration on Shopify (result 1), and what the approval page asks the merchant for.
+  - **Human checks:** in section 13, "Step 2.1b: the store each external number sells from". A new install granting the storefront scopes was already proven by Experiment 2.1a (results 1 and 2), and connecting a real external number needs a second real Meta number, so the checks use the seeded demo numbers and stores.
+  - **Done, 2026-10-28,** in TDD cycles run by the AI agent (the maintainer's autopilot for Step 2.1b's cycles); logs in `logs/step-2.1b-*`:
+    - **2.1b-1 RED:** [`test_services_install.py`](../../../packages/backend/apps/shopify/tests/test_services_install.py) gained `TestAWriteScopeCoversItsReadScope` (6 tests), and [`test_settings.py`](../../../packages/backend/apps/shopify/tests/test_settings.py) expects the new default. The first file couldn't import `missing_scopes`; the settings file gave `1 failed, 1 passed`. Commands: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_services_install.py apps/shopify/tests/test_settings.py -q -p no:warnings > logs/step-2.1b-1-red.log 2>&1` and `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_settings.py -q -p no:warnings > logs/step-2.1b-1-red-settings.log 2>&1`
+    - **2.1b-1 GREEN:** `missing_scopes()` in [`services.py`](../../../packages/backend/apps/shopify/services.py), used by the install's check, and the new default in [`config/settings.py`](../../../packages/backend/config/settings.py). `apps/shopify`: `128 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify -q -p no:warnings > logs/step-2.1b-1-green.log 2>&1`
+    - **2.1b-2 RED:** the new [`apps/whatsapp_shop/tests/test_store_channels.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_store_channels.py) (12 tests); pytest couldn't import the app, which didn't exist. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_shop -q -p no:warnings > logs/step-2.1b-2-red.log 2>&1`
+    - **2.1b-2 GREEN:** the new app: [`apps.py`](../../../packages/backend/apps/whatsapp_shop/apps.py), [`models.py`](../../../packages/backend/apps/whatsapp_shop/models.py) (`StorefrontChannel`), [`services.py`](../../../packages/backend/apps/whatsapp_shop/services.py) (`eligible_stores`, `store_for`, `choose_store`), `migrations/__init__.py` and `0001_initial.py`, made by `docker compose run --rm -T backend python manage.py makemigrations whatsapp_shop`, and `apps.whatsapp_shop` in `INSTALLED_APPS`. `12 passed`. Command: as the RED's.
+    - **2.1b-3 RED:** the new [`test_schema.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_schema.py): `9 failed`, "Cannot query field 'whatsAppStorefronts' on type 'Query'". Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_shop/tests/test_schema.py -q -p no:warnings > logs/step-2.1b-3-red.log 2>&1`
+    - **2.1b-3 GREEN:** [`schema.py`](../../../packages/backend/apps/whatsapp_shop/schema.py) (`whatsAppStorefronts`, `whatsAppEligibleStores`, `chooseWhatsAppStore`), registered in [`config/schema.py`](../../../packages/backend/config/schema.py). The four apps: `804 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_shop apps/whatsapp apps/whatsapp_saas apps/shopify -q -p no:warnings > logs/step-2.1b-3-green.log 2>&1`
+      - No migration missing: `No changes detected`. Command: `docker compose run --rm -T backend python manage.py makemigrations --check --dry-run > logs/step-2.1b-makemigrations-check.log 2>&1`
+      - The schema and types: `pnpm nx run webapp-api-client:graphql:download-schema --skip-nx-cache`, then `pnpm nx run webapp-api-client:graphql:generate-types --skip-nx-cache`, both exit code `0`.
+    - **2.1b-4 RED:** [`whatsappSettings.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/whatsappSettings.component.spec.tsx) gained "the store an external number sells from" (7 tests), and both page specs mock the two new queries; both couldn't find `graphql/whatsappStorefronts.graphql`. Command: `pnpm nx run webapp-whatsapp:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/step-2.1b-4-red.log 2>&1`
+    - **2.1b-4 GREEN:** [`whatsappStorefronts.graphql.ts`](../../../packages/webapp-libs/webapp-whatsapp/src/graphql/whatsappStorefronts.graphql.ts), then `generate-types` again; the [page](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/whatsappSettings.component.tsx) loads each number's store and the picker's stores, the [connect form](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/connectNumberForm.component.tsx) has the store picker and makes the second call, and each external [row](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/accountRow.component.tsx) shows its store with a picker for admins. The first run had 3 failures from the tests themselves (choosing before the list loaded, and the store's bold name splitting the text), fixed in the tests; then `41 passed`. Lint and type-check (`webapp-whatsapp`, `webapp`): exit code `0`. Commands: as the RED's, then `pnpm nx run webapp-whatsapp:lint --skip-nx-cache`, `pnpm nx run webapp-whatsapp:type-check --skip-nx-cache` and `pnpm nx run webapp:type-check --skip-nx-cache`
+    - **The default scopes back to `read_products`, 2026-10-29 (option A):** 2.1b-1 had made the storefront scopes the default, which would refuse every install on an upgraded deployment until its Shopify configuration listed them too (Step 2.1a, result 1).
+      - RED: `test_settings.py` expects the default `['read_products']` again: `1 failed, 1 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_settings.py -q -p no:warnings > logs/step-2.1b-optin-red.log 2>&1`
+      - GREEN: the default in `config/settings.py` is `read_products` again, with a comment saying how to opt in. `apps/shopify` and `apps/whatsapp_shop`: `152 passed`; black: `549 files would be left unchanged`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify apps/whatsapp_shop -q -p no:warnings > logs/step-2.1b-optin-green.log 2>&1`
+      - The operator guide's section 3b and the seed test say the scopes are opt-in.
+    - **2.1b-5:** the seed command [`whatsapp_shop_seed_demo`](../../../packages/backend/apps/whatsapp_shop/management/commands/whatsapp_shop_seed_demo.py) with its [`test_seed_demo.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_seed_demo.py); `apps/whatsapp_shop`: `24 passed`. Black: `549 files would be left unchanged` (after black's line breaks in two new files). The README's backend module lists gained `apps/whatsapp_shop`, and the operator guide a section "3b. The store an external number sells from". Commands: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_shop -q -p no:warnings > logs/step-2.1b-5-seed.log 2>&1` and `docker compose run --rm -T backend black --check . > logs/step-2.1b-5-black.log 2>&1`
+    - **No store line on a disconnected number, 2026-10-29:** found in check S1. The demo's disconnected `…804` said "No store chosen: its customers get no reply until one is.", though a disconnected number gets no messages and has no picker. The store link is kept, for when the number is reconnected.
+      - RED: "shows no store line on a disconnected number, which gets no messages" in [`whatsappSettings.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/whatsappSettings.component.spec.tsx): `1 failed`, the row's `whatsapp-store-account-4` line was found. Command: `pnpm nx run webapp-whatsapp:test --testPathPattern=whatsappSettings.component -t "disconnected number, which gets no messages" > logs/webapp-whatsapp-store-line-red.log 2>&1`
+      - GREEN: the [row](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/accountRow.component.tsx) shows the store line only while `account.isActive`. `webapp-whatsapp`: `42 passed`; lint and type-check: exit code `0`. Commands: `pnpm nx run webapp-whatsapp:test > logs/webapp-whatsapp-store-line-green.log 2>&1`, `pnpm nx run webapp-whatsapp:type-check` and `pnpm nx run webapp-whatsapp:lint`
+    - **The seed tests' Shopify key, 2026-10-29:** found by the full pre-commit run (section 8 of the restore-green plan). `shopify_seed_demo` stores the demo stores' tokens encrypted, and `apps/whatsapp_shop`'s tests gave no `SHOPIFY_TOKEN_ENCRYPTION_KEY` of their own. They had passed in the module runs above only because the local `.env` holds one, which the full run doesn't read.
+      - RED: the whole backend, `1752 passed, 2 failed`, the 2 in [`test_seed_demo.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_seed_demo.py). Command: `pnpm nx run backend:test --skip-nx-cache`, its output saved to `logs/backend-test.log`.
+      - GREEN: an autouse `shopify_encryption_key` fixture in [`apps/whatsapp_shop/tests/conftest.py`](../../../packages/backend/apps/whatsapp_shop/tests/conftest.py), as `apps/shopify/tests/conftest.py` gives its own. The whole backend: `1754 passed`. Command: as the RED's.
+- **Phase 2's decisions, 2026-10-29 (maintainer's, one at a time, agents.md section 4.5a).** Use case: a store customer texts the shop's own WhatsApp number, browses and searches its products, fills a cart, and one tap opens the shop's Shopify Checkout with it (user stories 12, 13, 14 and 16).
+  1. **The cart comes into phase 2.** Step 3.2's Storefront cart moves here, since a human check that can't buy doesn't prove the wiring. **Buy now** makes a one-item cart and sends its checkout link, leaving the open cart alone. **Add to cart** keeps one open cart per store customer. **Your cart** lists its lines, with **Checkout** and **Empty cart**. The paid-order receipt (Step 3.3, `read_orders` and `orders/paid`) stays in phase 3.
+  2. **The number's setting decides menus or the assistant.** An admin sets it on each external number's row, menus by default, and it's stored with the number's store link. Customers can't switch: the assistant calls OpenAI on the deployment's key for every message, so the business controls that cost. With the assistant on, buttons and `menu` still answer as menus.
+  3. **The store assistant shows, and the customer taps.** It can search, answer, and end its turn on a product's screen or the cart's, but it never changes the cart: the customer's own press on Add to cart or Buy now does. That keeps D11's rule (the model never writes) without D11's machinery, which needs a linked SaaS user.
+  4. **The privacy webhooks reach store customers through a signal sent by `apps.shopify`.** Its `customers/redact` and `shop/redact` handlers send `customer_redacted` and `shop_redacted`, and `apps.whatsapp_shop` receives them. First chosen as a listener on `ShopifyWebhookDelivery` rows, which needs no edit to `apps.shopify`; changed the same day, when the maintainer asked for the best long-term choice: a listener depends on how `apps.shopify` stores deliveries and could stop deleting data with no error, while the signal is the place the handler's own docstring names ("The first feature that stores customer data must make this handler real"), runs inside the Celery task's retries, and serves phase 3's order data too.
 - **Step 2.2 The storefront handler.** Routing to the account's store, a `StoreCustomer` for each contact (D4), and the store's own conversation mode setting for its store customers.
+  - **Detailed on 2026-10-29,** from phase 2's decisions:
+    - **The Storefront API client** is a new module in `apps.shopify`, `storefront.py`, beside `products.py`, so Shopify's field names stay in `apps.shopify` and callers get plain dicts. It sends the store's Admin token as `Shopify-Storefront-Private-Token` (Step 2.1b, decision 1) and no country (decision 2). A store that must be reconnected and a throttled request raise the same `ShopifyReconnectRequired` and `ShopifyTryAgainLater` as the products page.
+    - **`apps.whatsapp_shop` registers the external numbers' handler,** as `apps.whatsapp_saas` registers the internal ones' (D1). A number with no store chosen, or whose store can't sell on WhatsApp any more (uninstalled, waiting for a reinstall, or without the storefront scopes), gets no reply, as user story 25 says for a number with no store.
+    - **`StoreCustomer`,** one-to-one with the contact (D4): the organization, and the open cart's id with the store it belongs to. Created on the customer's first message. A cart Shopify no longer knows, or one from the number's previous store, is dropped and a new one started.
+    - **The mode** is a field on `StorefrontChannel` (phase 2, decision 2), `WHATSAPP_FORM` by default. The router asks the handler for a contact's mode and help text when the handler offers them (two optional methods in the registry), so a store customer never sees the team's `mode ai` or `unlink`.
+    - **The main menu** greets the customer with the number's business name (Meta's `verified_name`, already stored, so no call to Shopify) and offers **Browse products**, **Search** and **Your cart**. Typed text in menu mode gets the main menu, as on the team's number.
 - **Step 2.3 Browse and search.** Storefront `search` and `products`, 7 per page with Previous, Next and Main menu (D17), showing only products available for sale.
 - **Step 2.4 Product detail.** Image header, price, variants as a list when there's more than one, and buttons Add to cart, Buy now and Back to results.
+  - **With the cart (phase 2, decision 1):** a product with one variant offers **Add to cart**, **Buy now** and **Back**. One with several lists its variants that can be bought, 7 to a page, and each variant offers the same three. **Add to cart** says what was added and offers **Checkout** and **Your cart**. **Checkout** and **Buy now** send a link button to the cart's `checkoutUrl`, with the customer's number on the cart when Meta gave one (`buyerIdentity.phone`, with its `+`). The link must be `https`: the plan's earlier "the host is the store's domain" would refuse a store whose checkout runs on its own custom domain.
 - **Step 2.5 Store assistant.** The same agent runtime, with shop tools only.
+  - **Detailed on 2026-10-29:** tools to search the store, show a product's screen and show the cart, each of the last two ending the turn on that screen (phase 2, decision 3). The web app's external number row gets the **Menus** or **Assistant** setting (phase 2, decision 2).
 - **Step 2.6 Privacy webhooks.** `customers/redact` and `shop/redact` delete the matching store customers, contacts, messages and agent history.
+  - **Detailed on 2026-10-29 (phase 2, decision 4):** `customer_redacted` deletes the contacts of the store's numbers whose WhatsApp number matches the customer's phone and who are store customers there; deleting a contact deletes its messages, conversation, assistant history and `StoreCustomer`. `shop_redacted` deletes every store customer's contact on numbers selling from that store, and their store links. **A known limit:** a contact Meta gave no number (some username users, section 6.1) can't be matched by phone.
 - **Step 2.7 One number for both internal and external communications (planned, the maintainer's choice on 2026-10-21).** Use case: a small business that has only one WhatsApp number serves its team and its customers on it.
   - **A switch on an external communications number,** off by default: "members can also manage the organization from this number".
   - **With it on,** a member who has linked on that number gets the menus, forms and assistant, and anyone else is a store customer.
@@ -1708,6 +1791,103 @@ The organization's number is already connected and proven by the form (Steps 1.5
     - Every member's message on that number costs the organization money with Meta.
     - The forms (Flows) must be published to that number's WhatsApp Business account too.
   - **Built with phase 2,** when an organization's external number first answers anyone and the member-or-customer split starts to matter.
+  - **Redesigned on 2026-10-29 (maintainer's decisions, one at a time):** build for both setups, since most organizations will use one number for both, and some will want two numbers with a wall between them. A switch on an external number was dropped: a number connected as internal can't become external (`connect_account` refuses it), and members would have needed to link on external numbers too.
+    - **The two setups.** One number for both: a member whose phone is linked on it gets the team's menus, and anyone else is a store customer of the store it sells from. Two numbers kept apart: on the team's number strangers get no reply, as today; on the customers' number everyone is a customer, members included, with no team menus and no links. The wall holds both ways.
+    1. **A third purpose,** `INTERNAL_AND_EXTERNAL_COMMUNICATIONS`, beside the two there are. The three values are exactly the three valid setups. The database rule becomes one active number serving the team per organization (internal, or both). Additive: existing rows, GraphQL and the web app keep working. Two yes-or-no fields (serves the team, serves customers) were weighed and not chosen: they'd rewrite `purpose` everywhere, break the GraphQL API that exposes it, and allow "neither", which `is_active` already covers.
+    2. **An admin changes a connected number's role on its row,** after a confirmation saying what changes, with the same rules as connecting. The number keeps its credentials, history and Meta registration, since registering a number again with Meta is slow and limited (D18). A disconnected number may also be connected again with any role.
+    3. **When a number stops serving the team,** its members' links are removed, as if each had sent `unlink`: a link is a permission to act for the organization and must not linger behind the wall, and those members are customers there from then on. **When it stops serving customers,** its store link and store customers are kept, unused, as a disconnected number's are: configuration, not a permission, so switching back restores it, and Shopify's privacy deletions still find those customers (Step 2.6).
+    4. **The WhatsApp page gets one form and one list.** The top explains the two setups. The Connect form asks "Who texts this number?" (your team, your customers, or both) and shows the store picker for customers or both. Each listed number shows whom it serves, with **Change** for `whatsapp.manage`, and its store and **Menus** or **AI assistant** setting when it serves customers. It replaces the two sections of Step 1.17.
+  - **TDD sub-steps:**
+    - **2.7-1 `apps.whatsapp`:** the third purpose, and the one-team-number rule as a migration replacing Step 1.17's constraint. The router: on a number serving both, a linked member goes to the team's handler, `link <code>` still links, and anyone else goes to the customers' handler. Linking, the profile page and `internal_for` mean the number serving the team. Connecting counts "both" as the team's number, and a disconnected number reconnects with any role. A new `change_purpose` service and `changeWhatsAppNumberPurpose` mutation, which unlink members when the number stops serving the team, and set up the team's side (`on_connected`) when it starts.
+    - **2.7-2 `apps.whatsapp_saas`:** its forms are published to the number serving the team, whichever of the two purposes it has.
+    - **2.7-3 `apps.whatsapp_shop`:** a store can be chosen, and storefronts listed, for every number serving customers.
+    - **2.7-4 web:** one form and one list (decision 4).
+    - **2.7-5 seed data and human checks:** a number serving both in `whatsapp_seed_demo`, and section 13's phase 2 checks, including a real phone texting your one Meta number as a customer.
+      - **Changed when built:** no seeded number serving both. The demo organization already has a seeded internal number, and an organization has one number for its team, so a seeded "both" would replace it. The phase 2 checks use your own number instead, changed to serve both on its row, which is the real path anyway.
+- **Steps 2.2 to 2.7, done 2026-10-29,** in TDD cycles run by the AI agent (the maintainer's autopilot for phase 2's cycles). Backend commands are `docker compose run --rm -T -e DATABASE_URL= backend pytest <path> -q -p no:warnings > logs/<log> 2>&1`, with the path and log given; web commands are given in full.
+  - **2.2-1 the router's optional handler methods** (`answers`, `conversation_mode`, `help_text`), [`router.py`](../../../packages/backend/apps/whatsapp/services/router.py) and [`registry.py`](../../../packages/backend/apps/whatsapp/registry.py):
+    - RED: `TestExternalNumbers` in [`test_router.py`](../../../packages/backend/apps/whatsapp/tests/test_router.py): `3 failed, 49 passed`. Path `apps/whatsapp/tests/test_router.py`, log `step-2.2-1-red.log`.
+    - GREEN: `apps/whatsapp` and `apps/whatsapp_saas`: `664 passed`. Log `step-2.2-1-green.log`.
+  - **2.2-2 the Storefront API client,** [`apps/shopify/storefront.py`](../../../packages/backend/apps/shopify/storefront.py), its fields checked against Shopify's 2026-10 reference by a research agent (the Admin token as a private token is not in the docs; Step 2.1a's result 5 proved it):
+    - RED: the new [`test_storefront.py`](../../../packages/backend/apps/shopify/tests/test_storefront.py): `18 errors`, no `apps.shopify.storefront`. Log `step-2.2-2-red.log`.
+    - GREEN: `apps/shopify`: `146 passed`. Log `step-2.2-2-green.log`.
+  - **2.2-3 the store customers' handler,** [`menus.py`](../../../packages/backend/apps/whatsapp_shop/menus.py), with `StoreCustomer` and the number's mode on `StorefrontChannel`, migration `whatsapp_shop` 0002 by `docker compose run --rm -T backend python manage.py makemigrations whatsapp_shop -n store_customer_and_mode`:
+    - RED: the new [`test_handler.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_handler.py) couldn't import `StoreCustomer`. Log `step-2.2-3-red.log`.
+    - GREEN: `apps/whatsapp_shop` and `test_router.py`: `88 passed`. Log `step-2.2-3-green.log`.
+  - **2.3 browsing and searching:**
+    - RED: the new [`test_browsing.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_browsing.py): `8 failed`. Log `step-2.3-red.log`.
+    - GREEN: `apps/whatsapp_shop`: `44 passed`. Log `step-2.3-green.log`.
+  - **2.4 a product and the cart:**
+    - RED: the new [`test_product_and_cart.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_product_and_cart.py): `16 failed, 1 passed` (the unshowable-picture test passed early, with no product screen to show one). Log `step-2.4-red.log`.
+    - GREEN: `apps/whatsapp_shop`: `61 passed`. Log `step-2.4-green.log`.
+  - **2.5 the store assistant,** [`tools.py`](../../../packages/backend/apps/whatsapp_shop/tools.py) and [`prompts.py`](../../../packages/backend/apps/whatsapp_shop/prompts.py):
+    - RED: the new [`test_assistant.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_assistant.py) couldn't import `tools`. Log `step-2.5-red.log`.
+    - GREEN: `apps/whatsapp_shop`: `70 passed`. Log `step-2.5-green.log`.
+  - **2.5 the number's mode, backend** (`set_mode`, `setWhatsAppStorefrontMode`, `conversationMode` on `whatsAppStorefronts`):
+    - RED: `TestTheMode` in `test_store_channels.py` and `test_schema.py`: `8 failed, 21 passed`. Log `step-2.5b-red.log`.
+    - GREEN: `apps/whatsapp_shop`: `78 passed`. Log `step-2.5b-green.log`.
+  - **2.5 the number's mode, web** (**Menus** or **AI assistant** on the row):
+    - RED: "how a number's customers are answered" in [`whatsappSettings.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/whatsappSettings.component.spec.tsx): `3 failed, 43 passed`. Command: `pnpm nx run webapp-whatsapp:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/step-2.5c-red.log 2>&1`
+    - GREEN: after `pnpm nx run webapp-api-client:graphql:download-schema --skip-nx-cache` and `pnpm nx run webapp-api-client:graphql:generate-types --skip-nx-cache` (both exit code `0`): `46 passed`; lint and type-check of `webapp-whatsapp`, `webapp-api-client` and `webapp`: exit code `0`. Command: as the RED's, log `step-2.5c-green.log`.
+  - **2.6 the privacy signals,** [`apps/shopify/signals.py`](../../../packages/backend/apps/shopify/signals.py) sent by the redact handlers, received by [`receivers.py`](../../../packages/backend/apps/whatsapp_shop/receivers.py):
+    - RED: the new [`test_redact_signals.py`](../../../packages/backend/apps/shopify/tests/test_redact_signals.py) and [`test_privacy.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_privacy.py): `3 failed, 2 passed, 3 errors` (the 2 passed check that data is kept, which held before). Log `step-2.6-red.log`.
+    - GREEN: `apps/shopify` and `apps/whatsapp_shop`: `232 passed`. Log `step-2.6-green.log`.
+  - **2.7-1 the third purpose in `apps.whatsapp`,** migration `whatsapp` 0017 by `docker compose run --rm -T backend python manage.py makemigrations whatsapp -n one_number_for_both`:
+    - RED: the new [`test_one_number_for_both.py`](../../../packages/backend/apps/whatsapp/tests/test_one_number_for_both.py): `14 failed, 2 passed, 6 errors` (the 2 passed check the wall's two sides that already held). Log `step-2.7-1-red.log`.
+    - GREEN: `apps/whatsapp`: `564 passed, 2 failed`. The 2 were older tests pinning what decision 1 changes, updated: `test_enums.py` lists three purposes, and `test_accounts.py` reads "change or disconnect". Then `test_enums.py`, `test_accounts.py` and the new file: `71 passed`. Logs `step-2.7-1-green.log` and `step-2.7-1-green-rerun.log`.
+  - **2.7-2 forms on the number serving the team:**
+    - RED: `TestANumberServingBoth` in [`test_publish_flows.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_publish_flows.py): `2 failed, 10 passed`. Log `step-2.7-2-red.log`.
+    - GREEN: `apps/whatsapp_saas`: `122 passed`. Log `step-2.7-2-green.log`.
+  - **2.7-3 a store on a number serving both:**
+    - RED: `TestANumberServingBoth` in `test_store_channels.py`, and a test each in `test_schema.py` and `test_handler.py`: `2 failed, 85 passed` (the handler's passed: 2.7-1's router already sends strangers on a shared number to the store). Log `step-2.7-3-red.log`.
+    - GREEN: `apps/whatsapp_shop`: `87 passed`. Log `step-2.7-3-green.log`.
+  - **2.7-4 the web page, one form and one list:**
+    - RED: the spec rewritten for decision 4 ("the two setups", "changing whom a number serves", and the old section-based tests moved to the one form): `17` tests failed; Jest's totals line was lost in the long failure output. Command: `pnpm nx run webapp-whatsapp:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/step-2.7-4-red.log 2>&1`
+    - GREEN: after the schema download and a separate `generate-types` (the download target's own generation ran before the new schema was in place, exit code `1`; run again alone, exit code `0`): `50 passed`; lint and type-check of `webapp-whatsapp` and `webapp`: exit code `0`. Command: as the RED's, log `step-2.7-4-green.log`.
+  - **The four apps together, a leak found and fixed:**
+    - RED: `apps/whatsapp apps/whatsapp_saas apps/whatsapp_shop apps/shopify` in one run: `46 failed, 878 passed`, every `apps/whatsapp_shop` chat test answered "MAIN MENU". `test_router.py`'s test of a handler without the optional methods used both the `store_handler` fixture and `mocker.patch.dict`. `mocker` is set up first, by the file's autouse fixture, so its snapshot held the fake store handler, and its undo, which runs last, put the fake back in the registry for every later test. Each app alone had passed. Log `step-2.7-apps.log`. `black --check .` would reformat 6 of phase 2's files; `makemigrations --check --dry-run`: `No changes detected`.
+    - GREEN: the test no longer takes `store_handler`. `black` formatted the 6 files with `docker compose run --rm -T backend black apps/whatsapp apps/whatsapp_saas apps/whatsapp_shop apps/shopify`. The four apps: `924 passed`; `black --check .`: `564 files would be left unchanged`. Logs `step-2.7-apps-rerun.log` and `step-2.7-black-recheck.log`.
+- **Phase 2's human checks, 2026-10-30 and 31,** run by the maintainer on a real phone, from section 13's "Phase 2: a customer shops on your WhatsApp number":
+  - **Setup step 2:** `No migrations to apply.`, since the restart had applied them. Command: `pnpm saas backend migrate`
+  - **Passed:**
+    - P1: the number changed on its row to serve both, selling from the dev store.
+    - P2: the linked phone still got the team's menus and assistant.
+    - P3: unlinked, the phone was a customer.
+    - P4 and P6: browsing, and a product with options (The Complete Snowboard, Ice).
+    - P7: a cart of six products. **Checkout** opened Shopify Checkout with them and their total.
+    - P10: the store assistant answered in plain words and ended its turns on product screens with their buttons.
+  - **Not reported:** P5, P8, P9 and P11.
+  - **Customers get AI assistant works,** proven as a customer. As a linked member, the maintainer's own profile setting decided their mode, as designed (finding 2).
+  - **A design to keep (maintainer, 2026-10-31):** in the assistant mode, words go to the assistant and actions stay on buttons (phase 2, decision 3). A customer types in plain words and can still tap through the menus.
+- **Pre-commit run, 2026-10-31,** by the maintainer, after the human checks (section 8 of the restore-green plan):
+  - **The generated `gql.ts` had lost its patch:** `0`, from `grep -c "GraphQL query not found" packages/webapp-libs/webapp-api-client/src/graphql/__generated/gql/gql.ts`. `pnpm saas up`'s type watcher rewrites it without the patch (section 9 of the restore-green plan). With the stack stopped (`pnpm saas down`), `pnpm nx run webapp-api-client:graphql:generate-types > logs/generate-types.log 2>&1` exited `0`, and the same `grep` printed `1`.
+  - **Lint and type-check, 16 frontend projects:** all 32 exit code `0`. Command: `for p in webapp webapp-core webapp-tenants webapp-finances webapp-emails webapp-api-client webapp-contentful webapp-notifications webapp-crud-demo webapp-documents webapp-generative-ai webapp-sso webapp-ai-assistant webapp-backup webapp-shopify webapp-whatsapp; do for t in lint type-check; do pnpm nx run $p:$t --skip-nx-cache > logs/$p-$t.log 2>&1; echo "$p $t exit code: $?"; done; done`
+  - **Frontend tests:** every project passed, none failed. `webapp`: 168 passed, 2 skipped. `webapp-tenants`: 164 passed, 2 skipped (the 4 skips are upstream's). `webapp-whatsapp`: 50 passed. Command: the README's frontend summary form, `pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1` for each of the 16 projects.
+  - **Backend and workers:** `1871 passed` in 23:28, and `2 passed`. Commands: `pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1` and `pnpm nx run workers:test --skip-nx-cache > logs/workers-test.log 2>&1`
+- **Step 2.8 Fixes from phase 2's human checks (planned).** Found on 2026-10-30 and 31, numbered as found. Each fix is its own TDD step, and each open design question is decided on its own, one at a time, before it's built (agents.md section 4.5a).
+  1. **The team assistant made up an item's name.** "I would like to create a new item" became an item called "New Item". Nothing in [`prompts.py`](../../../packages/backend/apps/whatsapp_saas/prompts.py), or in `create_item`'s description in [`tools.py`](../../../packages/backend/apps/whatsapp_saas/tools.py), says to ask for a name the user didn't give. The fix is wording: ask for a missing name, when creating or renaming an item and when renaming the organization.
+  2. **The WhatsApp page doesn't say who decides a member's mode.** On a number serving both, a linked member's own profile setting decides their mode, and the row's **Customers get** applies to everyone else. The maintainer first took the row's setting for a global switch. A line under **Customers get** should say that members who linked their phone choose their own on their profile page.
+  3. **A number connected through another Meta app gets 403s.** A second number was connected, serving customers. Its test message was delivered, but every message sent to it was refused with 403. The only 403 a webhook POST can return is the signature check against the one `WHATSAPP_APP_SECRET` ([`views.py`](../../../packages/backend/apps/whatsapp/views.py)), and the first number's messages pass it. So that number's messages are signed by the Meta app its token came from. Still to confirm, with the log line Step 1.22 added. Any organization pasting the three values from its own Meta app would hit this.
+     - **Design open:** an App secret, webhook address and verify token per number; or Meta's Embedded Signup into this app's one Meta app (phase 4); or both.
+  4. **The assistant's greeting invents products.** It suggested a "business strategy course" and an "investment guide" for a snowboard shop, most likely guessing from the number's business name. Fixed with finding 12.
+  5. **Sold-out products are listed.** "The 3p Fulfilled Snowboard" was listed and opened, and only **Add to cart** found it sold out, although the lists ask Shopify only for products available for sale (`available_for_sale:true`). Why Shopify counted it as available isn't known yet.
+     - First, query its availability fields: the product's `availableForSale`, and each variant's `availableForSale`, `currentlyNotInStock` and `quantityAvailable`.
+     - Then hide whatever can't be bought, from the lists, the options, the product screen and the assistant's results.
+  6. **The assistant lists products as plain text** and says "If you tap on one, I can open it", but text can't be tapped. It should show a list the customer can tap, as `show_product` shows one product.
+  7. **A sold-out line makes every later add report a failure, though the add worked.** Shopify kept the sold-out product in the cart at quantity 0 with a `MERCHANDISE_OUT_OF_STOCK` warning, and repeated the warning on every later change to the cart. [`storefront.py`](../../../packages/backend/apps/shopify/storefront.py) raises on any `MERCHANDISE_*` warning, whichever line it's about. So the customer read "Sorry, that couldn't go in your cart: The product 'The 3p Fulfilled Snowboard' is already sold out" while adding other products, which did go in: the cart then held them all.
+     - The fix: judge an add only by the warnings about its own line (a warning's `target`), remove lines at quantity 0, and tell the customer once, about the right product.
+  8. **The cart screen lists lines at quantity 0,** such as "0 × The 3p Fulfilled Snowboard: USD 0.00". Shopify Checkout itself removed that line, saying "Some items are no longer available and will be removed from your cart".
+  9. **Checkout's delivery country is the store's default,** United States on the dev store, because the cart sends no country (Step 2.1b, decision 2). To reconsider later, as its own decision: a country taken from the customer's number would help a local customer, and be wrong for travellers and gifts.
+  10. **A cart link beside the Checkout link,** asked for by the maintainer. A WhatsApp link button carries one link, so the options are: the cart's lines in the Checkout message itself, the cart's link as text in the message, or two messages.
+      - **Open:** which cart is meant, the chat's cart or the shop's own cart page on its website.
+  11. **The checkout message names the store,** for example "Your cart from _the store's name_ holds 6 items: USD 4690.80."
+  12. **The welcome names the Shopify store, in both modes,** for example "Hi, welcome to _the store's name_. You can shop with us right here in WhatsApp…". Today the menus greet with the number's WhatsApp business name, and the assistant writes its own greeting.
+      - Shopify's Storefront API gives the store's name (`shop { name }`), and the brand settings may hold a slogan or short description the assistant can use (`shop { brand }`).
+      - **Open:** the WhatsApp business name and the store's name can differ, and the chat's header already shows the first.
+  13. **The welcome shows the store's logo, in both modes,** from the brand settings (`shop { brand { logo squareLogo } }`), as the image above the main menu's text, and none when the store has set no logo.
+      - WhatsApp shows only JPEG and PNG images, so the logo is asked for in one of those. Doing the same for product pictures may bring back the ones left out today.
+      - The name and logo are kept from one fetch, not fetched on every message.
+  14. **Changing a setting on the WhatsApp page shows no confirmation.** Choosing **Menus** or **AI assistant** saves at once and shows nothing. It should show a toast, or an error if the save fails. **Save store** and **Change** are to be checked the same way, using the app's existing toasts.
 
 ### Phase 3 — Use case 3: paying in chat, and invoices (outline)
 
@@ -1718,6 +1898,7 @@ The organization's number is already connected and proven by the form (Steps 1.5
 - **Step 3.2 Store customer cart.**
   - The cart is kept on the `StoreCustomer` and built with `cartCreate` and `buyerIdentity.phone`.
   - Its `checkoutUrl` is sent as a link button, after checking that the host is the store's domain. That link is the whole payment step (D13).
+  - **Moved into phase 2 on 2026-10-29** (phase 2, decision 1): built with Step 2.4.
 - **Step 3.3 Paid orders and the receipt.** The `orders/paid` webhook (`read_orders` scope) is matched to the store customer by a cart attribute. The store customer gets the order number, the total and a button to the order's `statusPageUrl` (user story 22).
 - **Step 3.4 `apps.invoicing`.**
   - An `Invoice` model and an organization counter row (D15).
@@ -1877,6 +2058,9 @@ The kinds are defined in agents.md section 2.5. Each file's docstring says why i
   - [`apps/whatsapp_saas/tests/test_products_menus.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_products_menus.py): the product menus through the real router and handler, with `fetch_products` and the send task's Celery `delay` mocked.
   - [`apps/whatsapp_saas/tests/test_tools.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_tools.py): the assistant's tools against the test database, with `fetch_products` mocked.
   - [`apps/whatsapp_saas/tests/test_assistant.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_assistant.py): agentic mode through the real router, tools and confirmations, with a fake model and the send task's Celery `delay` patched.
+  - [`apps/whatsapp_shop/tests/test_store_channels.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_store_channels.py): which store each external number sells from (Step 2.1b), in the test database; nothing faked.
+  - [`apps/whatsapp_shop/tests/test_schema.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_schema.py): the store picker's API through the real GraphQL schema and permissions; nothing faked.
+  - [`apps/whatsapp_shop/tests/test_seed_demo.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_seed_demo.py): `whatsapp_shop_seed_demo` after the two other seeds, in the test database; nothing faked.
 - **Smoke:** [`apps/whatsapp_saas/tests/test_smoke.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_smoke.py), from a link code through a confirmed item. Only Celery's queueing is replaced, by running each task at once.
 - **Web (Jest), all integration:** the components render with the real Apollo hooks, router and permission check, against Apollo's `MockedProvider`.
   - [`whatsappSettings.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/whatsappSettings.component.spec.tsx): the WhatsApp tab.
@@ -1956,7 +2140,7 @@ Planned checks:
 
 > **Human checks start here.** They run by hand, top to bottom, against the local stack, your own Meta test number and your own phone (agents.md section 1.3). Everything you run is in this section, and the section ends at the line "**Human checks end here.**". Run them from this file rather than from chat, which can drop backslashes.
 
-Rewritten in Step 1.17 as the fast path to a real message. Checks 1 to 5 connect your organization's internal communications number, link your phone and get the menu. The rest go through what the team can do, and the WhatsApp page (in the sidebar since Step 1.19). Check 17 shows the PayFast values renamed in the PayFast plan's section 14, released with Steps 1.19 to 1.22. Webhooks, signatures and permissions are covered by the automated tests (section 12), so they aren't repeated here.
+Rewritten in Step 1.17 as the fast path to a real message. Checks 1 to 5 connect your organization's internal communications number, link your phone and get the menu. The rest go through what the team can do, and the WhatsApp page (in the sidebar since Step 1.19). Check 17 shows the PayFast values renamed in the PayFast plan's section 14, released with Steps 1.19 to 1.22. The last part, "Experiment 2.1a", is phase 2's first step: Shopify's Storefront API tried by hand on a dev store. Webhooks, signatures and permissions are covered by the automated tests (section 12), so they aren't repeated here.
 
 Nothing personal is written in this file: real values go into `packages/backend/.env`, which git ignores, into the web app's forms, or into shell variables when you run the checks.
 
@@ -2474,6 +2658,463 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 - `Rows with an old value: 0`
 
 **In the web app,** only if `packages/backend/.env` has `PAYMENT_BACKEND=payfast`: open **Subscriptions** in the sidebar, then **Transaction history**. **Expect:** the same plan, price and dates as before the restart (a trial still says **Free trial**), and donations still labelled **Donation**.
+
+### Phase 2: a customer shops on your WhatsApp number
+
+Run these on their own, top to bottom, on a real phone (user stories 12, 13, 14, 16 and 21, Step 2.7). You have one Meta number, connected as your team's. P1 makes it serve your customers too. P3 unlinks your phone, so you text it as a customer. P11 turns the number back and relinks you, leaving everything as it was.
+
+Shopify's privacy webhooks (Step 2.6) aren't checked here: a real one needs Shopify to send it. Their tests run the real handlers.
+
+#### Setup for phase 2
+
+1. **The stack,** restarted, so the backend loads phase 2's code:
+
+   ```shell
+   pnpm saas down
+   pnpm saas up
+   ```
+
+2. **The new migrations,** in your local database:
+
+   ```shell
+   pnpm saas backend migrate
+   ```
+
+   **Expect:** `Applying whatsapp.0017_one_number_for_both... OK` and `Applying whatsapp_shop.0002_store_customer_and_mode... OK`, or `No migrations to apply.` when the restart in step 1 already applied them: the backend runs its migrations when it starts.
+
+3. **What earlier checks left in place:** `packages/backend/.env` lists the storefront scopes in `SHOPIFY_SCOPES`, and your dev store holds them (Experiment 2.1a, setup and E1). `WHATSAPP_SEND_BACKEND=META`, and the tunnel to the webhook is up, as in "The fast path", check 2. For P10, `OPENAI_API_KEY` and `WHATSAPP_AI_MODEL` are set, as in check 11.
+
+4. **Your organization's name, in this terminal,** as the sidebar's switcher shows it:
+
+   ```shell
+   read -r -p "Name of your organization: " ORG_A
+   ```
+
+5. **The web app,** at http://localhost:3000, logged in as yourself, with your organization chosen, and **WhatsApp** open in the sidebar.
+
+**Who can do what:** `whatsapp.manage` (Owner and Admin) changes whom a number serves, its store and its customers' mode. `whatsapp.view` (Member) sees them. A store customer needs nothing: anyone texting a number that serves customers is one.
+
+#### P1. Your number serves your team and your customers (Step 2.7, decisions 2 and 4)
+
+- **Why:** one number for both is how most organizations will start, and changing the role must keep the number's registration.
+- **Acts on:** your organization's team number, and your dev store.
+
+**In the web app,** on your number's row:
+
+1. **Expect:** **Your team** under the number.
+2. In **Who texts this number**, choose **Your team and your customers**, and press **Change**. **Expect:** a dialog saying members linked on it are unlinked only if it stops serving your team. Press **Change whom it serves**. **Expect:** **Your team and your customers** under the number, and **No store chosen: its customers get no reply until one is.**
+3. In **Change store**, choose your dev store and press **Save store**. **Expect:** **Sells from** your dev store, and **Customers get** with **Menus** chosen.
+
+**Show** your organization's numbers, whom each serves, and their store links:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppAccount; from apps.whatsapp_shop.models import StorefrontChannel; print(json.dumps(list(WhatsAppAccount.objects.filter(tenant__name='$ORG_A').values('id', 'display_phone_number', 'purpose', 'is_active')), indent=4, default=str)); print(json.dumps(list(StorefrontChannel.objects.filter(account__tenant__name='$ORG_A').values()), indent=4, default=str))"
+```
+
+**Expect:** your number with `"purpose": "INTERNAL_AND_EXTERNAL_COMMUNICATIONS"` and `"is_active": true`, and a store link for its id with `"conversation_mode": "WHATSAPP_FORM"`.
+
+#### P2. Your linked phone still gets the team's menus (Step 2.7)
+
+- **Why:** a member whose phone is linked on a number serving both is never treated as a customer.
+- **Acts on:** your phone's link on that number.
+
+**On your phone,** send `menu` to your number. **Expect:** **You're working in Organization: …**, the team's main menu, as before P1.
+
+#### P3. Unlinked, you're a customer (user stories 12 and 14)
+
+- **Why:** anyone not linked on a number serving customers is a store customer of its store.
+- **Acts on:** your phone's link, which P11 restores.
+
+**On your phone:**
+
+1. Send `unlink`. **Expect:** **This number is now unlinked from your account. Link it again from your profile page.**
+2. Send `hi`. **Expect:** **Welcome to** your number's business name, **What would you like to do?**, and a **Menu** list of **Browse products**, **Search**, **Your cart** and **Main menu**.
+
+#### P4. Browsing shows only what can be bought (Step 2.3, user story 12)
+
+- **Why:** Experiment 2.1a, result 3: the Storefront API lists products that can't be bought.
+- **Acts on:** your dev store's products, read live, nothing stored.
+
+**On your phone,** open **Menu** and choose **Browse products**. **Expect:** **Products, newest first.**, up to 7 products, each with its price, then **Next** if there are more, and **Main menu**. No Gift Card and no The Out of Stock Snowboard. **Next** leads to the next page, which has **Previous**.
+
+#### P5. Search, and a search with no match (Step 2.3)
+
+- **Why:** a customer types what they want, and a miss never leaves them stuck (D17).
+- **Acts on:** your dev store's products.
+
+**On your phone:**
+
+1. Send `menu`, choose **Search**. **Expect:** **Type what you're looking for…**. Send `snowboard`. **Expect:** **Products matching "snowboard".** and a list of them.
+2. Send `menu`, choose **Search**, and send `kayak`. **Expect:** **Nothing for sale matches "kayak".**, with **Search again**, **Browse all** and **Main menu**.
+
+#### P6. A product, and one with options (Step 2.4, user story 13)
+
+- **Why:** the customer sees what they'd see on the store's page, and picks an option before buying.
+- **Acts on:** one product with one variant, and one with several, from your dev store.
+
+**On your phone:**
+
+1. From **Browse products**, choose a product with no options. **Expect:** its picture (if it has a JPEG or PNG one), its name in bold, its price and description, and **Add to cart**, **Buy now** and **Back**. **Back** returns to the same page of the list.
+2. Choose a product with options (such as sizes). **Expect:** **… comes in N options. Which one would you like?**, a list of the options for sale with their prices. Choose one. **Expect:** the product's name with the option, its price, and the same three buttons.
+
+#### P7. A cart with two products, and its checkout (Step 2.4, phase 2 decision 1, user story 16)
+
+- **Why:** the whole point of phase 2: one tap from the chat into the shop's own Shopify checkout (D13).
+- **Acts on:** a Storefront cart on your dev store, and your store customer row. Nothing is paid.
+
+**On your phone:**
+
+1. On a product, press **Add to cart**. **Expect:** **Added … to your cart. It holds 1 item: USD …**, with **Checkout**, **Your cart** and **Keep shopping**.
+2. Press **Keep shopping**, choose another product, and press **Add to cart**. **Expect:** **It holds 2 items**.
+3. Press **Your cart**. **Expect:** **Your cart:**, a line per product with its quantity and amount, **Total: USD …**, and **Checkout**, **Empty cart** and **Main menu**.
+4. Press **Checkout**. **Expect:** **Your cart holds 2 items: USD …. Tap Checkout to pay in the shop's secure Shopify checkout.**, with a **Checkout** link button. Open it: your store's password page, then Shopify Checkout with both products. Don't pay.
+
+**Show** your store customer row:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp_shop.models import StoreCustomer; print(json.dumps(list(StoreCustomer.objects.filter(tenant__name='$ORG_A').values()), indent=4, default=str))"
+```
+
+**Expect:** one row, with a `"cart_id"` starting `gid://shopify/Cart/` and a `"cart_shop_id"`.
+
+#### P8. Buy now leaves the cart alone (Step 2.4)
+
+- **Why:** buying one thing quickly mustn't disturb what the customer is collecting.
+- **Acts on:** a separate one-item Storefront cart.
+
+**On your phone,** on a product, press **Buy now**. **Expect:** **…, USD …. Tap Checkout to pay…** with a **Checkout** link button, which opens a checkout with that one product. Then press **Your cart** from the main menu. **Expect:** still the two products of P7.
+
+#### P9. Empty cart (Step 2.4)
+
+- **Acts on:** your store customer's cart id; Shopify forgets the unused cart by itself.
+
+**On your phone,** in **Your cart**, press **Empty cart**. **Expect:** **Your cart is empty now.**, with **Browse products** and **Main menu**. **Your cart** then says **Your cart is empty.**
+
+#### P10. The store assistant (Step 2.5, phase 2 decisions 2 and 3)
+
+- **Why:** the business decides whether customers get the paid assistant, and the assistant never changes the cart.
+- **Acts on:** your number's mode, and OpenAI (a few requests, billed to your key).
+
+1. **In the web app,** on your number's row, under **Customers get**, choose **AI assistant**. **Expect:** it stays chosen, with the note about OpenAI's cost.
+2. **On your phone,** send `do you have snowboards?`. **Expect:** a short reply in words naming some of your store's snowboards, with a **Main menu** button.
+3. Send `show me the first one`. **Expect:** that product's screen with **Add to cart**, **Buy now** and **Back**. Press **Add to cart**. **Expect:** **Added … to your cart.**: your press did it, not the assistant.
+4. Send `menu`. **Expect:** the store's main menu: menus still work with the assistant on.
+5. **In the web app,** choose **Menus** again.
+
+#### P11. Back to the team's number only, and relinked (Step 2.7, decisions 2 and 3)
+
+- **Why:** two numbers kept apart is the other setup: on a team-only number, strangers get nothing. And it leaves your setup as it was.
+- **Acts on:** your number's role and your phone's link.
+
+1. **In the web app,** on your number's row, choose **Your team** in **Who texts this number**, press **Change**, then **Change whom it serves**. **Expect:** **Your team**, and no store line (the store link is kept, unused).
+2. **On your phone,** send `hi`. **Expect:** no reply at all: you're unlinked, and the number now serves only the team.
+3. **In the web app,** open your profile page and link your phone again, as in "The fast path", check 4. **Expect:** the link confirmation on your phone, then `menu` gives the team's main menu.
+
+### Step 2.1b: the store each external number sells from
+
+Run these on their own, top to bottom (user story 25). They use the seeded demo numbers and stores, so they need no tunnel and no second real Meta number.
+
+#### Setup for 2.1b
+
+1. **The stack,** restarted, so the backend loads the new `apps.whatsapp_shop` app:
+
+   ```shell
+   pnpm saas down
+   pnpm saas up
+   ```
+
+2. **The new table,** in your local database:
+
+   ```shell
+   pnpm saas backend migrate
+   ```
+
+   **Expect:** `Applying whatsapp_shop.0001_initial... OK`, or `No migrations to apply.` when the restart in step 1 already applied it: the backend runs its migrations when it starts.
+
+3. **Your values, in this terminal:** your login email and your organization's current name, as the sidebar's switcher shows it:
+
+   ```shell
+   read -r -p "Login email: " OWNER_EMAIL
+   read -r -p "Name of your organization: " ORG_A
+   ```
+
+4. **The seed data, in this order.** The demo WhatsApp numbers, the demo Shopify stores (`linked-demo.myshopify.com` gets the scopes `SHOPIFY_SCOPES` lists, so your `.env` must hold the three from Experiment 2.1a), then the links between them:
+
+   ```shell
+   docker compose run --rm -T backend python manage.py whatsapp_seed_demo --email "$OWNER_EMAIL" --organization "$ORG_A"
+   docker compose run --rm -T backend python manage.py shopify_seed_demo --email "$OWNER_EMAIL" --organization "$ORG_A"
+   docker compose run --rm -T backend python manage.py whatsapp_shop_seed_demo --email "$OWNER_EMAIL" --organization "$ORG_A"
+   ```
+
+   **Expect,** from the last one: `WhatsApp number 100000000000802 sells from linked-demo.myshopify.com`, the same for `…803`, and `WhatsApp number 100000000000801 has no store chosen`.
+
+5. **The web app,** at http://localhost:3000, logged in as yourself, with your organization chosen in the sidebar's switcher.
+
+**Who can do what:** `whatsapp.view` (Owner, Admin and Member) sees each external number's store; `whatsapp.manage` (Owner and Admin) chooses and changes it. A store is offered only if it's the organization's own, still installed, not waiting for a reinstall, and holding `unauthenticated_read_product_listings` and `unauthenticated_write_checkouts`.
+
+#### S1. Each external number shows the store it sells from, or that none is chosen (user story 25)
+
+- **Why:** a customer texting a number sees that number's store only, and a number with no store says so instead of answering with nothing.
+- **Acts on:** the demo external numbers `100000000000801` to `100000000000803` of `$ORG_A`, and the demo store `linked-demo.myshopify.com`.
+
+**Show** your organization's store links, whole, each with its number's id and its store's domain:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from django.db.models import F; from apps.whatsapp_shop.models import StorefrontChannel; print(json.dumps(list(StorefrontChannel.objects.filter(account__tenant__name='$ORG_A').annotate(phone_number_id=F('account__phone_number_id'), shop_domain=F('shop__shop_domain')).order_by('phone_number_id').values()), indent=4, default=str))"
+```
+
+**Expect:** two rows, `100000000000802` and `100000000000803`, each with `"shop_domain": "linked-demo.myshopify.com"`, and no row for `100000000000801`.
+
+**In the web app,** click **WhatsApp** in the sidebar. **Expect,** under **External communications numbers**: `…801`'s row says **No store chosen: its customers get no reply until one is.**, and `…802`'s and `…803`'s say **Sells from linked-demo.myshopify.com**. Your internal number's row, and the disconnected `…804`'s, say nothing about a store.
+
+#### S2. Only stores that can sell on WhatsApp are offered, and an admin changes a number's store (user story 25)
+
+- **Why:** a number can only sell from a store that holds the storefront scopes and is still installed; the uninstalled and reinstall demo stores are never offered.
+- **Acts on:** `$ORG_A`'s stores, and the demo number `100000000000802`.
+
+**Show** your organization's stores, whole (tokens are stored encrypted):
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.shopify.models import ShopifyShop; print(json.dumps(list(ShopifyShop.objects.filter(tenant__name='$ORG_A').order_by('shop_domain').values()), indent=4, default=str))"
+```
+
+**Expect:** `linked-demo.myshopify.com` and your dev store holding the storefront scopes, `uninstalled-demo.myshopify.com` with an `uninstalled_at` time, and `reinstall-demo.myshopify.com` with `"needs_reinstall": true`.
+
+**In the web app,** on `…802`'s row:
+
+1. Open **Change store**. **Expect:** your dev store only. `linked-demo.myshopify.com` is the current store, and the uninstalled and reinstall demo stores are never offered.
+2. Choose your dev store and press **Save store**. **Expect:** the row says **Sells from** your dev store.
+
+**Show** the change, the same command as at the start of S1:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from django.db.models import F; from apps.whatsapp_shop.models import StorefrontChannel; print(json.dumps(list(StorefrontChannel.objects.filter(account__tenant__name='$ORG_A').annotate(phone_number_id=F('account__phone_number_id'), shop_domain=F('shop__shop_domain')).order_by('phone_number_id').values()), indent=4, default=str))"
+```
+
+**Expect:** `100000000000802`'s row now has your dev store's domain and a newer `updated_at`; `100000000000803`'s is unchanged.
+
+#### S3. The connect form asks which store an external number sells from (user story 25)
+
+- **Why:** an external number is connected together with its store (Step 2.1b, decision 5); nothing is sent until both are filled in.
+- **Acts on:** the external section's connect form; nothing is connected.
+
+**In the web app,** under **External communications numbers**:
+
+1. **Expect:** a **Store** picker above the three fields, offering `linked-demo.myshopify.com` and your dev store, with **Choose a store** selected, since there's more than one.
+2. Press **Connect number** without filling anything in. **Expect:** "Choose the store this number sells from", and the three "… is required" messages; nothing is sent.
+3. The internal section's form has no **Store** picker: the team's number never sells.
+
+#### S4. A Member sees the stores but can't change them (user story 25)
+
+- **Why:** only `whatsapp.manage` chooses a number's store; `whatsapp.view` sees it.
+- **Acts on:** the seeded Member `whatsapp-member@example.com` of `$ORG_A`, from `whatsapp_seed_demo`.
+
+**In the web app:** log out, then log in as `whatsapp-member@example.com` with the password `WhatsAppMember123!`, and click **WhatsApp** in the sidebar. **Expect:** the same **Sells from** and **No store chosen** lines as in S1 (with S2's change), and no **Change store**, no **Save store**, and no connect forms.
+
+### Experiment 2.1a: Shopify's Storefront API on your dev store
+
+Step 2.1a's five open questions, answered by hand before Step 2.1b is designed. Nothing here changes code; each result goes into Step 2.1a's record with its command. The questions and Shopify's docs for each are in Step 2.1a.
+
+- **Acts on:** your Shopify development store, connected to your organization on the Shopify page, and one throwaway Storefront token, deleted at the end.
+- **Secrets:** the Admin and Storefront tokens are kept in shell variables, and only their first characters are printed. The created token's response is saved in the gitignored `logs/` folder, and that file is deleted at the end.
+
+#### Experiment setup
+
+1. **The new scopes, in the untracked `packages/backend/.env`.** Add this line, or replace an existing `SHOPIFY_SCOPES` line with it (Step 2.1, decision 4). `unauthenticated_read_checkouts` isn't in it: the write scope grants it, and Shopify doesn't list it back, so the callback would refuse the store (Step 2.1a, result 2).
+
+   ```shell
+   SHOPIFY_SCOPES=read_products,unauthenticated_read_product_listings,unauthenticated_write_checkouts
+   ```
+
+2. **The stack,** restarted so the backend reads it:
+
+   ```shell
+   pnpm saas down
+   pnpm saas up
+   ```
+
+3. **Your values, in the terminal you run the experiment in:** your dev store's domain, as the Shopify page lists it (it ends in `.myshopify.com`), and your own WhatsApp number, digits only with its country code:
+
+   ```shell
+   read -r -p "Your dev store's domain (….myshopify.com): " SHOP_DOMAIN
+   read -r -p "Your WhatsApp number (digits, with country code): " MY_NUMBER
+   ```
+
+4. **The same scopes in the app's configuration on Shopify.** Shopify grants only the scopes the app's own configuration lists, whatever the install link asks for (Step 2.1a, result 1). Shopify's page on it: https://shopify.dev/docs/apps/build/authentication-authorization/app-installation/manage-access-scopes
+   - **A Dev Dashboard app:** open https://dev.shopify.com/dashboard, choose the app, and create a new version. In its access scopes, keep `read_products` and add `unauthenticated_read_product_listings` and `unauthenticated_write_checkouts`. Then release the version. A version that also lists `unauthenticated_read_checkouts` works too.
+   - **A Shopify CLI app:** add the same two to the `[access_scopes]` section of its `shopify.app.toml`, and run `shopify app deploy`.
+
+5. **Reconnect the store.** In the web app, click **Shopify** in the sidebar, type your dev store's domain into the connect form, and press **Connect**. **Expect:** Shopify's approval page, now listing the new permissions as well as reading products. Approve it, and the backend saves the store with no error. If the callback page says "Merchant did not grant all required scopes", the app's configuration doesn't list them yet: go back to setup step 4.
+
+#### E1. The store now holds the new scopes
+
+**Show** the store's row, whole (its tokens are stored encrypted):
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.shopify.models import ShopifyShop; print(json.dumps(list(ShopifyShop.objects.filter(shop_domain='$SHOP_DOMAIN').values()), indent=4, default=str))"
+```
+
+**Expect:** one row, with `"scopes"` listing `unauthenticated_read_product_listings` and `unauthenticated_write_checkouts` next to `read_products`, an `"updated_at"` from just now, and `"needs_reinstall": false`.
+
+#### E2. The store's Admin token, in a shell variable
+
+The app's own client refreshes the token if it's about to expire, and the token goes straight into `ADMIN_TOKEN`, not onto the screen:
+
+```shell
+ADMIN_TOKEN=$(docker compose run --rm -T backend python manage.py shell -c "from apps.shopify.client import admin_client_for; from apps.shopify.models import ShopifyShop; print(admin_client_for(ShopifyShop.objects.get(shop_domain='$SHOP_DOMAIN')).access_token)" 2>/dev/null | tail -n 1)
+echo "Admin token: ${#ADMIN_TOKEN} characters, starting ${ADMIN_TOKEN:0:6}"
+```
+
+**Expect:** a few dozen characters. A length of 0 or a word like `Traceback` means the token wasn't read: stop, and note what was printed.
+
+#### E3. The products the Admin API lists (the baseline)
+
+```shell
+curl -s https://$SHOP_DOMAIN/admin/api/2026-10/graphql.json \
+  -H "X-Shopify-Access-Token: $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n '{query: "{ products(first: 50) { nodes { id title handle status } } }"}')" \
+  | python3 -m json.tool
+```
+
+**Expect:** your products, each with its `status` (`ACTIVE`, `DRAFT` or `ARCHIVED`). Note how many there are, and which ones.
+
+#### E4. A Storefront token, created with `storefrontAccessTokenCreate`
+
+```shell
+curl -s https://$SHOP_DOMAIN/admin/api/2026-10/graphql.json \
+  -H "X-Shopify-Access-Token: $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg title 'WhatsApp experiment 2.1a' '{query: "mutation Create($input: StorefrontAccessTokenInput!) { storefrontAccessTokenCreate(input: $input) { storefrontAccessToken { id title accessToken accessScopes { handle } } userErrors { field message } } }", variables: {input: {title: $title}}}')" \
+  > logs/experiment-2.1a-token.json
+```
+
+**Show** the response whole, with only the token's first characters:
+
+```shell
+jq 'walk(if type == "object" and has("accessToken") then .accessToken |= (.[0:4] + "…") else . end)' logs/experiment-2.1a-token.json
+```
+
+**Expect:** the token's `id`, its title, a shortened `accessToken`, its `accessScopes` (the `unauthenticated_*` handles the app holds; record whether `unauthenticated_read_checkouts` is among them), and `"userErrors": []`.
+
+Keep the token and its id in shell variables for the next steps:
+
+```shell
+SF_TOKEN=$(jq -r '.data.storefrontAccessTokenCreate.storefrontAccessToken.accessToken' logs/experiment-2.1a-token.json)
+SF_TOKEN_ID=$(jq -r '.data.storefrontAccessTokenCreate.storefrontAccessToken.id' logs/experiment-2.1a-token.json)
+echo "Storefront token: ${#SF_TOKEN} characters, id $SF_TOKEN_ID"
+```
+
+**Expect:** a length above 0, and an id starting `gid://shopify/StorefrontAccessToken/`.
+
+#### E5. The products a Storefront token sees
+
+```shell
+curl -s https://$SHOP_DOMAIN/api/2026-10/graphql.json \
+  -H "X-Shopify-Storefront-Access-Token: $SF_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n '{query: "{ products(first: 50) { nodes { id title handle availableForSale variants(first: 5) { nodes { id title availableForSale price { amount currencyCode } } } } } }"}')" \
+  | python3 -m json.tool
+```
+
+**Expect:** a list to compare with E3's. Record which of E3's products are here, and which are missing: all the `ACTIVE` ones, only some, or none. Note one variant `id` (it starts `gid://shopify/ProductVariant/`) for E7.
+
+#### E6. The same request with the Admin token as a private Storefront token
+
+Only the header changed: `Shopify-Storefront-Private-Token`, with the Admin token from E2.
+
+```shell
+curl -s https://$SHOP_DOMAIN/api/2026-10/graphql.json \
+  -H "Shopify-Storefront-Private-Token: $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n '{query: "{ products(first: 50) { nodes { id title handle availableForSale } } }"}')" \
+  | python3 -m json.tool
+```
+
+**Expect:** either the same products as E5, which means no separate Storefront token is needed, or an error. Record which, with the error's message.
+
+#### E7. A cart with your phone on it, and its checkout link
+
+Store the variant id you noted in E5:
+
+```shell
+read -r -p "A variant id from E5 (gid://shopify/ProductVariant/…): " VARIANT_ID
+```
+
+Then create the cart. Your number goes in with a `+`, as Shopify's E.164 phone field takes it:
+
+```shell
+curl -s https://$SHOP_DOMAIN/api/2026-10/graphql.json \
+  -H "X-Shopify-Storefront-Access-Token: $SF_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg variant "$VARIANT_ID" --arg phone "+$MY_NUMBER" '{query: "mutation Cart($input: CartInput!) { cartCreate(input: $input) { cart { id checkoutUrl buyerIdentity { phone countryCode } lines(first: 5) { nodes { quantity merchandise { ... on ProductVariant { id title } } } } cost { totalAmount { amount currencyCode } } } userErrors { field message code } warnings { code message target } } }", variables: {input: {lines: [{merchandiseId: $variant, quantity: 1}], buyerIdentity: {phone: $phone, countryCode: "ZA"}}}}')" \
+  | tee logs/experiment-2.1a-cart.json | python3 -m json.tool
+```
+
+**Expect:** a cart with an `id`, a `checkoutUrl`, `"buyerIdentity"` holding your number with its `+` and `"countryCode": "ZA"`, one line, a total, and `"userErrors": []`. Record the line's quantity and the total's currency. A line at quantity 0 with an empty `userErrors` is a result, not a failure: record the `warnings` that say why (`cartCreate` returns them as "A list of warnings that occurred during the mutation", https://shopify.dev/docs/api/storefront/latest/mutations/cartCreate). None of these requests sent a `Shopify-Storefront-Buyer-IP` header: record any error or throttling message, or that there was none.
+
+**Print** the checkout link, and open it in your browser:
+
+```shell
+jq -r '.data.cartCreate.cart.checkoutUrl' logs/experiment-2.1a-cart.json
+```
+
+**Expect:** Shopify Checkout, or the cart page. Record what it shows (the product and its price, or an empty cart), whether your phone is already filled in, and whether the store's password page appeared instead. Don't pay.
+
+#### E7b. The same cart without a country
+
+The same request as E7, with only your phone in `buyerIdentity`: the `countryCode` is left out, so Shopify uses the store's own default country. It shows whether E7's country is what changed the line.
+
+```shell
+curl -s https://$SHOP_DOMAIN/api/2026-10/graphql.json \
+  -H "X-Shopify-Storefront-Access-Token: $SF_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg variant "$VARIANT_ID" --arg phone "+$MY_NUMBER" '{query: "mutation Cart($input: CartInput!) { cartCreate(input: $input) { cart { id checkoutUrl buyerIdentity { phone countryCode } lines(first: 5) { nodes { quantity merchandise { ... on ProductVariant { id title } } } } cost { totalAmount { amount currencyCode } } } userErrors { field message code } warnings { code message target } } }", variables: {input: {lines: [{merchandiseId: $variant, quantity: 1}], buyerIdentity: {phone: $phone}}}}')" \
+  | tee logs/experiment-2.1a-cart-no-country.json | python3 -m json.tool
+```
+
+**Expect:** a cart with your phone and whichever `countryCode` Shopify filled in. Record the line's quantity, the total and its currency, and any `warnings`, to compare with E7.
+
+**Print** its checkout link, and open it in your browser:
+
+```shell
+jq -r '.data.cartCreate.cart.checkoutUrl' logs/experiment-2.1a-cart-no-country.json
+```
+
+**Expect:** Shopify Checkout, or the cart page. Record the same three things as E7: what it shows, whether your phone is filled in, and whether the password page appeared. Don't pay.
+
+#### E7c. E7b's checkout link, past the store's password
+
+A development store is usually password-protected, and the checkout link opens its "Enter store password" page instead of checkout. This gets past it, to see what a customer would see.
+
+1. **The password:** in your Shopify admin, open **Online Store**, then **Preferences**. The **Password protection** section shows the store's password.
+2. **Enter it:** on the "Enter store password" page the link opened, type the password and submit. The browser keeps you past it for this store.
+
+**Print** E7b's checkout link again, and open it in the same browser:
+
+```shell
+jq -r '.data.cartCreate.cart.checkoutUrl' logs/experiment-2.1a-cart-no-country.json
+```
+
+**Expect:** Shopify Checkout with E7b's product (the variant you stored in `VARIANT_ID`) and the total E7b printed. A store page or a cart with other products is the browser's own cart from browsing the store, not E7b's. Record what it shows, and whether your phone, with its `+` and country code, is already filled in. Don't pay.
+
+#### E8. Tidy up: delete the experiment's Storefront token
+
+```shell
+curl -s https://$SHOP_DOMAIN/admin/api/2026-10/graphql.json \
+  -H "X-Shopify-Access-Token: $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg id "$SF_TOKEN_ID" '{query: "mutation Delete($input: StorefrontAccessTokenDeleteInput!) { storefrontAccessTokenDelete(input: $input) { deletedStorefrontAccessTokenId userErrors { field message } } }", variables: {input: {id: $id}}}')" \
+  | python3 -m json.tool
+```
+
+**Expect:** `"deletedStorefrontAccessTokenId"` equal to E4's id, and `"userErrors": []`. Then delete the saved token response:
+
+```shell
+rm logs/experiment-2.1a-token.json
+```
+
+The new scopes stay in `.env`: Step 2.1b adds them for every store anyway.
 
 > **Human checks end here.** The sections below are reference, not steps to run.
 

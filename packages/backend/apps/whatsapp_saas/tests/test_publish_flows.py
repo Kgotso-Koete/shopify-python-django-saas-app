@@ -170,3 +170,27 @@ class TestOnConnecting:
         tasks.publish_forms(str(internal.pk))
 
         assert not WhatsAppFlow.objects.exists()
+
+
+class TestANumberServingBoth:
+    """One number for the team and the customers (plan Step 2.7) is the team's number, so it gets the forms."""
+
+    @pytest.fixture
+    def shared(self):
+        return InternalAccountFactory(
+            waba_id="200000000000009", purpose=AccountPurpose.INTERNAL_AND_EXTERNAL_COMMUNICATIONS
+        )
+
+    def test_the_command_publishes_to_it(self, shared, settings):
+        settings.WHATSAPP_SEND_BACKEND = "LOG"
+
+        publish()
+
+        assert {flow.name for flow in WhatsAppFlow.objects.filter(waba_id="200000000000009")} == set(SCREEN_NAMES)
+
+    def test_the_task_publishes_to_it(self, shared, settings):
+        settings.WHATSAPP_SEND_BACKEND = "LOG"
+
+        tasks.publish_forms(str(shared.pk))
+
+        assert WhatsAppFlow.objects.filter(waba_id="200000000000009").count() == len(SCREEN_NAMES)

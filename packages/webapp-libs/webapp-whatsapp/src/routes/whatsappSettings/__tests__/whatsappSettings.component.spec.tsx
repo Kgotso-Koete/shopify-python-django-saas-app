@@ -1,6 +1,6 @@
 // Tests for the organization's WhatsApp page, in the sidebar (WhatsApp plan Steps 1.6, 1.17 and 1.19,
-// user story 11): two forms, one for the internal communications number the team texts and one for the
-// external communications numbers store customers text, each with its own examples, button and list.
+// user story 11). Since Step 2.7 (decision 4) it has one form, asking who texts the number (the team,
+// the customers, or both), and one list of every number with whom it serves, which an admin can change.
 //
 // Kind of test: integration (agents.md section 2.5). Why: the page renders with the real Apollo hooks,
 // router and permission check; the backend is Apollo's MockedProvider, answering with the shapes
@@ -18,17 +18,26 @@ import { GraphQLError } from 'graphql';
 
 import { RoutesConfig } from '../../../config/routes';
 import {
+  changeWhatsAppNumberPurposeMutation,
   connectWhatsAppAccountMutation,
   disconnectWhatsAppAccountMutation,
   sendWhatsAppTestMessageMutation,
   whatsAppAccountsQuery,
 } from '../../../graphql/whatsappAccounts.graphql';
+import {
+  chooseWhatsAppStoreMutation,
+  setWhatsAppStorefrontModeMutation,
+  whatsAppEligibleStoresQuery,
+  whatsAppStorefrontsQuery,
+} from '../../../graphql/whatsappStorefronts.graphql';
 import { WhatsAppSettings } from '../whatsappSettings.component';
 
 const tenantId = 'tenant-whatsapp-test-1';
 
 const INTERNAL = 'INTERNAL_COMMUNICATIONS';
 const EXTERNAL = 'EXTERNAL_COMMUNICATIONS';
+// One number for the team and the customers (Step 2.7).
+const BOTH = 'INTERNAL_AND_EXTERNAL_COMMUNICATIONS';
 
 type AccountOverrides = Partial<{
   id: string;
@@ -83,9 +92,55 @@ const validationError = (field: string, message: string, code: string) =>
 const MANAGE = ['whatsapp.view', 'whatsapp.manage'];
 const VIEW_ONLY = ['whatsapp.view'];
 
-const renderTab = (permissions: string[], mocks: MockedResponse[]) =>
+// Which store each external number sells from (Step 2.1b, apps/whatsapp_shop/schema.py).
+const STORE = 'demo-store.myshopify.com';
+const OTHER_STORE = 'second-store.myshopify.com';
+
+// The mode is menus or the assistant for the number's customers (phase 2, decision 2); null without a store.
+const storefront = (accountId: string, shopDomain: string | null, conversationMode: string | null = null) => ({
+  accountId,
+  shopDomain,
+  conversationMode: shopDomain ? (conversationMode ?? 'WHATSAPP_FORM') : null,
+  __typename: 'WhatsAppStorefrontType',
+});
+
+// `reuse` answers every later fetch too, for the default mocks renderTab adds.
+const storefrontsMock = (storefronts: ReturnType<typeof storefront>[], { reuse = false } = {}) => ({
+  ...composeMockedQueryResult(whatsAppStorefrontsQuery, {
+    variables: { tenantId },
+    data: { whatsAppStorefronts: storefronts },
+  }),
+  ...(reuse ? { maxUsageCount: Number.POSITIVE_INFINITY } : {}),
+});
+
+const eligibleStoresMock = (domains: string[], { reuse = false } = {}) => ({
+  ...composeMockedQueryResult(whatsAppEligibleStoresQuery, {
+    variables: { tenantId },
+    data: { whatsAppEligibleStores: domains },
+  }),
+  ...(reuse ? { maxUsageCount: Number.POSITIVE_INFINITY } : {}),
+});
+
+const chooseStoreMock = (accountId: string, shopDomain: string) =>
+  composeMockedQueryResult(chooseWhatsAppStoreMutation, {
+    variables: { input: { tenantId, accountId, shopDomain } },
+    data: {
+      chooseWhatsAppStore: { storefront: storefront(accountId, shopDomain), __typename: 'ChooseWhatsAppStore' },
+    },
+  });
+
+type StoreOptions = { storefronts?: ReturnType<typeof storefront>[]; eligible?: string[] };
+
+// By default no number has a store yet, and the organization has one store that can sell on WhatsApp.
+const renderTab = (permissions: string[], mocks: MockedResponse[], { storefronts = [], eligible = [STORE] }: StoreOptions = {}) =>
   render(<WhatsAppSettings />, {
-    apolloMocks: [userMock(), permissionsMock(permissions), ...mocks],
+    apolloMocks: [
+      userMock(),
+      permissionsMock(permissions),
+      ...mocks,
+      storefrontsMock(storefronts, { reuse: true }),
+      eligibleStoresMock(eligible, { reuse: true }),
+    ],
     routerProps: createMockRouterProps(RoutesConfig.whatsapp, { tenantId }),
   });
 
@@ -97,19 +152,24 @@ const connectionInput = (purpose = EXTERNAL) => ({
   accessToken: 'test-access-token',
 });
 
-// Each form has its own section on the tab.
-const section = (purpose: string) => screen.findByTestId(`whatsapp-section-${purpose}`);
+// Since Step 2.7 (decision 4) one form asks who texts the number, and one list shows every number.
+const connectForm = () => screen.findByTestId('whatsapp-connect-form');
 
-const fillConnectForm = async (user: ReturnType<typeof userEvent.setup>, purpose = EXTERNAL) => {
-  const form = within(await section(purpose));
+const WHO = { [INTERNAL]: /^your team$/i, [EXTERNAL]: /^your customers$/i, [BOTH]: /^both/i } as const;
+
+const chooseWho = async (user: ReturnType<typeof userEvent.setup>, purpose: keyof typeof WHO) =>
+  user.click(await within(await connectForm()).findByRole('radio', { name: WHO[purpose] }));
+
+const fillConnectForm = async (user: ReturnType<typeof userEvent.setup>, purpose: keyof typeof WHO = EXTERNAL) => {
+  await chooseWho(user, purpose);
+  const form = within(await connectForm());
   const input = connectionInput(purpose);
   await user.type(await form.findByLabelText(/phone number id/i), input.phoneNumberId);
   await user.type(form.getByLabelText(/whatsapp business account id/i), input.wabaId);
   await user.type(form.getByLabelText(/access token/i), input.accessToken);
 };
 
-const connectButton = async (purpose = EXTERNAL) =>
-  within(await section(purpose)).findByRole('button', { name: /connect number/i });
+const connectButton = async () => within(await connectForm()).findByRole('button', { name: /connect number/i });
 
 describe('WhatsAppSettings: Component', () => {
   // Step 1.19: its own page, reached from the sidebar, so it carries its own heading.
@@ -120,34 +180,80 @@ describe('WhatsAppSettings: Component', () => {
     expect(screen.getByText(/the numbers your team and your customers text/i)).toBeInTheDocument();
   });
 
-  describe('the two forms', () => {
-    it('explains each kind of number with examples', async () => {
+  // Step 2.7: one number for both, or two numbers kept apart (decisions 1 and 4).
+  describe('the two setups', () => {
+    it('explains one number for both and two numbers kept apart, with examples', async () => {
       renderTab(MANAGE, [accountsMock([])]);
 
-      const internal = await section(INTERNAL);
-      expect(internal).toHaveTextContent(/internal communications number/i);
-      expect(internal).toHaveTextContent(/your team texts this number/i);
-      expect(internal).toHaveTextContent(/add an item called Winter stock/i);
-      const external = await section(EXTERNAL);
-      expect(external).toHaveTextContent(/external communications numbers/i);
-      expect(external).toHaveTextContent(/your customers text this number/i);
-      expect(external).toHaveTextContent(/blue shirts in medium/i);
+      const numbers = await screen.findByTestId('whatsapp-numbers');
+      expect(numbers).toHaveTextContent(/one number for both/i);
+      expect(numbers).toHaveTextContent(/two numbers kept apart/i);
+      expect(numbers).toHaveTextContent(/add an item called Winter stock/i);
+      expect(numbers).toHaveTextContent(/blue shirts in medium/i);
     });
 
-    it('lists each number under its own form', async () => {
+    it('lists every number in one list, each saying who texts it', async () => {
       renderTab(VIEW_ONLY, [
         accountsMock([
           account({ id: 'account-1', purpose: INTERNAL, displayPhoneNumber: '27000000805' }),
           account({ id: 'account-2', purpose: EXTERNAL, displayPhoneNumber: '27000000801' }),
+          account({ id: 'account-3', purpose: BOTH, displayPhoneNumber: '27000000806' }),
         ]),
       ]);
 
-      expect(await within(await section(INTERNAL)).findByTestId('whatsapp-account-account-1')).toBeInTheDocument();
-      expect(within(await section(INTERNAL)).queryByTestId('whatsapp-account-account-2')).not.toBeInTheDocument();
-      expect(within(await section(EXTERNAL)).getByTestId('whatsapp-account-account-2')).toBeInTheDocument();
+      const list = within(await screen.findByTestId('whatsapp-numbers-list'));
+      expect(await list.findByTestId('whatsapp-purpose-account-1')).toHaveTextContent(/^your team$/i);
+      expect(list.getByTestId('whatsapp-purpose-account-2')).toHaveTextContent(/^your customers$/i);
+      expect(list.getByTestId('whatsapp-purpose-account-3')).toHaveTextContent(/^your team and your customers$/i);
     });
 
-    it('connects the internal number with its purpose', async () => {
+    it('asks who texts a number before connecting it', async () => {
+      const user = userEvent.setup();
+      const connectMock = composeMockedQueryResult(connectWhatsAppAccountMutation, {
+        variables: { input: connectionInput() },
+        data: null,
+      });
+      renderTab(MANAGE, [accountsMock([]), connectMock]);
+
+      await user.click(await connectButton());
+
+      expect(await screen.findByText(/choose who texts this number/i)).toBeInTheDocument();
+      expect(connectMock.result).not.toHaveBeenCalled();
+    });
+
+    it('connects one number for both, with its store', async () => {
+      const user = userEvent.setup();
+      const chooseMock = chooseStoreMock('account-9', STORE);
+      renderTab(MANAGE, [
+        accountsMock([]),
+        composeMockedQueryResult(connectWhatsAppAccountMutation, {
+          variables: { input: connectionInput(BOTH) },
+          data: {
+            connectWhatsAppAccount: {
+              account: {
+                id: 'account-9',
+                purpose: BOTH,
+                displayPhoneNumber: '27000000901',
+                verifiedName: 'Demo Store',
+                subscribedAt: '2026-10-23T09:00:00+00:00',
+                __typename: 'WhatsAppAccountType',
+              },
+              __typename: 'ConnectWhatsAppAccount',
+            },
+          },
+        }),
+        chooseMock,
+        accountsMock([account({ id: 'account-9', purpose: BOTH, displayPhoneNumber: '27000000901' })]),
+      ]);
+
+      await fillConnectForm(user, BOTH);
+      await user.click(await connectButton());
+
+      await waitFor(() => expect(chooseMock.result).toHaveBeenCalled());
+      expect(await screen.findByTestId('whatsapp-purpose-account-9')).toHaveTextContent(/your team and your customers/i);
+    });
+
+    it('connects the team number with its purpose, with no store', async () => {
       const user = userEvent.setup();
       const connectMock = composeMockedQueryResult(connectWhatsAppAccountMutation, {
         variables: { input: connectionInput(INTERNAL) },
@@ -172,13 +278,15 @@ describe('WhatsAppSettings: Component', () => {
       ]);
 
       await fillConnectForm(user, INTERNAL);
-      await user.click(await connectButton(INTERNAL));
+      // The team's number never sells, so there's no store to choose.
+      expect(within(await connectForm()).queryByLabelText(/^store$/i)).not.toBeInTheDocument();
+      await user.click(await connectButton());
 
-      expect(await within(await section(INTERNAL)).findByTestId('whatsapp-connected')).toBeInTheDocument();
-      expect(await within(await section(INTERNAL)).findByTestId('whatsapp-account-account-9')).toBeInTheDocument();
+      expect(await screen.findByTestId('whatsapp-connected')).toBeInTheDocument();
+      expect(await screen.findByTestId('whatsapp-account-account-9')).toBeInTheDocument();
     });
 
-    it('shows why a second internal number is refused', async () => {
+    it('shows why a second team number is refused', async () => {
       const user = userEvent.setup();
       const reason = 'Your organization\'s team already texts 27000000805. Disconnect it first to connect another.';
       renderTab(MANAGE, [
@@ -191,9 +299,50 @@ describe('WhatsAppSettings: Component', () => {
       ]);
 
       await fillConnectForm(user, INTERNAL);
-      await user.click(await connectButton(INTERNAL));
+      await user.click(await connectButton());
 
-      expect(await within(await section(INTERNAL)).findByText(reason)).toBeInTheDocument();
+      expect(await within(await connectForm()).findByText(reason)).toBeInTheDocument();
+    });
+  });
+
+  // Step 2.7, decisions 2 and 3: an admin changes whom a connected number serves, after confirming.
+  describe('changing whom a number serves', () => {
+    it('changes the team number to serve customers too, after the admin confirms', async () => {
+      const user = userEvent.setup();
+      const changeMock = composeMockedQueryResult(changeWhatsAppNumberPurposeMutation, {
+        variables: { input: { tenantId, accountId: 'account-1', purpose: BOTH } },
+        data: {
+          changeWhatsAppNumberPurpose: {
+            account: { id: 'account-1', purpose: BOTH, __typename: 'WhatsAppAccountType' },
+            __typename: 'ChangeWhatsAppNumberPurpose',
+          },
+        },
+      });
+      renderTab(MANAGE, [
+        accountsMock([account({ id: 'account-1', purpose: INTERNAL })]),
+        changeMock,
+        accountsMock([account({ id: 'account-1', purpose: BOTH })]),
+      ]);
+
+      const row = within(await screen.findByTestId('whatsapp-account-account-1'));
+      await user.selectOptions(await row.findByLabelText(/who texts this number/i), BOTH);
+      await user.click(row.getByRole('button', { name: /^change$/i }));
+      // The dialog says what changes before anything does.
+      expect(await screen.findByText(/members linked on it are unlinked/i)).toBeInTheDocument();
+      await user.click(await screen.findByRole('button', { name: /^change whom it serves$/i }));
+
+      await waitFor(() => expect(changeMock.result).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(row.getByTestId('whatsapp-purpose-account-1')).toHaveTextContent(/your team and your customers/i)
+      );
+    });
+
+    it('offers a member no change', async () => {
+      renderTab(VIEW_ONLY, [accountsMock([account({ id: 'account-1', purpose: INTERNAL })])]);
+
+      const row = within(await screen.findByTestId('whatsapp-account-account-1'));
+      expect(await row.findByTestId('whatsapp-purpose-account-1')).toBeInTheDocument();
+      expect(row.queryByLabelText(/who texts this number/i)).not.toBeInTheDocument();
     });
   });
 
@@ -223,8 +372,7 @@ describe('WhatsAppSettings: Component', () => {
     it('says when no number is connected', async () => {
       renderTab(VIEW_ONLY, [accountsMock([])]);
 
-      expect(await within(await section(INTERNAL)).findByText(/no number connected yet/i)).toBeInTheDocument();
-      expect(within(await section(EXTERNAL)).getByText(/no number connected yet/i)).toBeInTheDocument();
+      expect(await screen.findByText(/no number connected yet/i)).toBeInTheDocument();
     });
 
     it('says the numbers could not be loaded, rather than that there are none', async () => {
@@ -270,7 +418,7 @@ describe('WhatsAppSettings: Component', () => {
     it('asks for no App secret: every number is on our Meta app', async () => {
       renderTab(MANAGE, [accountsMock([])]);
 
-      expect(await within(await section(EXTERNAL)).findByLabelText(/access token/i)).toBeInTheDocument();
+      expect(await within(await connectForm()).findByLabelText(/access token/i)).toBeInTheDocument();
       expect(screen.queryByLabelText(/app secret/i)).not.toBeInTheDocument();
     });
 
@@ -314,6 +462,8 @@ describe('WhatsAppSettings: Component', () => {
             },
           },
         }),
+        // The second call (Step 2.1b, decision 5): the number now sells from the one store offered.
+        chooseStoreMock('account-9', STORE),
         accountsMock([connected]),
       ]);
 
@@ -327,6 +477,253 @@ describe('WhatsAppSettings: Component', () => {
       expect(shown).not.toHaveTextContent(/verify token/i);
 
       expect(await screen.findByTestId('whatsapp-account-account-9')).toBeInTheDocument();
+    });
+  });
+
+  // Step 2.1b, user story 25: each external number sells from one of the organization's stores.
+  describe('the store an external number sells from', () => {
+    const connected = {
+      connectWhatsAppAccount: {
+        account: {
+          id: 'account-9',
+          purpose: EXTERNAL,
+          displayPhoneNumber: '27000000901',
+          verifiedName: 'Demo Store',
+          subscribedAt: '2026-10-23T09:00:00+00:00',
+          __typename: 'WhatsAppAccountType',
+        },
+        __typename: 'ConnectWhatsAppAccount',
+      },
+    };
+
+    it('connects the number, then saves the store chosen in the same form', async () => {
+      const user = userEvent.setup();
+      const chooseMock = chooseStoreMock('account-9', OTHER_STORE);
+      renderTab(
+        MANAGE,
+        [
+          accountsMock([]),
+          composeMockedQueryResult(connectWhatsAppAccountMutation, {
+            variables: { input: connectionInput() },
+            data: connected,
+          }),
+          chooseMock,
+          accountsMock([account({ id: 'account-9', displayPhoneNumber: '27000000901' })]),
+        ],
+        { eligible: [STORE, OTHER_STORE] }
+      );
+
+      await fillConnectForm(user);
+      const form = within(await connectForm());
+      // With two stores, the admin picks one: none is chosen for them. The list arrives first.
+      await form.findByRole('option', { name: OTHER_STORE });
+      await user.selectOptions(form.getByLabelText(/^store$/i), OTHER_STORE);
+      await user.click(await connectButton());
+
+      await waitFor(() => expect(chooseMock.result).toHaveBeenCalled());
+      expect(await screen.findByTestId('whatsapp-connected')).toHaveTextContent('27000000901 is connected');
+    });
+
+    it("preselects the organization's only store", async () => {
+      const user = userEvent.setup();
+      renderTab(MANAGE, [accountsMock([])]);
+
+      await chooseWho(user, EXTERNAL);
+      const picker = await within(await connectForm()).findByLabelText(/^store$/i);
+      await waitFor(() => expect(picker).toHaveValue(STORE));
+    });
+
+    it('asks for a store before connecting when there are several', async () => {
+      const user = userEvent.setup();
+      const connectMock = composeMockedQueryResult(connectWhatsAppAccountMutation, {
+        variables: { input: connectionInput() },
+        data: connected,
+      });
+      renderTab(MANAGE, [accountsMock([]), connectMock], { eligible: [STORE, OTHER_STORE] });
+
+      await fillConnectForm(user);
+      await user.click(await connectButton());
+
+      expect(await screen.findByText(/choose the store this number sells from/i)).toBeInTheDocument();
+      expect(connectMock.result).not.toHaveBeenCalled();
+    });
+
+    it('says to connect a store on the Shopify page first when none can sell on WhatsApp', async () => {
+      const user = userEvent.setup();
+      renderTab(MANAGE, [accountsMock([])], { eligible: [] });
+
+      for (const purpose of [EXTERNAL, BOTH] as const) {
+        await chooseWho(user, purpose);
+        const form = within(await connectForm());
+        expect(await form.findByText(/connect a shopify store on the shopify page first/i)).toBeInTheDocument();
+        expect(await connectButton()).toBeDisabled();
+      }
+      // The team's number needs no store.
+      await chooseWho(user, INTERNAL);
+      expect(await connectButton()).toBeEnabled();
+    });
+
+    it("keeps the number connected and says so when the store couldn't be saved", async () => {
+      const user = userEvent.setup();
+      const reason = "demo-store.myshopify.com can't sell on WhatsApp yet. Reconnect it on the Shopify page.";
+      renderTab(MANAGE, [
+        accountsMock([]),
+        composeMockedQueryResult(connectWhatsAppAccountMutation, {
+          variables: { input: connectionInput() },
+          data: connected,
+        }),
+        composeMockedQueryResult(chooseWhatsAppStoreMutation, {
+          variables: { input: { tenantId, accountId: 'account-9', shopDomain: STORE } },
+          data: null,
+          errors: [validationError('shop_domain', reason, 'store_not_eligible')],
+        }),
+        accountsMock([account({ id: 'account-9', displayPhoneNumber: '27000000901' })]),
+      ]);
+
+      await fillConnectForm(user);
+      await user.click(await connectButton());
+
+      expect(await screen.findByTestId('whatsapp-connected')).toBeInTheDocument();
+      expect(await screen.findByText(reason)).toBeInTheDocument();
+    });
+
+    it('shows on each external row the store it sells from, or that none is chosen', async () => {
+      renderTab(
+        VIEW_ONLY,
+        [
+          accountsMock([
+            account({ id: 'account-1', purpose: INTERNAL, displayPhoneNumber: '27000000805' }),
+            account({ id: 'account-2', displayPhoneNumber: '27000000802' }),
+            account({ id: 'account-3', displayPhoneNumber: '27000000803' }),
+          ]),
+        ],
+        { storefronts: [storefront('account-2', STORE), storefront('account-3', null)] }
+      );
+
+      // The store's name is in bold, so each line is checked as a whole.
+      await waitFor(async () =>
+        expect(await screen.findByTestId('whatsapp-store-account-2')).toHaveTextContent(/sells from demo-store\.myshopify\.com/i)
+      );
+      expect(screen.getByTestId('whatsapp-store-account-3')).toHaveTextContent(/no store chosen/i);
+      // The team's number never sells from a store.
+      expect(screen.queryByTestId('whatsapp-store-account-1')).not.toBeInTheDocument();
+      // A Member sees the store, but can't change it.
+      expect(screen.queryByRole('button', { name: /save store/i })).not.toBeInTheDocument();
+    });
+
+    it('shows no store line on a disconnected number, which gets no messages', async () => {
+      renderTab(
+        MANAGE,
+        [
+          accountsMock([
+            account({ id: 'account-2', displayPhoneNumber: '27000000802' }),
+            account({ id: 'account-4', displayPhoneNumber: '27000000804', isActive: false }),
+          ]),
+        ],
+        { storefronts: [storefront('account-2', STORE), storefront('account-4', null)] }
+      );
+
+      await waitFor(async () =>
+        expect(await screen.findByTestId('whatsapp-store-account-2')).toHaveTextContent(/sells from demo-store/i)
+      );
+      expect(await screen.findByTestId('whatsapp-account-account-4')).toBeInTheDocument();
+      expect(screen.queryByTestId('whatsapp-store-account-4')).not.toBeInTheDocument();
+    });
+
+    it("lets an admin change a number's store on its row", async () => {
+      const user = userEvent.setup();
+      const chooseMock = chooseStoreMock('account-2', OTHER_STORE);
+      renderTab(
+        MANAGE,
+        [
+          accountsMock([account({ id: 'account-2', displayPhoneNumber: '27000000802' })]),
+          storefrontsMock([storefront('account-2', STORE)]),
+          chooseMock,
+          accountsMock([account({ id: 'account-2', displayPhoneNumber: '27000000802' })]),
+          storefrontsMock([storefront('account-2', OTHER_STORE)]),
+        ],
+        { eligible: [STORE, OTHER_STORE] }
+      );
+
+      const row = within(await screen.findByTestId('whatsapp-account-account-2'));
+      await waitFor(() => expect(row.getByTestId('whatsapp-store-account-2')).toHaveTextContent(/sells from demo-store/i));
+      await row.findByRole('option', { name: OTHER_STORE });
+      await user.selectOptions(row.getByLabelText(/change store/i), OTHER_STORE);
+      await user.click(row.getByRole('button', { name: /save store/i }));
+
+      await waitFor(() => expect(chooseMock.result).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(row.getByTestId('whatsapp-store-account-2')).toHaveTextContent(/sells from second-store\.myshopify\.com/i)
+      );
+    });
+  });
+
+  // Phase 2, decision 2: the number's own setting, not the customer's; menus by default.
+  describe("how a number's customers are answered", () => {
+    it('says the external numbers answer customers now', async () => {
+      renderTab(MANAGE, [accountsMock([])]);
+
+      const numbers = await screen.findByTestId('whatsapp-numbers');
+      expect(numbers).not.toHaveTextContent(/arrives in a later release/i);
+      expect(numbers).toHaveTextContent(/browse, search, fill a cart and check out/i);
+    });
+
+    it('shows a member whether customers get menus or the assistant', async () => {
+      renderTab(
+        VIEW_ONLY,
+        [
+          accountsMock([
+            account({ id: 'account-2', displayPhoneNumber: '27000000802' }),
+            account({ id: 'account-3', displayPhoneNumber: '27000000803' }),
+          ]),
+        ],
+        { storefronts: [storefront('account-2', STORE), storefront('account-3', STORE, 'AGENTIC')] }
+      );
+
+      await waitFor(async () =>
+        expect(await screen.findByTestId('whatsapp-mode-account-2')).toHaveTextContent(/customers get menus/i)
+      );
+      expect(screen.getByTestId('whatsapp-mode-account-3')).toHaveTextContent(/customers get the ai assistant/i);
+      expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    });
+
+    it('shows no setting while no store is chosen', async () => {
+      renderTab(MANAGE, [accountsMock([account({ id: 'account-3', displayPhoneNumber: '27000000803' })])], {
+        storefronts: [storefront('account-3', null)],
+      });
+
+      await waitFor(async () =>
+        expect(await screen.findByTestId('whatsapp-store-account-3')).toHaveTextContent(/no store chosen/i)
+      );
+      expect(screen.queryByTestId('whatsapp-mode-account-3')).not.toBeInTheDocument();
+    });
+
+    it("lets an admin switch a number's customers to the assistant", async () => {
+      const user = userEvent.setup();
+      const setModeMock = composeMockedQueryResult(setWhatsAppStorefrontModeMutation, {
+        variables: { input: { tenantId, accountId: 'account-2', mode: 'AGENTIC' } },
+        data: {
+          setWhatsAppStorefrontMode: {
+            storefront: storefront('account-2', STORE, 'AGENTIC'),
+            __typename: 'SetWhatsAppStorefrontMode',
+          },
+        },
+      });
+      renderTab(MANAGE, [
+        accountsMock([account({ id: 'account-2', displayPhoneNumber: '27000000802' })]),
+        storefrontsMock([storefront('account-2', STORE)]),
+        setModeMock,
+        accountsMock([account({ id: 'account-2', displayPhoneNumber: '27000000802' })]),
+        storefrontsMock([storefront('account-2', STORE, 'AGENTIC')]),
+      ]);
+
+      const row = within(await screen.findByTestId('whatsapp-account-account-2'));
+      const assistant = await row.findByRole('radio', { name: /ai assistant/i });
+      await waitFor(() => expect(row.getByRole('radio', { name: /menus/i })).toBeChecked());
+      await user.click(assistant);
+
+      await waitFor(() => expect(setModeMock.result).toHaveBeenCalled());
+      await waitFor(() => expect(row.getByRole('radio', { name: /ai assistant/i })).toBeChecked());
     });
   });
 

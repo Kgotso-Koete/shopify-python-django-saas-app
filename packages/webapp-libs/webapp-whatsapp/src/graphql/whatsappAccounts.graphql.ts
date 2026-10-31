@@ -56,3 +56,16 @@ export const disconnectWhatsAppAccountMutation = gql(/* GraphQL */ `
     }
   }
 `);
+
+// Whom a connected number serves: the team, the customers, or both (WhatsApp plan Step 2.7). It keeps
+// its credentials and history; leaving the team unlinks its members. Needs whatsapp.manage.
+export const changeWhatsAppNumberPurposeMutation = gql(/* GraphQL */ `
+  mutation changeWhatsAppNumberPurposeMutation($input: ChangeWhatsAppNumberPurposeInput!) {
+    changeWhatsAppNumberPurpose(input: $input) {
+      account {
+        id
+        purpose
+      }
+    }
+  }
+`);

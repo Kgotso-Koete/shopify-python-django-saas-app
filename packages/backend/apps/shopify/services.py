@@ -7,8 +7,23 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.shopify import signals
 from apps.shopify.models import ShopifyOAuthState, ShopifyShop
 from apps.shopify.client import ShopifyAdminClient
+
+
+def missing_scopes(required, granted: str) -> set[str]:
+    """
+    The scopes in `required` that `granted` (Shopify's comma-separated list) doesn't give.
+
+    A write scope counts for its read twin: "Any scope that writes a resource also grants read access
+    to it" (https://shopify.dev/docs/api/usage/access-scopes), and Shopify's granted list leaves the
+    read twin out (WhatsApp plan Step 2.1a, result 2). So `unauthenticated_read_checkouts` is
+    covered by `unauthenticated_write_checkouts`, but never the other way round.
+    """
+    granted_scopes = {scope.strip() for scope in granted.split(",") if scope.strip()}
+    covered = granted_scopes | {scope.replace("write_", "read_", 1) for scope in granted_scopes if "write_" in scope}
+    return set(required) - covered
 
 
 def get_redirect_uri() -> str:
@@ -75,13 +90,10 @@ def complete_install(shop_domain: str, code: str, state_nonce: str) -> ShopifySh
     client = ShopifyAdminClient(shop_domain=shop_domain)
     token_response = client.exchange_code(code)
 
-    # 3. Confirm granted scopes
-    granted_scopes = set(token_response.scope.split(","))
-    required_scopes = set(settings.SHOPIFY_SCOPES)
-    if not required_scopes.issubset(granted_scopes):
-        raise ValidationError(
-            f"Merchant did not grant all required scopes. Missing: {required_scopes - granted_scopes}"
-        )
+    # 3. Confirm granted scopes (a granted write scope counts for its read twin)
+    missing = missing_scopes(settings.SHOPIFY_SCOPES, token_response.scope)
+    if missing:
+        raise ValidationError(f"Merchant did not grant all required scopes. Missing: {missing}")
 
     # 4. Upsert ShopifyShop
     shop, created = ShopifyShop.objects.get_or_create(
@@ -153,6 +165,9 @@ def handle_shop_redact(shop_domain: str, payload: dict) -> None:
     except ShopifyShop.DoesNotExist:
         return
 
+    # Apps keeping the store's customer data delete theirs first, while the row still names the store.
+    signals.shop_redacted.send(sender=ShopifyShop, shop=shop)
+
     # Anonymize: replace the shop domain with a hash so the row stays as a tombstone
     import hashlib
 
@@ -173,11 +188,14 @@ def handle_shop_redact(shop_domain: str, payload: dict) -> None:
 
 def handle_customers_redact(shop_domain: str, payload: dict) -> None:
     """
-    customers/redact: this slice stores no customer data, so we just record the
-    request (the delivery row was already created by the webhook view).
-    The first feature that stores customer data must make this handler real.
+    customers/redact: this app stores no customer data itself (the delivery row was already created
+    by the webhook view, for audit). Apps that do, such as apps.whatsapp_shop with its WhatsApp store
+    customers, receive customer_redacted and delete theirs (WhatsApp plan Step 2.6).
     """
-    # Nothing to do yet — the delivery is already persisted for audit.
+    shop = ShopifyShop.objects.filter(shop_domain=shop_domain).first()
+    if shop is None:
+        return
+    signals.customer_redacted.send(sender=ShopifyShop, shop=shop, customer=payload.get("customer") or {})
 
 
 def handle_customers_data_request(shop_domain: str, payload: dict) -> None:

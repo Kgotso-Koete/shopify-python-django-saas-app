@@ -25,6 +25,29 @@ class AccountPurpose(models.TextChoices):
     # For people outside the organization: its store customers text it to shop (phase 2), and later
     # other outside parties. Always one organization.
     EXTERNAL_COMMUNICATIONS = "EXTERNAL_COMMUNICATIONS", "External communications"
+    # One number for both (plan Step 2.7, redesigned 2026-10-29): members whose phone is linked on it
+    # get the team's menus, and anyone else is a store customer. It's the organization's team number.
+    INTERNAL_AND_EXTERNAL_COMMUNICATIONS = (
+        "INTERNAL_AND_EXTERNAL_COMMUNICATIONS",
+        "Internal and external communications",
+    )
+
+    @classmethod
+    def serves_team(cls, purpose: str) -> bool:
+        """Whether the organization's members text a number with this purpose, once linked."""
+        return purpose in (cls.INTERNAL_COMMUNICATIONS, cls.INTERNAL_AND_EXTERNAL_COMMUNICATIONS)
+
+    @classmethod
+    def serves_customers(cls, purpose: str) -> bool:
+        """Whether anyone outside the organization texting a number with this purpose is answered."""
+        return purpose in (cls.EXTERNAL_COMMUNICATIONS, cls.INTERNAL_AND_EXTERNAL_COMMUNICATIONS)
+
+
+# The purposes of numbers the team texts; an organization has one active (plan Step 2.7, decision 1).
+TEAM_PURPOSES = (
+    AccountPurpose.INTERNAL_COMMUNICATIONS,
+    AccountPurpose.INTERNAL_AND_EXTERNAL_COMMUNICATIONS,
+)
 
 
 class ConnectionMethod(models.TextChoices):

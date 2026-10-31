@@ -15,8 +15,14 @@ output) for one inbound message, described by a router.Turn:
 - on_typed_answer(turn, kind, data, text): the text it asked for with turn.expect_text(kind, **data)
   (Step 1.12b)
 
-and, optionally, on_connected(account): called once a number of its purpose is connected and saved,
-to set it up, e.g. publish the handler's forms to it (Step 1.17).
+and, optionally:
+- on_connected(account): called once a number of its purpose is connected and saved, to set it up,
+  e.g. publish the handler's forms to it (Step 1.17)
+- answers(contact): False makes the number send no reply at all, e.g. an external number with no
+  store chosen (phase 2, user story 25)
+- conversation_mode(contact): the mode for a sender who isn't a linked member, e.g. the external
+  number's own setting (phase 2, decision 2); empty means WHATSAPP_DEFAULT_CONVERSATION_MODE
+- help_text(turn): what `help` replies, instead of the team's text about modes and unlinking
 """
 
 _handlers = {}

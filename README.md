@@ -251,20 +251,20 @@ Run one command at a time, never side by side: `pnpm nx run-many` runs three pro
 
 #### Backend
 
-The backend tests live in 15 modules: the Django apps in `packages/backend/apps/` that have tests, plus `common`. `apps/content` and `apps/websockets` have no tests, so they aren't in the lists; when an app gets its first tests, add its folder to the lists below. The 15 modules add up to the same total as `pnpm nx run backend:test` (1724 on 2026-10-23). pytest's last line names every non-zero count, so a module with skipped tests shows `N skipped`, and one without shows nothing about skips. `-e DATABASE_URL=` keeps the tests on the local database even if your `.env` points `DATABASE_URL` elsewhere. The backend's `setup.cfg` already runs pytest with `-v`, so the logs always list every test. pytest prints no total in its last line, so the summaries take it from the `collected N items` line.
+The backend tests live in 16 modules: the Django apps in `packages/backend/apps/` that have tests, plus `common`. `apps/content` and `apps/websockets` have no tests, so they aren't in the lists; when an app gets its first tests, add its folder to the lists below. The 16 modules add up to the same total as `pnpm nx run backend:test` (1871 on 2026-10-31). pytest's last line names every non-zero count, so a module with skipped tests shows `N skipped`, and one without shows nothing about skips. `-e DATABASE_URL=` keeps the tests on the local database even if your `.env` points `DATABASE_URL` elsewhere. The backend's `setup.cfg` already runs pytest with `-v`, so the logs always list every test. pytest prints no total in its last line, so the summaries take it from the `collected N items` line.
 
 **Every module, one at a time.** Each module runs in its own container and gets its own log, `logs/backend-<module>.log`.
 
 Summary, one line per module (`apps/shopify: 88 tests | 88 passed, 45 warnings in 33.37s`):
 
 ```shell
-mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/phone_verification apps/shopify apps/sso apps/translations apps/users apps/whatsapp apps/whatsapp_saas common; do f=logs/backend-$(basename $a).log; docker compose run --rm -T -e DATABASE_URL= backend pytest $a > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "$a: $n tests |${r:- no test results, see $f}"; done
+mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/phone_verification apps/shopify apps/sso apps/translations apps/users apps/whatsapp apps/whatsapp_saas apps/whatsapp_shop common; do f=logs/backend-$(basename $a).log; docker compose run --rm -T -e DATABASE_URL= backend pytest $a > $f 2>&1; n=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -oE "collected [0-9]+ items" | grep -oE "[0-9]+"); r=$(sed 's/\x1b\[[0-9;]*m//g' $f | grep -E "^=+ [0-9]+ (passed|failed|errors?|skipped|warnings?|deselected|xfailed|xpassed)" | tr -d '='); echo "$a: $n tests |${r:- no test results, see $f}"; done
 ```
 
 Verbose, every test live:
 
 ```shell
-mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/phone_verification apps/shopify apps/sso apps/translations apps/users apps/whatsapp apps/whatsapp_saas common; do docker compose run --rm -T -e DATABASE_URL= backend pytest $a 2>&1 | tee logs/backend-$(basename $a).log; echo "$a exit code: ${PIPESTATUS[0]}"; done
+mkdir -p logs; for a in apps/backup apps/demo apps/finances apps/integrations apps/multitenancy apps/notifications apps/payfast apps/phone_verification apps/shopify apps/sso apps/translations apps/users apps/whatsapp apps/whatsapp_saas apps/whatsapp_shop common; do docker compose run --rm -T -e DATABASE_URL= backend pytest $a 2>&1 | tee logs/backend-$(basename $a).log; echo "$a exit code: ${PIPESTATUS[0]}"; done
 ```
 
 **Before committing: the whole backend as CI runs it.** `pnpm nx run backend:test` also runs the `black` formatter and the missing-migrations check before the tests, which the module loop doesn't. `workers:test` runs the Celery workers' tests (its script runs pytest without `-v`, so its log has no per-test lines).

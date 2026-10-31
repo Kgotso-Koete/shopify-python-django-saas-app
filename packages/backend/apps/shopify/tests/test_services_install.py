@@ -11,7 +11,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from apps.shopify.services import start_install, complete_install
+from apps.shopify.services import start_install, complete_install, missing_scopes
 from apps.shopify.models import ShopifyOAuthState, ShopifyShop
 from apps.shopify.client import TokenResponse
 from apps.multitenancy.tests.factories import TenantFactory
@@ -111,6 +111,61 @@ def test_complete_install_missing_scopes(mocker):
 
     with pytest.raises(ValidationError, match="Merchant did not grant all required scopes"):
         complete_install("test.myshopify.com", "code123", "valid_nonce")
+
+
+class TestAWriteScopeCoversItsReadScope:
+    """
+    WhatsApp plan Step 2.1b, decision 3. Shopify: "Any scope that writes a resource also grants read
+    access to it" (https://shopify.dev/docs/api/usage/access-scopes), and a dev store's install
+    granted unauthenticated_write_checkouts without listing unauthenticated_read_checkouts (Step 2.1a,
+    result 2). So a requested read scope counts as granted when its write twin is.
+    """
+
+    def test_a_read_scope_is_covered_by_its_granted_write_scope(self):
+        required = ["read_products", "unauthenticated_read_checkouts", "unauthenticated_write_checkouts"]
+
+        assert missing_scopes(required, "read_products,unauthenticated_write_checkouts") == set()
+
+    def test_a_write_scope_is_not_covered_by_its_read_scope(self):
+        assert missing_scopes(["write_products"], "read_products") == {"write_products"}
+
+    def test_a_scope_with_no_granted_twin_is_missing(self):
+        assert missing_scopes(["read_products", "read_orders"], "read_products,write_products") == {"read_orders"}
+
+    def test_spaces_around_granted_scopes_are_ignored(self):
+        assert missing_scopes(["read_products"], " read_products , write_orders ") == set()
+
+    def test_the_install_accepts_a_read_scope_covered_by_its_write_scope(self, mocker, settings):
+        settings.SHOPIFY_SCOPES = ["read_products", "unauthenticated_read_checkouts", "unauthenticated_write_checkouts"]
+        ShopifyOAuthState.objects.create(nonce="valid_nonce", shop_domain="test.myshopify.com")
+        mock_exchange = mocker.patch("apps.shopify.client.ShopifyAdminClient.exchange_code")
+        mock_exchange.return_value = TokenResponse(
+            access_token="acc_123",
+            # What Shopify sent back in Step 2.1a: the write scope, without its read twin.
+            scope="read_products,unauthenticated_write_checkouts",
+            expires_in=3600,
+            refresh_token="ref_123",
+            refresh_token_expires_in=7776000,
+        )
+
+        shop = complete_install("test.myshopify.com", "code123", "valid_nonce")
+
+        assert shop.scopes == "read_products,unauthenticated_write_checkouts"
+
+    def test_the_install_still_refuses_a_scope_that_is_really_missing(self, mocker, settings):
+        settings.SHOPIFY_SCOPES = ["read_products", "unauthenticated_read_product_listings"]
+        ShopifyOAuthState.objects.create(nonce="valid_nonce", shop_domain="test.myshopify.com")
+        mock_exchange = mocker.patch("apps.shopify.client.ShopifyAdminClient.exchange_code")
+        mock_exchange.return_value = TokenResponse(
+            access_token="acc_123",
+            scope="read_products",
+            expires_in=3600,
+            refresh_token="ref_123",
+            refresh_token_expires_in=7776000,
+        )
+
+        with pytest.raises(ValidationError, match="unauthenticated_read_product_listings"):
+            complete_install("test.myshopify.com", "code123", "valid_nonce")
 
 
 def test_complete_install_reinstall_keeps_tenant(mocker):

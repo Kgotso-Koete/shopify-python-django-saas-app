@@ -46,10 +46,12 @@ def test_every_enum_is_checked():
 
 
 def test_a_numbers_purpose_says_who_it_is_for():
-    # Its organization's own team texts an internal number; its customers text an external one.
+    # Its organization's own team texts an internal number; its customers text an external one; one
+    # number can serve both (plan Step 2.7).
     assert [purpose.name for purpose in constants.AccountPurpose] == [
         "INTERNAL_COMMUNICATIONS",
         "EXTERNAL_COMMUNICATIONS",
+        "INTERNAL_AND_EXTERNAL_COMMUNICATIONS",
     ]
 
 

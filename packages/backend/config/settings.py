@@ -96,6 +96,7 @@ LOCAL_APPS = [
     "apps.whatsapp",
     "apps.phone_verification",
     "apps.whatsapp_saas",
+    "apps.whatsapp_shop",
 ]
 
 INSTALLED_APPS = (
@@ -799,6 +800,10 @@ EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
 # the apps.shopify system check reports missing values only when SHOPIFY_ENABLED.
 SHOPIFY_API_KEY = env("SHOPIFY_API_KEY", default="")  # the app's client ID
 SHOPIFY_API_SECRET = env("SHOPIFY_API_SECRET", default="")  # the app's client secret (HMAC key too)
+# Reading products. To sell on WhatsApp, add the storefront scopes a customer's cart needs:
+# read_products,unauthenticated_read_product_listings,unauthenticated_write_checkouts (WhatsApp plan Step 2.1b).
+# They're opt-in, because Shopify grants only the scopes the app's released configuration also lists
+# (Step 2.1a), so a new default here would refuse every install until that configuration changed too.
 SHOPIFY_SCOPES = env.list("SHOPIFY_SCOPES", default=["read_products"])
 SHOPIFY_API_VERSION = env("SHOPIFY_API_VERSION", default="2026-10")
 # Fernet key for access/refresh tokens at rest; generate like BACKUP_MASTER_KEY above.
