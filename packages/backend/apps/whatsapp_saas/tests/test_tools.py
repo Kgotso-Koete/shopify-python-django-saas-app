@@ -80,6 +80,14 @@ class TestTheList:
             "list_products",
         ]
 
+    def test_a_name_is_the_users_own_never_made_up(self):
+        # Step 2.8, finding 1: "I would like to create a new item" became an item called "New Item".
+        for tool in TOOLS.schemas():
+            if tool["name"] in {"create_item", "update_item", "rename_organization"}:
+                description = tool["parameters"]["properties"]["name"]["description"]
+                assert "exactly as the user gave it" in description
+                assert "never make one up" in description
+
     def test_no_tool_names_an_organization(self):
         # Every tool works in the number's organization, never one from the model.
         for tool in TOOLS.schemas():

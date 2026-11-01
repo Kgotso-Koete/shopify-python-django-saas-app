@@ -19,7 +19,7 @@ import pytest
 
 from apps.multitenancy.constants import TenantType
 from apps.multitenancy.tests.factories import TenantFactory
-from apps.shopify.storefront import ShopifyCartError
+from apps.shopify.storefront import ShopifyCartError, ShopifySoldOut
 from apps.whatsapp.constants import ConversationMode
 
 from ..models import StoreCustomer, StorefrontChannel
@@ -51,11 +51,19 @@ def variant(number, title, price="19.99"):
 ONE_VARIANT = [variant(11, "Default Title")]
 
 
-def cart(lines=None, *, cart_id="gid://shopify/Cart/abc", checkout_url=CHECKOUT_URL):
+def cart(lines=None, *, cart_id="gid://shopify/Cart/abc", checkout_url=CHECKOUT_URL, removed=None):
     lines = (
         lines
         if lines is not None
-        else [{"title": "Snowboard", "variant": "Default Title", "quantity": 1, "amount": "19.99"}]
+        else [
+            {
+                "title": "Snowboard",
+                "variant": "Default Title",
+                "variant_id": "gid://shopify/ProductVariant/11",
+                "quantity": 1,
+                "amount": "19.99",
+            }
+        ]
     )
     return {
         "id": cart_id,
@@ -64,6 +72,8 @@ def cart(lines=None, *, cart_id="gid://shopify/Cart/abc", checkout_url=CHECKOUT_
         "total_amount": "19.99",
         "currency_code": "USD",
         "lines": lines,
+        # The lines Shopify had set to 0, taken out by the change that returned this cart.
+        "removed": removed or [],
     }
 
 
@@ -183,7 +193,10 @@ class TestAddToCart:
 
         send(customer, press=open_product(customer).press("Add to cart"))
 
-        shopify.add_to_cart.assert_called_once_with(shop, "gid://shopify/Cart/abc", "gid://shopify/ProductVariant/11")
+        # had: how many the cart held before, so Shopify's reply shows whether one more went in.
+        shopify.add_to_cart.assert_called_once_with(
+            shop, "gid://shopify/Cart/abc", "gid://shopify/ProductVariant/11", had=1
+        )
         assert shopify.create_cart.call_count == 1
 
     def test_a_cart_shopify_no_longer_has_is_started_afresh(self, customer, shopify):
@@ -225,6 +238,45 @@ class TestAddToCart:
         assert sorry.body == "Sorry, that couldn't go in your cart: The product 'Snowboard' is already sold out."
         assert main_menu.titles[0] == "Browse products"
         assert store_customer(customer).cart_id == ""
+
+
+class TestASoldOutProduct:
+    """
+    Finding 7 of Step 2.8: after one product sold out, every later add said "Sorry, that couldn't go in
+    your cart: The product 'The 3p Fulfilled Snowboard' is already sold out", naming the wrong product,
+    though the add had worked.
+    """
+
+    def test_an_add_names_the_product_that_sold_out(self, customer, shopify):
+        shopify.create_cart.side_effect = ShopifySoldOut()
+
+        sorry, main_menu = send(customer, press=open_product(customer).press("Add to cart"))
+
+        assert sorry.body == "Sorry, Snowboard is sold out, so it couldn't go in your cart."
+        assert main_menu.titles[0] == "Browse products"
+        assert store_customer(customer).cart_id == ""
+
+    def test_buy_now_names_the_product_that_sold_out(self, customer, shopify):
+        shopify.create_cart.side_effect = ShopifySoldOut()
+
+        sorry, _ = send(customer, press=open_product(customer).press("Buy now"))
+
+        assert sorry.body == "Sorry, Snowboard is sold out."
+
+    def test_an_add_that_worked_says_so_and_names_what_sold_out_once(self, customer, shopify):
+        send(customer, press=open_product(customer).press("Add to cart"))
+        shopify.get_cart.return_value = cart()
+        shopify.add_to_cart.return_value = cart(
+            removed=[{"title": "The 3p Fulfilled Snowboard", "variant": "Default Title"}]
+        )
+
+        [added] = send(customer, press=open_product(customer).press("Add to cart"))
+
+        assert added.body == (
+            "Added Snowboard to your cart. It holds 1 item: USD 19.99.\n\n"
+            "Sold out, so taken out of your cart: The 3p Fulfilled Snowboard."
+        )
+        assert added.titles == ["Checkout", "Your cart", "Keep shopping"]
 
 
 class TestBuyNow:
@@ -277,11 +329,17 @@ class TestYourCart:
         shopify.get_cart.return_value = cart()
         screen = self.open_cart(customer)
 
-        [link] = send(customer, press=screen.press("Checkout"))
+        page, link = send(customer, press=screen.press("Checkout"))
 
+        # Step 2.8, finding 10: the shop's own cart page first, then Checkout, nearest the thumb. A
+        # link-button message carries one link, so they're two messages.
+        assert page.body == "Review your cart on Acme Snow Co's website."
+        assert page.link == {"display_text": "View cart", "url": "https://acme.myshopify.com/cart/11:1?storefront=true"}
         assert link.link == {"display_text": "Checkout", "url": CHECKOUT_URL}
-        assert (
-            link.body == "Your cart holds 1 item: USD 19.99. Tap Checkout to pay in the shop's secure Shopify checkout."
+        # Step 2.8, finding 11: the store's own name in Shopify, faked in conftest.py.
+        assert link.body == (
+            "Your cart from Acme Snow Co holds 1 item: USD 19.99. "
+            "Tap Checkout to pay in the shop's secure Shopify checkout."
         )
 
     def test_empty_cart_forgets_it(self, customer, shopify):

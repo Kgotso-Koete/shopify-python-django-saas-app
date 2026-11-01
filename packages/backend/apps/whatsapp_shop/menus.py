@@ -27,13 +27,16 @@ never sees a payment. A cart Shopify no longer has (expired, or checked out) or 
 number's previous store is started afresh.
 """
 
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
+
+from django.utils import timezone
 
 from apps.shopify import storefront
 from apps.shopify.client import ShopifyAPIError
 from apps.shopify.products import ShopifyReconnectRequired, ShopifyTryAgainLater
-from apps.shopify.storefront import ShopifyCartError
+from apps.shopify.storefront import ShopifyCartError, ShopifySoldOut
 from apps.whatsapp.agent import service as agent
 from apps.whatsapp.agent.service import AgentError
 from apps.whatsapp.builders import (
@@ -41,11 +44,14 @@ from apps.whatsapp.builders import (
     MAIN_MENU,
     Choice,
     Row,
+    image_message,
     link_button,
     list_message,
     reply_buttons,
     text_reply,
 )
+from apps.whatsapp.constants import MessageDirection
+from apps.whatsapp.models import WhatsAppMessage
 
 from . import services
 from .models import StoreCustomer, StorefrontChannel
@@ -66,6 +72,10 @@ SHOWABLE_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 # The cart's lines shown in one message; a longer cart says how many more it holds.
 CART_LINES_SHOWN = 10
 CHECKOUT_TEXT = "Tap Checkout to pay in the shop's secure Shopify checkout."
+
+# A customer is welcomed with the store's logo on their first message, or the first after this long
+# without one, so a conversation that goes on doesn't fill with it (Step 2.8, finding 13).
+QUIET_BEFORE_WELCOME = timedelta(hours=24)
 
 # Longer than any product search needs; it's kept in the conversation with each page's buttons.
 SEARCH_WORDS_MAX = 100
@@ -94,14 +104,16 @@ class StoreHandler:
         return HELP_TEXT
 
     def main_menu(self, turn) -> list[dict]:
+        return _welcome_logo(turn) + self._menu(turn)
+
+    def _menu(self, turn) -> list[dict]:
         _store_customer(turn)
         rows = [
             Row(turn.choice(BROWSE), "Browse products", "The newest first"),
             Row(turn.choice(SEARCH), "Search", "Find a product by name"),
             Row(turn.choice(CART), "Your cart", "See what's in it and check out"),
         ]
-        body = f"Welcome to {_shop_name(turn)}. What would you like to do?"
-        return [list_message(body, button_label="Menu", section_title="Main menu", rows=rows)]
+        return [list_message(welcome(_shop_name(turn)), button_label="Menu", section_title="Main menu", rows=rows)]
 
     def on_choice(self, turn, kind: str, data: dict) -> list[dict]:
         screens = {
@@ -131,11 +143,13 @@ class StoreHandler:
         from .tools import TOOLS
 
         _store_customer(turn)
+        # The store's logo first when the customer is starting, as with the menus (Step 2.8, finding 13).
+        logo = _welcome_logo(turn)
         try:
-            return agent.respond(turn, text, tools=TOOLS, instructions=prompts.instructions(_shop_name(turn)))
+            return logo + agent.respond(turn, text, tools=TOOLS, instructions=prompts.instructions(_shop_name(turn)))
         except AgentError:
             # The channel's texts point to the team's "mode menu"; a customer has the menus instead.
-            return text_reply(ASSISTANT_UNAVAILABLE_TEXT) + self.main_menu(turn)
+            return logo + text_reply(ASSISTANT_UNAVAILABLE_TEXT) + self._menu(turn)
 
     def on_typed_answer(self, turn, kind: str, data: dict, text: str) -> list[dict]:
         words = " ".join(text.split())[:SEARCH_WORDS_MAX]
@@ -259,10 +273,17 @@ class StoreHandler:
         shop = services.store_for(turn.contact.account)
         customer = _store_customer(turn)
         cart = _open_cart(customer, shop)
-        if cart is None:
-            cart = storefront.create_cart(shop, data["variant_id"], phone=_phone(turn.contact))
-        else:
-            cart = storefront.add_to_cart(shop, cart["id"], data["variant_id"])
+        try:
+            if cart is None:
+                cart = storefront.create_cart(shop, data["variant_id"], phone=_phone(turn.contact))
+            else:
+                had = sum(line["quantity"] for line in cart["lines"] if line["variant_id"] == data["variant_id"])
+                cart = storefront.add_to_cart(shop, cart["id"], data["variant_id"], had=had)
+        except ShopifySoldOut:
+            # The product the customer pressed, never another line's (Step 2.8, finding 7).
+            return text_reply(f"Sorry, {data['label']} is sold out, so it couldn't go in your cart.") + self.main_menu(
+                turn
+            )
         customer.cart_id, customer.cart_shop = cart["id"], shop
         customer.save(update_fields=["cart_id", "cart_shop", "updated_at"])
 
@@ -270,12 +291,19 @@ class StoreHandler:
         your_cart = Choice(turn.choice(CART), "Your cart")
         keep_shopping = Choice(turn.choice(BROWSE, **data["back"]), "Keep shopping")
         body = f"Added {data['label']} to your cart. It holds {_cart_size(cart)}."
+        if cart["removed"]:
+            # Lines that sold out since they were added, taken out by this change: told once.
+            sold_out = ", ".join(_line_title(line) for line in cart["removed"])
+            body += f"\n\nSold out, so taken out of your cart: {sold_out}."
         return [reply_buttons(body, [checkout, your_cart], way_back=keep_shopping)]
 
     def _buy_now(self, turn, data) -> list[dict]:
         """A one-item cart of its own, straight to checkout; the open cart is left as it is."""
         shop = services.store_for(turn.contact.account)
-        cart = storefront.create_cart(shop, data["variant_id"], phone=_phone(turn.contact))
+        try:
+            cart = storefront.create_cart(shop, data["variant_id"], phone=_phone(turn.contact))
+        except ShopifySoldOut:
+            return text_reply(f"Sorry, {data['label']} is sold out.") + self.main_menu(turn)
         return [_checkout_link(cart, f"{data['label']}, {data['price']}. {CHECKOUT_TEXT}")]
 
     def _cart(self, turn, data) -> list[dict]:
@@ -299,7 +327,18 @@ class StoreHandler:
         cart = _open_cart(_store_customer(turn), services.store_for(turn.contact.account))
         if cart is None or not cart["lines"]:
             return [_empty_cart_screen(turn, "Your cart is empty.")]
-        return [_checkout_link(cart, f"Your cart holds {_cart_size(cart)}. {CHECKOUT_TEXT}")]
+        shop = services.store_for(turn.contact.account)
+        name = _shop_name(turn)
+        # The shop's own cart page to review it, then Checkout, nearest the thumb. A link-button
+        # message carries one link, so they're two messages (Step 2.8, finding 10, option A).
+        cart_page = link_button(
+            f"Review your cart on {name}'s website.",
+            display_text="View cart",
+            url=storefront.cart_page_url(shop, cart),
+        )
+        # Named by the store, so the customer knows whose checkout opens (Step 2.8, finding 11).
+        body = f"Your cart from {name} holds {_cart_size(cart)}. {CHECKOUT_TEXT}"
+        return [cart_page, _checkout_link(cart, body)]
 
     def _empty_cart(self, turn, data) -> list[dict]:
         # Shopify forgets an unused cart by itself within 30 days; it's only dropped here.
@@ -393,10 +432,54 @@ def _amount(value: str) -> str:
         return value
 
 
+def _welcome_logo(turn) -> list[dict]:
+    """
+    The store's logo as a picture of its own, captioned with the store's name, when the customer is
+    starting a conversation, and nothing otherwise (WhatsApp plan Step 2.8, finding 13; option A). A
+    list message, which the main menu is, takes only a text header, so the logo can't sit on the
+    menu itself:
+    https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/interactive-list-messages.md
+    Nothing either when the store set no logo, or Shopify can't be reached: a logo is no reason to
+    fail the welcome.
+    """
+    if not _starting(turn):
+        return []
+    try:
+        details = storefront.get_shop(services.store_for(turn.contact.account))
+    except (ShopifyReconnectRequired, ShopifyTryAgainLater, ShopifyAPIError):
+        return []
+    if not details.get("logo_url"):
+        return []
+    return [image_message(details["logo_url"], caption=details["name"])]
+
+
+def _starting(turn) -> bool:
+    """Whether this is the customer's first message, or the first after QUIET_BEFORE_WELCOME."""
+    since = timezone.now() - QUIET_BEFORE_WELCOME
+    earlier = WhatsAppMessage.objects.filter(
+        contact=turn.contact, direction=MessageDirection.INBOUND, created_at__gte=since
+    ).exclude(pk=turn.message.pk)
+    return not earlier.exists()
+
+
+def welcome(name: str) -> str:
+    """The main menu's text, welcoming the customer to the store (Step 2.8, finding 12)."""
+    return (
+        f"Hi, welcome to {name}. Shop with us right here on WhatsApp: browse, search, and check out when you're ready."
+    )
+
+
 def _shop_name(turn) -> str:
-    """The number's business name, as Meta verified it, or its store's domain."""
+    """
+    The store's own name in Shopify (Step 2.8, finding 12). If Shopify can't be reached, a name is no
+    reason to fail the menu: the number's business name, as Meta verified it, or the store's domain.
+    """
     account = turn.contact.account
-    return account.verified_name or services.store_for(account).shop_domain
+    shop = services.store_for(account)
+    try:
+        return storefront.get_shop(shop)["name"]
+    except (ShopifyReconnectRequired, ShopifyTryAgainLater, ShopifyAPIError):
+        return account.verified_name or shop.shop_domain
 
 
 def _store_customer(turn) -> StoreCustomer:

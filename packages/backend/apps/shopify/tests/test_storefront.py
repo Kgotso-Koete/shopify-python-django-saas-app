@@ -6,6 +6,8 @@ for its WhatsApp customers (WhatsApp plan Step 2.2, phase 2 decisions 1 and 3).
 - browsing lists products for sale only, newest first; searching hides those not for sale
 - a product's variants are those for sale
 - carts: created with the customer's phone when known, lines added, read back, or gone
+- a sold-out line (Step 2.8, findings 7 and 8): an add is judged by its own line, lines Shopify set to
+  0 are taken out and named once, and a cart read back leaves them out
 - a store that must be reconnected, Shopify being busy, and Shopify refusing a cart change each raise
   their own error
 
@@ -16,6 +18,7 @@ in the test database, which is flagged when its token is rejected; Shopify's HTT
 """
 
 import pytest
+from django.core.cache import cache
 from django.utils import timezone
 
 from apps.shopify.client import ShopifyAPIError, ShopifyRefreshTokenRejected
@@ -79,13 +82,27 @@ def cart_node(lines=None):
     }
 
 
-def cart_line(quantity=2, product="Blue shirt", variant="Large"):
+def cart_line(quantity=2, product="Blue shirt", variant="Large", variant_id="gid://shopify/ProductVariant/11", line=1):
     return {
-        "id": "gid://shopify/CartLine/1",
+        "id": f"gid://shopify/CartLine/{line}",
         "quantity": quantity,
         "cost": {"totalAmount": {"amount": "39.98", "currencyCode": "USD"}},
-        "merchandise": {"id": "gid://shopify/ProductVariant/11", "title": variant, "product": {"title": product}},
+        "merchandise": {"id": variant_id, "title": variant, "product": {"title": product}},
     }
+
+
+def sold_out_line():
+    """Another product's line, which Shopify set to 0 when it sold out (Step 2.1a, result 6)."""
+    return cart_line(
+        quantity=0, product="Red shirt", variant="Default Title", variant_id="gid://shopify/ProductVariant/22", line=2
+    )
+
+
+SOLD_OUT_WARNING = {
+    "code": "MERCHANDISE_OUT_OF_STOCK",
+    "message": "The product 'Red shirt' is already sold out.",
+    "target": "gid://shopify/CartLine/2",
+}
 
 
 @pytest.fixture
@@ -107,7 +124,17 @@ def shopify(mocker):
         response.json.return_value = body
         post.return_value = response
 
+    def answers(*datas):
+        """One reply per request, in order: a cart change, then the removal of its dropped lines."""
+        responses = []
+        for data in datas:
+            response = mocker.Mock(ok=True, status_code=200, text="{}")
+            response.json.return_value = {"data": data}
+            responses.append(response)
+        post.side_effect = responses
+
     post.reply = answer
+    post.replies = answers
     return post
 
 
@@ -266,7 +293,7 @@ class TestCarts:
         assert cart["checkout_url"] == "https://demo.myshopify.com/cart/c/abc?key=secret"
 
     def test_without_a_phone_the_cart_has_no_buyer(self, shop, shopify):
-        shopify.reply({"cartCreate": {"cart": cart_node(), "userErrors": [], "warnings": []}})
+        shopify.reply({"cartCreate": {"cart": cart_node([cart_line(quantity=1)]), "userErrors": [], "warnings": []}})
 
         storefront().create_cart(shop, "gid://shopify/ProductVariant/11", phone=None)
 
@@ -296,8 +323,24 @@ class TestCarts:
             "total_quantity": 2,
             "total_amount": "39.98",
             "currency_code": "USD",
-            "lines": [{"title": "Blue shirt", "variant": "Large", "quantity": 2, "amount": "39.98"}],
+            "lines": [
+                {
+                    "title": "Blue shirt",
+                    "variant": "Large",
+                    "variant_id": "gid://shopify/ProductVariant/11",
+                    "quantity": 2,
+                    "amount": "39.98",
+                }
+            ],
         }
+
+    def test_a_cart_read_back_leaves_out_lines_shopify_set_to_zero(self, shop, shopify):
+        # Finding 8 of Step 2.8: "0 × The 3p Fulfilled Snowboard: USD 0.00" was listed.
+        shopify.reply({"cart": cart_node([cart_line(), sold_out_line()])})
+
+        cart = storefront().get_cart(shop, "gid://shopify/Cart/abc")
+
+        assert [line["title"] for line in cart["lines"]] == ["Blue shirt"]
 
     def test_a_cart_shopify_no_longer_has_is_none(self, shop, shopify):
         # Carts expire within 30 days, and are deleted once their checkout is completed.
@@ -312,10 +355,143 @@ class TestCarts:
         with pytest.raises(storefront().ShopifyCartError, match="sold out"):
             storefront().add_to_cart(shop, "gid://shopify/Cart/abc", "gid://shopify/ProductVariant/11")
 
-    def test_a_dropped_line_says_why(self, shop, shopify):
-        # Shopify sets an unavailable line to 0 and says so only in a warning (Step 2.1a, result 6).
-        warnings = [{"code": "MERCHANDISE_OUT_OF_STOCK", "message": "The product is already sold out.", "target": "x"}]
-        shopify.reply({"cartCreate": {"cart": cart_node(), "userErrors": [], "warnings": warnings}})
 
-        with pytest.raises(storefront().ShopifyCartError, match="already sold out"):
+def brand(square=None, logo=None):
+    """A store's brand settings as the Storefront API returns them; a logo not set is null."""
+    return {
+        "squareLogo": {"image": {"url": square}} if square else None,
+        "logo": {"image": {"url": logo}} if logo else None,
+    }
+
+
+class TestTheStore:
+    """The store's own name, for the WhatsApp welcome (WhatsApp plan Step 2.8, findings 4 and 12)."""
+
+    @pytest.fixture(autouse=True)
+    def no_name_kept(self, shop):
+        cache.delete(storefront().shop_cache_key(shop))
+
+    def test_its_name_as_shopify_has_it(self, shop, shopify):
+        shopify.reply({"shop": {"name": "Demo Snow", "brand": None}})
+
+        assert storefront().get_shop(shop) == {"name": "Demo Snow", "logo_url": None}
+
+    def test_its_square_logo_as_a_png_for_whatsapp(self, shop, shopify):
+        # Finding 13: WhatsApp shows JPEG or PNG only, so Shopify is asked for a PNG; the square logo
+        # is "the store's preferred logo for square UI elements":
+        # https://shopify.dev/docs/api/storefront/latest/objects/Brand
+        shopify.reply({"shop": {"name": "Demo Snow", "brand": brand(square="https://cdn.shopify.com/square.png")}})
+
+        details = storefront().get_shop(shop)
+
+        assert details["logo_url"] == "https://cdn.shopify.com/square.png"
+        query = shopify.call_args.kwargs["json"]["query"]
+        assert "preferredContentType: PNG" in query
+
+    def test_without_a_square_logo_its_default_logo(self, shop, shopify):
+        shopify.reply({"shop": {"name": "Demo Snow", "brand": brand(logo="https://cdn.shopify.com/logo.png")}})
+
+        assert storefront().get_shop(shop)["logo_url"] == "https://cdn.shopify.com/logo.png"
+
+    def test_it_is_asked_for_once_then_kept_a_while(self, shop, shopify):
+        # Every main menu shows it, so Shopify isn't asked on every message.
+        shopify.reply({"shop": {"name": "Demo Snow", "brand": None}})
+
+        storefront().get_shop(shop)
+        storefront().get_shop(shop)
+
+        assert shopify.call_count == 1
+
+
+class TestTheCartPage:
+    """
+    The shop's own cart page holding the chat cart's items (WhatsApp plan Step 2.8, finding 10): a
+    cart permalink, "https://{shop}.myshopify.com/cart/#{variant_id}:#{quantity}(,...)", which with
+    storefront=true opens "the online store cart instead of the checkout page":
+    https://shopify.dev/docs/apps/build/checkout/create-cart-permalinks
+    """
+
+    def test_it_lists_each_variants_number_and_quantity(self, shop):
+        cart = {
+            "lines": [
+                {"variant_id": "gid://shopify/ProductVariant/11", "quantity": 2},
+                {"variant_id": "gid://shopify/ProductVariant/22", "quantity": 1},
+            ]
+        }
+
+        url = storefront().cart_page_url(shop, cart)
+
+        assert url == "https://demo.myshopify.com/cart/11:2,22:1?storefront=true"
+
+
+class TestASoldOutLine:
+    """
+    Finding 7 of Step 2.8: Shopify keeps a sold-out line in the cart at quantity 0 and repeats its
+    warning on every later change, so an add is judged by its own line, never by the warnings: a
+    warning's `target` is only "an ID pointing to the affected resource", not documented as the line
+    (https://shopify.dev/docs/api/storefront/latest/objects/CartWarning).
+    """
+
+    def test_a_new_cart_whose_line_shopify_set_to_zero_is_sold_out(self, shop, shopify):
+        # Shopify sets an unavailable line to 0 and says so only in a warning (Step 2.1a, result 6).
+        dropped = cart_line(quantity=0)
+        shopify.replies(
+            {"cartCreate": {"cart": cart_node([dropped]), "userErrors": [], "warnings": [SOLD_OUT_WARNING]}},
+            {"cartLinesRemove": {"cart": cart_node(), "userErrors": [], "warnings": []}},
+        )
+
+        with pytest.raises(storefront().ShopifySoldOut):
             storefront().create_cart(shop, "gid://shopify/ProductVariant/11", phone=None)
+
+    def test_an_add_that_doesnt_raise_its_lines_quantity_is_sold_out(self, shop, shopify):
+        # One already in the cart, and Shopify couldn't add another: the line stays at 1.
+        warning = {**SOLD_OUT_WARNING, "code": "MERCHANDISE_NOT_ENOUGH_STOCK", "target": "gid://shopify/CartLine/1"}
+        shopify.reply(
+            {"cartLinesAdd": {"cart": cart_node([cart_line(quantity=1)]), "userErrors": [], "warnings": [warning]}}
+        )
+
+        with pytest.raises(storefront().ShopifySoldOut):
+            storefront().add_to_cart(shop, "gid://shopify/Cart/abc", "gid://shopify/ProductVariant/11", had=1)
+
+    def test_another_lines_warning_doesnt_fail_an_add_that_worked(self, shop, shopify):
+        shopify.replies(
+            {
+                "cartLinesAdd": {
+                    "cart": cart_node([cart_line(quantity=1), sold_out_line()]),
+                    "userErrors": [],
+                    "warnings": [SOLD_OUT_WARNING],
+                }
+            },
+            {"cartLinesRemove": {"cart": cart_node([cart_line(quantity=1)]), "userErrors": [], "warnings": []}},
+        )
+
+        cart = storefront().add_to_cart(shop, "gid://shopify/Cart/abc", "gid://shopify/ProductVariant/11")
+
+        assert [line["title"] for line in cart["lines"]] == ["Blue shirt"]
+
+    def test_lines_shopify_set_to_zero_are_taken_out_and_named_once(self, shop, shopify):
+        shopify.replies(
+            {
+                "cartLinesAdd": {
+                    "cart": cart_node([cart_line(quantity=1), sold_out_line()]),
+                    "userErrors": [],
+                    "warnings": [SOLD_OUT_WARNING],
+                }
+            },
+            {"cartLinesRemove": {"cart": cart_node([cart_line(quantity=1)]), "userErrors": [], "warnings": []}},
+        )
+
+        cart = storefront().add_to_cart(shop, "gid://shopify/Cart/abc", "gid://shopify/ProductVariant/11")
+
+        # The second request removed the dropped line, so its warning stops coming back.
+        _, _, variables = sent(shopify)
+        assert variables == {"cartId": "gid://shopify/Cart/abc", "lineIds": ["gid://shopify/CartLine/2"]}
+        assert cart["removed"] == [{"title": "Red shirt", "variant": "Default Title"}]
+
+    def test_a_change_with_nothing_dropped_removes_nothing(self, shop, shopify):
+        shopify.reply({"cartLinesAdd": {"cart": cart_node([cart_line(quantity=1)]), "userErrors": [], "warnings": []}})
+
+        cart = storefront().add_to_cart(shop, "gid://shopify/Cart/abc", "gid://shopify/ProductVariant/11")
+
+        assert shopify.call_count == 1
+        assert cart["removed"] == []

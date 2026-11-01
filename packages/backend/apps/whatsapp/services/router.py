@@ -27,6 +27,9 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from apps.entitlements import services as entitlements
+from apps.entitlements.constants import Feature
+
 from .. import registry
 from ..agent import history
 from ..builders import MAIN_MENU, text_reply
@@ -100,6 +103,11 @@ def route(message_id: int) -> None:
 
 def _replies_for(message) -> list[dict]:
     contact = message.contact
+    # No reply at all, to customers and members alike, while the organization's plan doesn't include
+    # WhatsApp (plan phase 3, decision 4). The message was already stored by the webhook, so the
+    # history has no gap when a plan resumes, and nothing reaches a handler or OpenAI.
+    if not entitlements.has_feature(contact.account.tenant, Feature.WHATSAPP):
+        return []
     payload = message.payload or {}
     purpose = contact.account.purpose
     linked = None

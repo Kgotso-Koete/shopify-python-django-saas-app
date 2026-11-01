@@ -5,22 +5,28 @@ phase 2 decision 2, user stories 14, 21 and 25).
 
 - a number with no store chosen, or whose store can't sell on WhatsApp any more, sends no reply
 - anyone texting a selling number becomes a store customer of the number's organization, once
-- the main menu greets them with the number's business name and offers Browse products, Search and
-  Your cart, with Main menu as the way back (D17)
+- the main menu welcomes them to the store, by its own name in Shopify (Step 2.8, finding 12), or the
+  number's business name when Shopify can't be reached, and offers Browse products, Search and Your
+  cart, with Main menu as the way back (D17)
 - help speaks to a customer, never of the team's modes or unlinking
 - the number's own setting decides the mode, menus by default
 
 Kind of test: integration (agents.md section 2.5). Why: organizations, stores, numbers, store links
 and messages are rows in the test database, routed through the real router and the handler this app
-registers; nothing is faked but the send task's Celery delay.
+registers; only the send task's Celery delay and the store's name from Shopify are faked.
 """
+
+from datetime import timedelta
 
 import pytest
 from django.utils import timezone
 
 from apps.multitenancy.constants import TenantType
 from apps.multitenancy.tests.factories import TenantFactory
+from apps.shopify.client import ShopifyAPIError
+from apps.shopify.products import ShopifyTryAgainLater
 from apps.whatsapp.constants import ConversationMode
+from apps.whatsapp.models import WhatsAppMessage
 from apps.whatsapp.tests.factories import ExternalAccountFactory
 
 from ..models import StoreCustomer
@@ -80,20 +86,90 @@ class TestWhoIsAnswered:
         assert store_customer.cart_id == ""
 
 
+LOGO = "https://cdn.shopify.com/s/files/acme-square.png"
+
+
+def welcome(name):
+    return (
+        f"Hi, welcome to {name}. Shop with us right here on WhatsApp: browse, search, and check out when "
+        "you're ready."
+    )
+
+
 class TestTheMainMenu:
-    def test_it_greets_with_the_business_name_and_offers_the_store(self, number):
+    def test_it_welcomes_to_the_stores_own_name_and_offers_the_store(self, number, shop, the_stores_details):
+        # Step 2.8, finding 12: the store's name in Shopify, not the number's WhatsApp business name.
         [menu] = send(customer_of(number), "hi")
 
-        assert menu.body == "Welcome to Acme Outdoor. What would you like to do?"
+        # The number's own store; get_shop keeps the details an hour, so Shopify is asked once.
+        the_stores_details.assert_called_with(shop)
+        assert menu.body == welcome("Acme Snow Co")
         assert menu.titles == ["Browse products", "Search", "Your cart", "Main menu"]
 
-    def test_without_a_business_name_it_names_the_store(self, number):
+    def test_with_shopify_unreachable_it_names_the_numbers_business(self, number, the_stores_details):
+        # A name is no reason to fail the menu: the number's business name, as Meta verified it.
+        the_stores_details.side_effect = ShopifyTryAgainLater()
+
+        [menu] = send(customer_of(number), "hi")
+
+        assert menu.body == welcome("Acme Outdoor")
+
+    def test_with_neither_name_it_names_the_stores_domain(self, number, the_stores_details):
+        the_stores_details.side_effect = ShopifyAPIError("down")
         number.verified_name = ""
         number.save()
 
         [menu] = send(customer_of(number), "hi")
 
-        assert menu.body == "Welcome to acme.myshopify.com. What would you like to do?"
+        assert menu.body == welcome("acme.myshopify.com")
+
+    # Step 2.8, finding 13: the store's logo when a customer starts a conversation.
+
+    def test_a_customer_starting_gets_the_stores_logo_before_the_menu(self, number, the_stores_details):
+        the_stores_details.return_value = {"name": "Acme Snow Co", "logo_url": LOGO}
+
+        logo, menu = send(customer_of(number), "hi")
+
+        assert logo.image_url == LOGO
+        assert logo.body == "Acme Snow Co"
+        assert menu.body == welcome("Acme Snow Co")
+
+    def test_the_logo_isnt_repeated_while_the_conversation_goes_on(self, number, the_stores_details):
+        the_stores_details.return_value = {"name": "Acme Snow Co", "logo_url": LOGO}
+        customer = customer_of(number)
+        send(customer, "hi")
+
+        [menu] = send(customer, "menu")
+
+        assert menu.body == welcome("Acme Snow Co")
+
+    def test_after_a_day_of_quiet_the_logo_comes_again(self, number, the_stores_details):
+        the_stores_details.return_value = {"name": "Acme Snow Co", "logo_url": LOGO}
+        customer = customer_of(number)
+        send(customer, "hi")
+        WhatsAppMessage.objects.filter(contact=customer).update(created_at=timezone.now() - timedelta(hours=25))
+
+        logo, _ = send(customer, "hi again")
+
+        assert logo.image_url == LOGO
+
+    def test_a_store_without_a_logo_sends_only_the_menu(self, number):
+        [menu] = send(customer_of(number), "hi")
+
+        assert menu.body == welcome("Acme Snow Co")
+
+    def test_a_customer_starting_with_the_assistant_gets_the_logo_too(self, number, the_stores_details, mocker):
+        from apps.whatsapp.tests.agent_fakes import FakeProvider, says
+
+        the_stores_details.return_value = {"name": "Acme Snow Co", "logo_url": LOGO}
+        number.storefront_channel.conversation_mode = ConversationMode.AGENTIC
+        number.storefront_channel.save()
+        mocker.patch("apps.whatsapp.agent.service.get_provider", return_value=FakeProvider(says("Hi! Welcome.")))
+
+        logo, reply = send(customer_of(number), "hi")
+
+        assert logo.image_url == LOGO
+        assert reply.body == "Hi! Welcome."
 
     def test_typed_text_gets_the_main_menu(self, number):
         customer = customer_of(number)
@@ -150,4 +226,4 @@ class TestANumberServingBoth:
 
         [menu] = send(ContactFactory(account=shared), "hi")
 
-        assert menu.body == "Welcome to Acme Outdoor. What would you like to do?"
+        assert menu.body == welcome("Acme Snow Co")

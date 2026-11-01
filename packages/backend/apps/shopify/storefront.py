@@ -23,6 +23,7 @@ from typing import Any
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
 
 from apps.shopify.client import ShopifyAPIError, ShopifyRefreshTokenRejected, admin_client_for
 from apps.shopify.products import ShopifyReconnectRequired, ShopifyTryAgainLater
@@ -33,7 +34,15 @@ MAX_VARIANTS = 100
 
 
 class ShopifyCartError(Exception):
-    """Shopify refused a cart change, or dropped its line; the message is Shopify's, for the customer."""
+    """Shopify refused a cart change; the message is Shopify's, for the customer."""
+
+
+class ShopifySoldOut(ShopifyCartError):
+    """
+    The variant didn't go in: its line in the cart Shopify returned didn't grow. Shopify reports this
+    only as a warning, and sets the line to 0 (WhatsApp plan Step 2.1a, result 6); the caller knows
+    which product it was, so it names it.
+    """
 
 
 PRODUCT_FIELDS = """
@@ -194,6 +203,42 @@ mutation CartLinesAdd($cartId: ID!, $lines: [CartLineInput!]!) {{
 }}
 """
 
+# https://shopify.dev/docs/api/storefront/latest/mutations/cartLinesRemove
+CART_LINES_REMOVE = f"""
+mutation CartLinesRemove($cartId: ID!, $lineIds: [ID!]!) {{
+  cartLinesRemove(cartId: $cartId, lineIds: $lineIds) {{
+    {CART_CHANGE_RESULT}
+  }}
+}}
+"""
+
+# The store's own name and logo, for the WhatsApp welcome (WhatsApp plan Step 2.8, findings 12 and 13):
+# https://shopify.dev/docs/api/storefront/latest/objects/Shop and .../objects/Brand. WhatsApp shows only
+# JPEG or PNG, so the logo is asked for as a PNG, Shopify's "best effort conversion of image into
+# content type": https://shopify.dev/docs/api/storefront/latest/objects/Image
+LOGO_FIELDS = """
+      image {
+        url(transform: {preferredContentType: PNG})
+      }
+"""
+SHOP_QUERY = f"""
+query Shop {{
+  shop {{
+    name
+    brand {{
+      squareLogo {{
+        {LOGO_FIELDS}
+      }}
+      logo {{
+        {LOGO_FIELDS}
+      }}
+    }}
+  }}
+}}
+"""
+# Every main menu shows it, so it's kept, not asked for on each message; a renamed store shows within this.
+SHOP_KEPT_SECONDS = 60 * 60
+
 # https://shopify.dev/docs/api/storefront/latest/queries/cart
 CART_QUERY = f"""
 query Cart($id: ID!) {{
@@ -241,12 +286,57 @@ def create_cart(shop, variant_id: str, *, phone: str | None) -> dict[str, Any]:
     cart_input = {"lines": [_line(variant_id)]}
     if phone:
         cart_input["buyerIdentity"] = {"phone": phone}
-    return _cart_change(shop, CART_CREATE, "cartCreate", {"input": cart_input})
+    return _cart_change(shop, CART_CREATE, "cartCreate", {"input": cart_input}, variant_id=variant_id, had=0)
 
 
-def add_to_cart(shop, cart_id: str, variant_id: str) -> dict[str, Any]:
-    """The cart, with one more of the variant (Shopify adds to its line if it has one)."""
-    return _cart_change(shop, CART_LINES_ADD, "cartLinesAdd", {"cartId": cart_id, "lines": [_line(variant_id)]})
+def add_to_cart(shop, cart_id: str, variant_id: str, *, had: int = 0) -> dict[str, Any]:
+    """
+    The cart, with one more of the variant (Shopify adds to its line if it has one). `had` is how many
+    of it the cart held before, so the reply shows whether one more went in.
+    """
+    variables = {"cartId": cart_id, "lines": [_line(variant_id)]}
+    return _cart_change(shop, CART_LINES_ADD, "cartLinesAdd", variables, variant_id=variant_id, had=had)
+
+
+def cart_page_url(shop, cart: dict[str, Any]) -> str:
+    """
+    The shop's own cart page holding `cart`'s items (WhatsApp plan Step 2.8, finding 10): a cart
+    permalink, "https://{shop}.myshopify.com/cart/#{variant_id}:#{quantity}(,...)", where
+    storefront=true opens "the online store cart instead of the checkout page":
+    https://shopify.dev/docs/apps/build/checkout/create-cart-permalinks
+    It's a copy of the chat's cart on the website; changes made there don't come back to the chat.
+    Like the checkout link, it "cannot bypass storefront passwords".
+    """
+    # A variant's id is "gid://shopify/ProductVariant/11"; the permalink takes its number.
+    items = ",".join(f"{line['variant_id'].rsplit('/', 1)[-1]}:{line['quantity']}" for line in cart["lines"])
+    return f"https://{shop.shop_domain}/cart/{items}?storefront=true"
+
+
+def get_shop(shop) -> dict[str, Any]:
+    """The store's details as Shopify has them, kept for SHOP_KEPT_SECONDS (WhatsApp plan Step 2.8, finding 12)."""
+    key = shop_cache_key(shop)
+    details = cache.get(key)
+    if details is None:
+        node = _query(shop, SHOP_QUERY, {})["shop"]
+        details = {"name": node["name"], "logo_url": _logo_url(node.get("brand"))}
+        cache.set(key, details, SHOP_KEPT_SECONDS)
+    return details
+
+
+def _logo_url(brand: dict | None) -> str | None:
+    """
+    The square logo, "the store's preferred logo for square UI elements", else the default logo,
+    else None: a store that set neither under Settings > Brand.
+    """
+    for logo in ((brand or {}).get("squareLogo"), (brand or {}).get("logo")):
+        url = ((logo or {}).get("image") or {}).get("url")
+        if url:
+            return url
+    return None
+
+
+def shop_cache_key(shop) -> str:
+    return f"shopify:storefront:shop:{shop.pk}"
 
 
 def get_cart(shop, cart_id: str) -> dict[str, Any] | None:
@@ -289,16 +379,48 @@ def _query(shop, query: str, variables: dict[str, Any]) -> dict[str, Any]:
     return data["data"]
 
 
-def _cart_change(shop, mutation: str, name: str, variables: dict[str, Any]) -> dict[str, Any]:
+def _cart_change(
+    shop, mutation: str, name: str, variables: dict[str, Any], *, variant_id: str, had: int
+) -> dict[str, Any]:
+    """
+    Adds one of `variant_id` and returns the cart, with "removed": the lines Shopify had set to 0,
+    which are taken out here so the customer is told about them once (WhatsApp plan Step 2.8, findings
+    7 and 8).
+
+    A line Shopify can't fill is kept at 0 with only a warning, such as MERCHANDISE_OUT_OF_STOCK
+    (Step 2.1a, result 6), and that warning comes back on every later change to the cart. A warning's
+    `target` is "an ID pointing to the affected resource", not documented as the line
+    (https://shopify.dev/docs/api/storefront/latest/objects/CartWarning). So the warnings are never
+    read: the add is judged by the variant's own line, which went in only if its quantity grew.
+    """
     result = _query(shop, mutation, variables)[name]
     if result["userErrors"]:
         raise ShopifyCartError(result["userErrors"][0]["message"])
-    # A line Shopify can't fill is set to 0 with only a warning, e.g. MERCHANDISE_OUT_OF_STOCK when the
-    # store doesn't sell it where the cart is (Step 2.1a, result 6), so those are refusals too.
-    for warning in result["warnings"]:
-        if warning["code"].startswith("MERCHANDISE_"):
-            raise ShopifyCartError(warning["message"])
-    return _cart(result["cart"])
+
+    node = result["cart"]
+    quantity = sum(line["quantity"] for line in _line_nodes(node) if line["merchandise"]["id"] == variant_id)
+    dropped = [line for line in _line_nodes(node) if line["quantity"] == 0]
+    if dropped:
+        node = _remove_lines(shop, node, dropped)
+    if quantity <= had:
+        raise ShopifySoldOut()
+
+    cart = _cart(node)
+    cart["removed"] = [
+        {"title": line["merchandise"]["product"]["title"], "variant": line["merchandise"]["title"]} for line in dropped
+    ]
+    return cart
+
+
+def _remove_lines(shop, node: dict[str, Any], lines: list[dict]) -> dict[str, Any]:
+    """The cart without these lines, or as it was if Shopify refuses: they're left out when shown anyway."""
+    variables = {"cartId": node["id"], "lineIds": [line["id"] for line in lines]}
+    result = _query(shop, CART_LINES_REMOVE, variables)["cartLinesRemove"]
+    return node if result["userErrors"] or not result["cart"] else result["cart"]
+
+
+def _line_nodes(node: dict[str, Any]) -> list[dict]:
+    return node["lines"]["nodes"]
 
 
 def _paging(first: int, after: str | None, before: str | None) -> dict[str, Any]:
@@ -344,14 +466,18 @@ def _cart(node: dict[str, Any]) -> dict[str, Any]:
         "total_quantity": node["totalQuantity"],
         "total_amount": total["amount"],
         "currency_code": total["currencyCode"],
+        # A line Shopify set to 0 is left out: Shopify Checkout drops it too, saying "Some items are no
+        # longer available" (WhatsApp plan Step 2.8, finding 8).
         "lines": [
             {
                 "title": line["merchandise"]["product"]["title"],
                 "variant": line["merchandise"]["title"],
+                "variant_id": line["merchandise"]["id"],
                 "quantity": line["quantity"],
                 "amount": line["cost"]["totalAmount"]["amount"],
             }
-            for line in node["lines"]["nodes"]
+            for line in _line_nodes(node)
+            if line["quantity"] > 0
         ],
     }
 

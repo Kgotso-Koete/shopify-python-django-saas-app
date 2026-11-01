@@ -17,7 +17,7 @@ import graphene
 
 from apps.whatsapp.constants import AccountPurpose, ConversationMode
 from apps.whatsapp.models import WhatsAppAccount
-from apps.whatsapp.schema import ConversationModeEnum
+from apps.whatsapp.schema import WHATSAPP_PLAN, ConversationModeEnum
 from common.acl.policies import IsTenantMemberAccess
 from common.graphql import exceptions
 from common.graphql.acl import permission_classes, requires
@@ -140,5 +140,9 @@ class SetWhatsAppStorefrontMode(graphene.Mutation):
 
 @permission_classes(IsTenantMemberAccess)
 class Mutation(graphene.ObjectType):
-    choose_whats_app_store = permission_classes(requires("whatsapp.manage"))(ChooseWhatsAppStore.Field())
-    set_whats_app_storefront_mode = permission_classes(requires("whatsapp.manage"))(SetWhatsAppStorefrontMode.Field())
+    # Changing a number's store or mode uses WhatsApp, so the plan must include it (plan phase 3,
+    # decision 5); listing the numbers' stores doesn't.
+    choose_whats_app_store = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(ChooseWhatsAppStore.Field())
+    set_whats_app_storefront_mode = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(
+        SetWhatsAppStorefrontMode.Field()
+    )

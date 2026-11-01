@@ -27,6 +27,13 @@ AWAITING_CONFIRMATION = {
 
 NULLABLE_STRING = {"type": ["string", "null"]}
 
+# A name the model made up gets confirmed by a user who never chose it (Step 2.8, finding 1: "create a
+# new item" became an item called "New Item"), so every name says where it comes from.
+USERS_NAME = {
+    "type": "string",
+    "description": "The name exactly as the user gave it; never make one up. If the user gave none, ask for it.",
+}
+
 
 def _tool(function):
     """Turns a refusal into the output the model reads."""
@@ -134,7 +141,7 @@ TOOLS = Toolset(
         Tool(
             "rename_organization",
             "Ask the user to confirm renaming the organization.",
-            {"name": {"type": "string", "description": "The new name."}},
+            {"name": USERS_NAME},
             rename_organization,
         ),
         Tool(
@@ -146,7 +153,7 @@ TOOLS = Toolset(
         Tool(
             "create_item",
             "Ask the user to confirm creating an item in the organization.",
-            {"name": {"type": "string"}},
+            {"name": USERS_NAME},
             create_item,
         ),
         Tool(
@@ -154,7 +161,7 @@ TOOLS = Toolset(
             "Ask the user to confirm renaming one of the organization's items.",
             {
                 "item_id": {"type": "string", "description": "An id from list_items."},
-                "name": {"type": "string", "description": "The new name."},
+                "name": USERS_NAME,
             },
             update_item,
         ),

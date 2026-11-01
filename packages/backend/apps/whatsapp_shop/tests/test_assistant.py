@@ -3,8 +3,11 @@ Tests for the store assistant (WhatsApp plan Step 2.5, phase 2 decisions 2 and 3
 13 and 21): on a number set to the assistant, a customer's words go to it, with this app's tools and
 instructions.
 
-- the model is told which shop it serves, and gets exactly three tools: finding products, showing a
-  product and showing the cart; none changes the cart
+- the model is told which shop it serves, by the store's own name in Shopify, and gets exactly four
+  tools: finding products, showing a list of products, showing a product and showing the cart; none
+  changes the cart
+- its instructions welcome customers to the store, never mention a product it hasn't found, and show
+  products as a list the customer taps, never as text (Step 2.8, findings 4, 6 and 12)
 - finding products reads the store's products for sale, by words or newest first
 - showing a product or the cart ends the turn on that screen, so Add to cart and Buy now are the
   customer's own presses
@@ -93,6 +96,7 @@ def shopify(mocker):
             "total_amount": "19.99",
             "currency_code": "USD",
             "lines": [],
+            "removed": [],
         },
     }.items():
         setattr(fake, name, mocker.patch(f"apps.shopify.storefront.{name}", return_value=value))
@@ -111,16 +115,35 @@ def tool_output(provider, request=1):
 
 
 class TestWhatTheModelGets:
-    def test_the_shops_name_and_three_tools_none_changing_the_cart(self, customer, mocker):
+    def test_the_stores_name_and_four_tools_none_changing_the_cart(self, customer, mocker):
         provider = with_model(mocker, FakeProvider(says("Hello! What are you looking for?")))
 
         [reply] = send(customer, "hi there")
 
         assert reply.body == "Hello! What are you looking for?"
-        assert "Acme Outdoor" in provider.requests[0]["instructions"]
+        # The store's own name in Shopify (Step 2.8, finding 12), faked in conftest.py.
+        assert "Acme Snow Co" in provider.requests[0]["instructions"]
         names = [tool["name"] for tool in provider.requests[0]["tools"]]
-        assert names == ["find_products", "show_product", "show_cart"]
+        assert names == ["find_products", "show_products", "show_product", "show_cart"]
         assert [tool["name"] for tool in TOOLS.schemas()] == names
+
+    def test_the_instructions_welcome_to_the_store_and_forbid_made_up_examples(self, customer, mocker):
+        # Step 2.8, finding 4: a snowboard shop's greeting suggested an "investment guide".
+        provider = with_model(mocker, FakeProvider(says("Hi!")))
+
+        send(customer, "hi")
+
+        instructions = provider.requests[0]["instructions"]
+        assert "welcome them to Acme Snow Co" in instructions
+        assert "not even as an example" in instructions
+
+    def test_the_instructions_say_to_show_products_as_a_list_never_as_text(self, customer, mocker):
+        # Step 2.8, finding 6: products listed as text, with "If you tap on one, I can open it".
+        provider = with_model(mocker, FakeProvider(says("Hi!")))
+
+        send(customer, "hi")
+
+        assert "Never list products as text" in provider.requests[0]["instructions"]
 
     def test_the_customer_is_a_store_customer_from_their_first_words(self, customer, mocker):
         with_model(mocker, FakeProvider(says("Hello!")))
@@ -175,6 +198,26 @@ class TestShowing:
         shopify.create_cart.assert_not_called()
         send(customer, press=screen.press("Add to cart"))
         shopify.create_cart.assert_called_once()
+
+    def test_several_products_end_the_turn_on_a_list_the_customer_taps(self, customer, shop, shopify, mocker):
+        # Step 2.8, finding 6: the menus' own product list, whose rows open each product's screen.
+        provider = with_model(mocker, FakeProvider(calls("show_products", '{"words": "board"}')))
+
+        [listing] = send(customer, "show me your boards")
+
+        shopify.search_products.assert_called_once_with(shop, "board", first=7, after=None, before=None)
+        assert listing.titles[0] == "Snowboard 1"
+        assert len(provider.requests) == 1
+        [screen] = send(customer, press=listing.press("Snowboard 1"))
+        assert screen.titles == ["Add to cart", "Buy now", "Back"]
+
+    def test_with_no_words_the_list_is_the_newest(self, customer, shop, shopify, mocker):
+        with_model(mocker, FakeProvider(calls("show_products", '{"words": null}')))
+
+        [listing] = send(customer, "what's new?")
+
+        shopify.list_products.assert_called_once_with(shop, first=7, after=None, before=None)
+        assert [title for title in listing.titles[:2]] == ["Snowboard 1", "Snowboard 2"]
 
     def test_the_cart_ends_the_turn_on_its_screen(self, customer, mocker, shopify):
         with_model(mocker, FakeProvider(calls("show_cart", "{}")))

@@ -3,7 +3,8 @@ import { extractGraphQLErrors } from '@sb/webapp-api-client/api';
 import { PageLayout } from '@sb/webapp-core/components/pageLayout';
 import { Paragraph } from '@sb/webapp-core/components/typography';
 import { Card, CardContent } from '@sb/webapp-core/components/ui/card';
-import { useGenerateTenantPath } from '@sb/webapp-tenants/hooks';
+import { PlanRequiredNotice } from '@sb/webapp-tenants/components/planRequiredNotice';
+import { useGenerateTenantPath, useOrganizationFeatures } from '@sb/webapp-tenants/hooks';
 import { useCurrentTenant } from '@sb/webapp-tenants/providers';
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Package, Store } from 'lucide-react';
 import { FC, ReactNode } from 'react';
@@ -81,6 +82,8 @@ export const ShopifyProducts: FC = () => {
   // The store and the cursor live in the URL, so a refresh or the back button keeps the page.
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const { isUnlocked } = useOrganizationFeatures();
+  const shopifyUnlocked = isUnlocked('SHOPIFY');
   const { data: shopsData, loading: shopsLoading } = useQuery(shopifyShopsQuery, {
     variables: { tenantId: currentTenant?.id ?? '' },
     skip: !currentTenant,
@@ -100,7 +103,8 @@ export const ShopifyProducts: FC = () => {
       ...(after ? { after } : {}),
       ...(before ? { before } : {}),
     },
-    skip: !currentTenant || !shopDomain,
+    // Browsing calls Shopify, so it waits for a plan that includes it (WhatsApp plan phase 3, decision 5).
+    skip: !currentTenant || !shopDomain || !shopifyUnlocked,
   });
 
   const shopifyPagePath = generateTenantPath(RoutesConfig.shopify.list);
@@ -115,6 +119,17 @@ export const ShopifyProducts: FC = () => {
   const pageInfo = data?.shopifyProducts.pageInfo;
 
   const renderContent = () => {
+    if (!shopifyUnlocked) {
+      return (
+        <PlanRequiredNotice feature="Shopify">
+          <FormattedMessage
+            id="ShopifyProducts / Plan required"
+            defaultMessage="Your stores are kept, and their products show here again on a plan that includes Shopify. Shopify comes with the paid plans, free trial included."
+          />
+        </PlanRequiredNotice>
+      );
+    }
+
     if (shopsLoading || (loading && !data)) {
       return (
         <div className="animate-pulse space-y-4">

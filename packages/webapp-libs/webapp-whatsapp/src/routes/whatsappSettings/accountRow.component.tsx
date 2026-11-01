@@ -3,6 +3,7 @@ import { AccountPurpose, ConversationMode } from '@sb/webapp-api-client/graphql'
 import { Button, ButtonVariant } from '@sb/webapp-core/components/buttons';
 import { ConfirmDialog } from '@sb/webapp-core/components/confirmDialog';
 import { Input } from '@sb/webapp-core/components/forms';
+import { useToast } from '@sb/webapp-core/toast';
 import { CheckCircle2, Circle, Phone, Store, Unplug, Wrench, XCircle } from 'lucide-react';
 import { FormEvent, ReactNode, useState } from 'react';
 import { FormattedMessage, useIntl } from 'react-intl';
@@ -116,7 +117,14 @@ export const AccountRow = ({ account, tenantId, canManage, onChanged, store, sto
         />
       )}
       {store && account.isActive && mode && (
-        <ModeSetting tenantId={tenantId} accountId={account.id} mode={mode} canManage={canManage} onChanged={onChanged} />
+        <ModeSetting
+          tenantId={tenantId}
+          accountId={account.id}
+          purpose={account.purpose}
+          mode={mode}
+          canManage={canManage}
+          onChanged={onChanged}
+        />
       )}
 
       {canManage && account.isActive && (
@@ -193,6 +201,7 @@ type StoreLineProps = {
  */
 const StoreLine = ({ tenantId, accountId, store, stores, onChanged }: StoreLineProps) => {
   const intl = useIntl();
+  const { toast } = useToast();
   const [chosen, setChosen] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [chooseStore, { loading }] = useMutation(chooseWhatsAppStoreMutation);
@@ -204,6 +213,14 @@ const StoreLine = ({ tenantId, accountId, store, stores, onChanged }: StoreLineP
     setProblem(null);
     try {
       await chooseStore({ variables: { input: { tenantId, accountId, shopDomain: chosen } } });
+      // Saved straight away, so the admin is told it was (WhatsApp plan Step 2.8, finding 14).
+      toast({
+        description: intl.formatMessage(
+          { defaultMessage: 'This number now sells from {store}.', id: 'WhatsAppSettings / Store / Saved' },
+          { store: chosen }
+        ),
+        variant: 'success',
+      });
       setChosen('');
       onChanged();
     } catch (error) {
@@ -286,6 +303,7 @@ type PurposeChangerProps = { tenantId: string; account: WhatsAppAccount; onChang
  */
 const PurposeChanger = ({ tenantId, account, onChanged }: PurposeChangerProps) => {
   const intl = useIntl();
+  const { toast } = useToast();
   const [chosen, setChosen] = useState<AccountPurpose>(account.purpose);
   const [problem, setProblem] = useState<string | null>(null);
   const [change, { loading }] = useMutation(changeWhatsAppNumberPurposeMutation);
@@ -313,6 +331,15 @@ const PurposeChanger = ({ tenantId, account, onChanged }: PurposeChangerProps) =
     setProblem(null);
     try {
       await change({ variables: { input: { tenantId, accountId: account.id, purpose: chosen } } });
+      // Step 2.8, finding 14, in the words the options use.
+      const serves = options.find(({ value }) => value === chosen)?.label.toLowerCase();
+      toast({
+        description: intl.formatMessage(
+          { defaultMessage: '{number} now serves {serves}.', id: 'WhatsAppSettings / Purpose / Saved' },
+          { number: account.displayPhoneNumber, serves }
+        ),
+        variant: 'success',
+      });
       onChanged();
     } catch (error) {
       setProblem(
@@ -372,6 +399,7 @@ const PurposeChanger = ({ tenantId, account, onChanged }: PurposeChangerProps) =
 type ModeSettingProps = {
   tenantId: string;
   accountId: string;
+  purpose: AccountPurpose;
   mode: ConversationMode;
   canManage: boolean;
   onChanged: () => void;
@@ -381,9 +409,21 @@ type ModeSettingProps = {
  * Whether the number's customers get menus or the AI assistant (WhatsApp plan phase 2, decision 2):
  * the number's own setting, since the assistant costs money per message. whatsapp.manage changes it.
  */
-const ModeSetting = ({ tenantId, accountId, mode, canManage, onChanged }: ModeSettingProps) => {
+const ModeSetting = ({ tenantId, accountId, purpose, mode, canManage, onChanged }: ModeSettingProps) => {
   const intl = useIntl();
+  const { toast } = useToast();
   const [problem, setProblem] = useState<string | null>(null);
+
+  // On a number serving both, a linked member's own profile setting decides their mode; this setting
+  // is for everyone else (WhatsApp plan Step 2.8, finding 2).
+  const membersChoose = purpose === AccountPurpose.INTERNAL_AND_EXTERNAL_COMMUNICATIONS && (
+    <p className="text-xs text-muted-foreground">
+      <FormattedMessage
+        defaultMessage="Members who linked their phone choose their own on their profile page."
+        id="WhatsAppSettings / Mode / Members choose"
+      />
+    </p>
+  );
   const [setMode, { loading }] = useMutation(setWhatsAppStorefrontModeMutation);
 
   const labels = {
@@ -399,13 +439,16 @@ const ModeSetting = ({ tenantId, accountId, mode, canManage, onChanged }: ModeSe
 
   if (!canManage) {
     return (
-      <p className="text-sm text-muted-foreground" data-testid={`whatsapp-mode-${accountId}`}>
-        {mode === ConversationMode.AGENTIC ? (
-          <FormattedMessage defaultMessage="Customers get the AI assistant." id="WhatsAppSettings / Mode / Gets assistant" />
-        ) : (
-          <FormattedMessage defaultMessage="Customers get menus." id="WhatsAppSettings / Mode / Gets menus" />
-        )}
-      </p>
+      <div className="space-y-1" data-testid={`whatsapp-mode-${accountId}`}>
+        <p className="text-sm text-muted-foreground">
+          {mode === ConversationMode.AGENTIC ? (
+            <FormattedMessage defaultMessage="Customers get the AI assistant." id="WhatsAppSettings / Mode / Gets assistant" />
+          ) : (
+            <FormattedMessage defaultMessage="Customers get menus." id="WhatsAppSettings / Mode / Gets menus" />
+          )}
+        </p>
+        {membersChoose}
+      </div>
     );
   }
 
@@ -413,6 +456,17 @@ const ModeSetting = ({ tenantId, accountId, mode, canManage, onChanged }: ModeSe
     setProblem(null);
     try {
       await setMode({ variables: { input: { tenantId, accountId, mode: chosen } } });
+      // Saved as soon as it's chosen, so the admin is told it was (WhatsApp plan Step 2.8, finding 14).
+      toast({
+        description:
+          chosen === ConversationMode.AGENTIC
+            ? intl.formatMessage({
+                defaultMessage: 'Customers now get the AI assistant.',
+                id: 'WhatsAppSettings / Mode / Saved assistant',
+              })
+            : intl.formatMessage({ defaultMessage: 'Customers now get menus.', id: 'WhatsAppSettings / Mode / Saved menus' }),
+        variant: 'success',
+      });
       onChanged();
     } catch (error) {
       setProblem(
@@ -451,6 +505,7 @@ const ModeSetting = ({ tenantId, accountId, mode, canManage, onChanged }: ModeSe
           id="WhatsAppSettings / Mode / Cost"
         />
       </p>
+      {membersChoose}
       {problem && <p className="text-sm text-destructive">{problem}</p>}
     </fieldset>
   );

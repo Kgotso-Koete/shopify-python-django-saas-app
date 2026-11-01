@@ -4,8 +4,9 @@ Step 2.5, phase 2 decisions 2 and 3, D12).
 
 A fixed list, reading only the number's own store, so the assistant can't reach another shop:
 - find_products: products for sale, by words or newest first, 7 at a time
-- show_product and show_cart: end the turn on the menus' own screen, so Add to cart, Buy now and
-  Checkout are the customer's presses (phase 2, decision 3). No tool changes the cart.
+- show_products, show_product and show_cart: end the turn on the menus' own screen, so opening a
+  product, Add to cart, Buy now and Checkout are the customer's presses (phase 2, decision 3; Step
+  2.8, finding 6). No tool changes the cart.
 
 A product id the model makes up finds nothing in this store and says the product isn't for sale.
 A problem comes back as {"success": false, "error": ...}, as the team's tools return one.
@@ -50,6 +51,16 @@ def find_products(turn, words, after):
     }
 
 
+def show_products(turn, words):
+    """
+    The menus' own list of products, which the customer taps to open each one, instead of a list in
+    the model's text that can't be tapped (Step 2.8, finding 6). Ends the turn, as show_product does.
+    """
+    handler = menus.StoreHandler()
+    listing = {"words": words.strip() if words and words.strip() else None, "after": None, "before": None}
+    return ToolResult(dict(SHOWN), messages=handler.show(turn, menus.BROWSE, listing))
+
+
 def show_product(turn, product_id):
     handler = menus.StoreHandler()
     return ToolResult(
@@ -70,6 +81,13 @@ TOOLS = Toolset(
             "previous result's next_page as after for the next 7, or null.",
             {"words": NULLABLE_STRING, "after": NULLABLE_STRING},
             find_products,
+        ),
+        Tool(
+            "show_products",
+            "Show the customer a list of the shop's products for sale, which they tap to open each one: those "
+            "matching words, or null for the newest. Ends your turn. Use it instead of listing products as text.",
+            {"words": NULLABLE_STRING},
+            show_products,
         ),
         Tool(
             "show_product",

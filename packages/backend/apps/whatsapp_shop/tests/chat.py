@@ -27,6 +27,11 @@ class Screen:
 
     def __init__(self, message):
         self.link = None
+        if message["type"] == "image":
+            # A picture on its own, such as the store's logo: its caption reads as the body.
+            image = message["image"]
+            self.body, self.image_url, self.options, self.descriptions = image.get("caption", ""), image["link"], [], []
+            return
         if message["type"] == "text":
             self.body, self.image_url, self.options, self.descriptions = message["text"]["body"], None, [], []
             return

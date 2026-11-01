@@ -10,6 +10,8 @@ export * from './useTenantRoleAccessCheck';
 export * from './useCurrentTenantRole';
 export * from './useCurrentTenantMembership';
 export * from './usePermissionCheck';
+// Fork addition (WhatsApp plan phase 3): which features the organization's plan unlocks.
+export * from './useOrganizationFeatures';
 
 // Re-export PermissionGate from components for convenience
 export { PermissionGate } from '../components/permissionGate';

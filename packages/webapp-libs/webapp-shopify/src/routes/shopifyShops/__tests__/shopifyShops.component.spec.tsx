@@ -2,6 +2,7 @@ import type { MockedResponse } from '@apollo/client/testing';
 import { TenantType as TenantTypeField } from '@sb/webapp-api-client/constants';
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
 import { composeMockedQueryResult } from '@sb/webapp-api-client/tests/utils';
+import { organizationFeaturesQuery } from '@sb/webapp-tenants/hooks';
 import { tenantFactory } from '@sb/webapp-tenants/src/tests/factories/tenant';
 import { createMockRouterProps, render } from '@sb/webapp-tenants/src/tests/utils/rendering';
 import { screen, waitFor, within } from '@testing-library/react';
@@ -47,13 +48,31 @@ const shopsMock = (shops: ReturnType<typeof shop>[]) =>
     data: { shopifyShops: shops },
   });
 
-const renderPage = (mocks: MockedResponse[]) =>
+// What the organization's plan unlocks (WhatsApp plan phase 3, decision 8): Shopify, unless a test says not.
+const featuresMock = (features: string[]) => ({
+  ...composeMockedQueryResult(organizationFeaturesQuery, {
+    variables: { tenantId },
+    data: { organizationFeatures: features },
+  }),
+  maxUsageCount: Number.POSITIVE_INFINITY,
+});
+
+const renderPage = (mocks: MockedResponse[], features = ['SHOPIFY', 'WHATSAPP']) =>
   render(<ShopifyShops />, {
-    apolloMocks: [userMock(), ...mocks],
+    apolloMocks: [userMock(), featuresMock(features), ...mocks],
     routerProps: createMockRouterProps(RoutesConfig.shopify.list, { tenantId }),
   });
 
 describe('ShopifyShops: Component', () => {
+  // WhatsApp plan phase 3, decisions 3 and 5: the stores are kept and shown, but no new one is connected.
+  it("shows the stores kept, without the connect form, while the plan doesn't include Shopify", async () => {
+    renderPage([configMock(), shopsMock([shop({ shopDomain: 'kept.myshopify.com' })])], []);
+
+    expect(await screen.findByTestId('plan-required')).toHaveTextContent(/your plan doesn't include shopify/i);
+    expect(await screen.findByTestId('shopify-shop-kept.myshopify.com')).toBeInTheDocument();
+    expect(screen.queryByTestId('shopify-domain-input')).not.toBeInTheDocument();
+  });
+
   it('says the integration is not configured when Shopify is disabled', async () => {
     renderPage([configMock(false)]);
 

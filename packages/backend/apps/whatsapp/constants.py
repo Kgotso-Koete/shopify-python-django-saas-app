@@ -82,6 +82,9 @@ class MessageKind(models.TextChoices):
     # Outbound only: a message we send with buttons, a list, a link button or a Flow (builders.py).
     # Our outbound plain text is TEXT, like inbound text.
     INTERACTIVE = "INTERACTIVE", "Interactive"
+    # Outbound only: a picture sent on its own, such as a store's logo at its welcome (Step 2.8,
+    # finding 13). An inbound picture is still UNSUPPORTED.
+    IMAGE = "IMAGE", "Image"
 
 
 class MessageDirection(models.TextChoices):

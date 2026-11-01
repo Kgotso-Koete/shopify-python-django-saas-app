@@ -58,6 +58,17 @@ def itn_data(**fields):
     }
 
 
+@pytest.fixture(autouse=True)
+def the_clock_at_now(freezer):
+    """
+    Every test here starts with the clock at NOW, so none reads the real one. The fixtures' dates are
+    fixed around NOW (a period ending 2026-10-31, renewals across a month's end), and on 2026-10-31
+    three tests that didn't freeze the clock found the real one past that period and failed (WhatsApp
+    plan Step 3.3's record). A test still moves the clock on with freezer.move_to(...).
+    """
+    freezer.move_to(NOW)
+
+
 @pytest.fixture
 def owner(user_factory):
     return user_factory()
@@ -269,7 +280,10 @@ class TestProcessItnRecurring:
 
 
 class TestProcessItnCancelled:
-    def test_cancellation_from_payfast_ends_the_subscription_at_period_end(self, paid_subscription):
+    def test_cancellation_from_payfast_ends_the_subscription_at_period_end(self, freezer, paid_subscription):
+        # The clock at NOW, inside paid_subscription's period: effective_plan() reads the real clock,
+        # which passed the period's fixed end on 2026-10-31 and failed this test from then on.
+        freezer.move_to(NOW)
         # A buyer or the merchant can cancel on PayFast's side; PayFast then sends payment_status=CANCELLED
         # (https://developers.payfast.co.za/docs#step_4_confirm_payment). Access lasts until the period ends.
         services.process_itn(itn_data(token=paid_subscription.token, payment_status="CANCELLED", amount_gross="0.00"))
@@ -386,7 +400,9 @@ class TestPlanChangeCheckout:
         with pytest.raises(services.PayFastError, match="scheduled"):
             subscription_checkout(paid_subscription.tenant, owner, plan=YEARLY)
 
-    def test_cancelled_subscription_cannot_switch(self, owner, paid_subscription):
+    def test_cancelled_subscription_cannot_switch(self, freezer, owner, paid_subscription):
+        # Inside paid_subscription's period, which ends on a fixed date (see NOW).
+        freezer.move_to(NOW)
         paid_subscription.cancel_at_period_end = True
         paid_subscription.save()
 
@@ -592,7 +608,9 @@ class TestPayFastApiIsCalledWithoutHoldingLocks:
 
 
 class TestCancelSubscription:
-    def test_cancel_stops_billing_now_but_keeps_access_until_period_end(self, paid_subscription, payfast_api):
+    def test_cancel_stops_billing_now_but_keeps_access_until_period_end(self, freezer, paid_subscription, payfast_api):
+        # Inside paid_subscription's period, which ends on a fixed date (see NOW).
+        freezer.move_to(NOW)
         subscription = services.cancel_subscription(tenant=paid_subscription.tenant)
 
         payfast_api.cancel.assert_called_once_with(paid_subscription.token)

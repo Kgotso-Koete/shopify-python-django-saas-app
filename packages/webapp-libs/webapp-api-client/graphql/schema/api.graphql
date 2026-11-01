@@ -36,6 +36,7 @@ that will be handled by the multipart request spec
 """
 scalar Upload
 type Query {
+  organizationFeatures(tenantId: ID!): [String!]!
   whatsAppStorefronts(tenantId: ID!): [WhatsAppStorefrontType!]!
   whatsAppEligibleStores(tenantId: ID!): [String!]!
   whatsAppLinks: [WhatsAppLinkType!]!

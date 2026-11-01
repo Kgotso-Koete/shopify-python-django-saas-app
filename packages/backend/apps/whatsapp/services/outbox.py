@@ -50,8 +50,8 @@ QUEUED_MESSAGE_MAX_AGE_SECONDS = 60 * 60
 # can't collide with any other code's advisory locks. Any fixed number would do; 0x5741 is "WA".
 SEND_LOCK_NAMESPACE = 0x5741
 
-# A queued row's kind comes from the message's own type (builders.py makes only these two).
-KINDS_BY_TYPE = {"text": MessageKind.TEXT, "interactive": MessageKind.INTERACTIVE}
+# A queued row's kind comes from the message's own type (builders.py makes only these three).
+KINDS_BY_TYPE = {"text": MessageKind.TEXT, "interactive": MessageKind.INTERACTIVE, "image": MessageKind.IMAGE}
 
 
 class DrainResult(enum.StrEnum):

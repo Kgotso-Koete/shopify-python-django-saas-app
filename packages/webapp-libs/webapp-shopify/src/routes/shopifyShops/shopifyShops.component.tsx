@@ -2,9 +2,24 @@ import { useMutation, useQuery } from '@apollo/client/react';
 import { ButtonVariant, Link } from '@sb/webapp-core/components/buttons';
 import { PageLayout } from '@sb/webapp-core/components/pageLayout';
 import { Paragraph } from '@sb/webapp-core/components/typography';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@sb/webapp-core/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@sb/webapp-core/components/ui/card';
+import { PlanRequiredNotice } from '@sb/webapp-tenants/components/planRequiredNotice';
+import { useOrganizationFeatures } from '@sb/webapp-tenants/hooks';
 import { useCurrentTenant } from '@sb/webapp-tenants/providers';
-import { Store, Plus, AlertTriangle, XCircle, CheckCircle2, Unplug } from 'lucide-react';
+import {
+  Store,
+  Plus,
+  AlertTriangle,
+  XCircle,
+  CheckCircle2,
+  Unplug,
+} from 'lucide-react';
 import { FC, FormEvent, useCallback, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { FormattedMessage, useIntl } from 'react-intl';
@@ -22,14 +37,24 @@ export const ShopifyShops: FC = () => {
   const [shopDomain, setShopDomain] = useState('');
   const [domainError, setDomainError] = useState('');
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const { isUnlocked } = useOrganizationFeatures();
+  const shopifyUnlocked = isUnlocked('SHOPIFY');
 
-  const { data: configData, loading: configLoading } = useQuery(shopifyConfigQuery);
-  const { data: shopsData, loading: shopsLoading, error: shopsError, refetch } = useQuery(shopifyShopsQuery, {
+  const { data: configData, loading: configLoading } =
+    useQuery(shopifyConfigQuery);
+  const {
+    data: shopsData,
+    loading: shopsLoading,
+    error: shopsError,
+    refetch,
+  } = useQuery(shopifyShopsQuery, {
     variables: { tenantId: currentTenant?.id ?? '' },
     skip: !currentTenant,
   });
 
-  const [startInstall, { loading: installLoading }] = useMutation(shopifyStartInstallMutation);
+  const [startInstall, { loading: installLoading }] = useMutation(
+    shopifyStartInstallMutation,
+  );
   const [disconnectShop] = useMutation(shopifyDisconnectShopMutation);
 
   const isValidDomain = (domain: string): boolean => {
@@ -44,9 +69,10 @@ export const ShopifyShops: FC = () => {
       if (!isValidDomain(shopDomain)) {
         setDomainError(
           intl.formatMessage({
-            defaultMessage: 'Enter a valid Shopify domain (e.g. my-store.myshopify.com)',
+            defaultMessage:
+              'Enter a valid Shopify domain (e.g. my-store.myshopify.com)',
             id: 'ShopifyShops / Invalid domain',
-          })
+          }),
         );
         return;
       }
@@ -65,15 +91,23 @@ export const ShopifyShops: FC = () => {
         setDomainError(String(err));
       }
     },
-    [shopDomain, currentTenant, startInstall, intl]
+    [shopDomain, currentTenant, startInstall, intl],
   );
 
   const handleDisconnect = useCallback(
     async (domain: string) => {
-      if (!window.confirm(intl.formatMessage(
-        { defaultMessage: 'Disconnect {domain}? The app stays installed on the store.', id: 'ShopifyShops / Confirm disconnect' },
-        { domain }
-      ))) {
+      if (
+        !window.confirm(
+          intl.formatMessage(
+            {
+              defaultMessage:
+                'Disconnect {domain}? The app stays installed on the store.',
+              id: 'ShopifyShops / Confirm disconnect',
+            },
+            { domain },
+          ),
+        )
+      ) {
         return;
       }
 
@@ -89,7 +123,7 @@ export const ShopifyShops: FC = () => {
         setDisconnecting(null);
       }
     },
-    [currentTenant, disconnectShop, refetch, intl]
+    [currentTenant, disconnectShop, refetch, intl],
   );
 
   if (configLoading) {
@@ -108,7 +142,10 @@ export const ShopifyShops: FC = () => {
     return (
       <PageLayout>
         <Helmet
-          title={intl.formatMessage({ defaultMessage: 'Shopify', id: 'ShopifyShops / page title disabled' })}
+          title={intl.formatMessage({
+            defaultMessage: 'Shopify',
+            id: 'ShopifyShops / page title disabled',
+          })}
         />
         <div className="mx-auto w-full max-w-5xl">
           <Card>
@@ -116,7 +153,10 @@ export const ShopifyShops: FC = () => {
               <div className="flex flex-col items-center justify-center text-center">
                 <AlertTriangle className="h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">
-                  <FormattedMessage id="ShopifyShops / Not configured title" defaultMessage="Shopify integration is not configured" />
+                  <FormattedMessage
+                    id="ShopifyShops / Not configured title"
+                    defaultMessage="Shopify integration is not configured"
+                  />
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   <FormattedMessage
@@ -139,7 +179,10 @@ export const ShopifyShops: FC = () => {
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
           <AlertTriangle className="h-3 w-3" />
-          <FormattedMessage id="ShopifyShops / Badge needs reinstall" defaultMessage="Needs reinstall" />
+          <FormattedMessage
+            id="ShopifyShops / Badge needs reinstall"
+            defaultMessage="Needs reinstall"
+          />
         </span>
       );
     }
@@ -147,14 +190,20 @@ export const ShopifyShops: FC = () => {
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/30 dark:text-red-400">
           <XCircle className="h-3 w-3" />
-          <FormattedMessage id="ShopifyShops / Badge uninstalled" defaultMessage="Uninstalled" />
+          <FormattedMessage
+            id="ShopifyShops / Badge uninstalled"
+            defaultMessage="Uninstalled"
+          />
         </span>
       );
     }
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
         <CheckCircle2 className="h-3 w-3" />
-        <FormattedMessage id="ShopifyShops / Badge active" defaultMessage="Active" />
+        <FormattedMessage
+          id="ShopifyShops / Badge active"
+          defaultMessage="Active"
+        />
       </span>
     );
   };
@@ -162,7 +211,10 @@ export const ShopifyShops: FC = () => {
   return (
     <PageLayout>
       <Helmet
-        title={intl.formatMessage({ defaultMessage: 'Shopify Stores', id: 'ShopifyShops / page title' })}
+        title={intl.formatMessage({
+          defaultMessage: 'Shopify Stores',
+          id: 'ShopifyShops / page title',
+        })}
       />
 
       <div className="mx-auto w-full max-w-5xl space-y-8">
@@ -171,7 +223,10 @@ export const ShopifyShops: FC = () => {
           <div className="flex items-center gap-2">
             <Store className="h-6 w-6 text-primary" />
             <h1 className="text-3xl font-bold tracking-tight">
-              <FormattedMessage id="ShopifyShops / Title" defaultMessage="Shopify Stores" />
+              <FormattedMessage
+                id="ShopifyShops / Title"
+                defaultMessage="Shopify Stores"
+              />
             </h1>
           </div>
           <Paragraph className="text-lg text-muted-foreground">
@@ -182,51 +237,73 @@ export const ShopifyShops: FC = () => {
           </Paragraph>
         </div>
 
+        {/* While the plan doesn't include Shopify, the stores are kept and listed, but no new one is
+            connected (WhatsApp plan phase 3, decisions 3 and 5). The backend refuses it anyway. */}
+        {!shopifyUnlocked && (
+          <PlanRequiredNotice feature="Shopify">
+            <FormattedMessage
+              id="ShopifyShops / Plan required"
+              defaultMessage="Your stores are kept, and come back as they are on a plan that includes Shopify. Shopify comes with the paid plans, free trial included."
+            />
+          </PlanRequiredNotice>
+        )}
+
         {/* Connect a store form */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5" />
-              <FormattedMessage id="ShopifyShops / Connect title" defaultMessage="Connect a store" />
-            </CardTitle>
-            <CardDescription>
-              <FormattedMessage
-                id="ShopifyShops / Connect description"
-                defaultMessage="Enter your Shopify store domain to start the installation"
-              />
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleStartInstall} className="flex gap-3">
-              <div className="flex-1">
-                <input
-                  type="text"
-                  value={shopDomain}
-                  onChange={(e) => {
-                    setShopDomain(e.target.value);
-                    setDomainError('');
-                  }}
-                  placeholder="my-store.myshopify.com"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  data-testid="shopify-domain-input"
+        {shopifyUnlocked && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Plus className="h-5 w-5" />
+                <FormattedMessage
+                  id="ShopifyShops / Connect title"
+                  defaultMessage="Connect a store"
                 />
-                {domainError && (
-                  <p className="mt-1 text-sm text-destructive" data-testid="shopify-domain-error">
-                    {domainError}
-                  </p>
-                )}
-              </div>
-              <button
-                type="submit"
-                disabled={installLoading || !shopDomain}
-                className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-                data-testid="shopify-connect-button"
-              >
-                <FormattedMessage id="ShopifyShops / Connect button" defaultMessage="Connect" />
-              </button>
-            </form>
-          </CardContent>
-        </Card>
+              </CardTitle>
+              <CardDescription>
+                <FormattedMessage
+                  id="ShopifyShops / Connect description"
+                  defaultMessage="Enter your Shopify store domain to start the installation"
+                />
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleStartInstall} className="flex gap-3">
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={shopDomain}
+                    onChange={(e) => {
+                      setShopDomain(e.target.value);
+                      setDomainError('');
+                    }}
+                    placeholder="my-store.myshopify.com"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    data-testid="shopify-domain-input"
+                  />
+                  {domainError && (
+                    <p
+                      className="mt-1 text-sm text-destructive"
+                      data-testid="shopify-domain-error"
+                    >
+                      {domainError}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  disabled={installLoading || !shopDomain}
+                  className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                  data-testid="shopify-connect-button"
+                >
+                  <FormattedMessage
+                    id="ShopifyShops / Connect button"
+                    defaultMessage="Connect"
+                  />
+                </button>
+              </form>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stores list */}
         {shopsLoading ? (
@@ -242,10 +319,16 @@ export const ShopifyShops: FC = () => {
           // A failed load must not look like "no stores connected".
           <Card>
             <CardContent className="py-16">
-              <div className="flex flex-col items-center justify-center text-center" data-testid="shopify-shops-error">
+              <div
+                className="flex flex-col items-center justify-center text-center"
+                data-testid="shopify-shops-error"
+              >
                 <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
                 <h3 className="text-lg font-semibold mb-2">
-                  <FormattedMessage id="ShopifyShops / Load error title" defaultMessage="Couldn't load your Shopify stores" />
+                  <FormattedMessage
+                    id="ShopifyShops / Load error title"
+                    defaultMessage="Couldn't load your Shopify stores"
+                  />
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   <FormattedMessage
@@ -262,7 +345,10 @@ export const ShopifyShops: FC = () => {
               <div className="flex flex-col items-center justify-center text-center">
                 <Store className="h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">
-                  <FormattedMessage id="ShopifyShops / Empty title" defaultMessage="No stores connected" />
+                  <FormattedMessage
+                    id="ShopifyShops / Empty title"
+                    defaultMessage="No stores connected"
+                  />
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   <FormattedMessage
@@ -278,7 +364,10 @@ export const ShopifyShops: FC = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Store className="h-5 w-5" />
-                <FormattedMessage id="ShopifyShops / Stores title" defaultMessage="Connected stores" />
+                <FormattedMessage
+                  id="ShopifyShops / Stores title"
+                  defaultMessage="Connected stores"
+                />
               </CardTitle>
               <CardDescription>
                 <FormattedMessage
@@ -313,7 +402,10 @@ export const ShopifyShops: FC = () => {
                       data-testid={`shopify-disconnect-${shop.shopDomain}`}
                     >
                       <Unplug className="h-3 w-3" />
-                      <FormattedMessage id="ShopifyShops / Disconnect" defaultMessage="Disconnect" />
+                      <FormattedMessage
+                        id="ShopifyShops / Disconnect"
+                        defaultMessage="Disconnect"
+                      />
                     </button>
                   </li>
                 ))}
