@@ -6,6 +6,8 @@ someone who texted one of those numbers. More models (messages, conversations, i
 added by later steps of docs/superpowers/plans/2026-10-06-whatsapp-first-channel-plan.md.
 """
 
+import secrets
+
 import hashid_field
 from django.conf import settings
 from django.db import models
@@ -24,6 +26,55 @@ from .constants import (
 )
 from .crypto import decrypt_credential, encrypt_credential
 from .managers import WhatsAppAccountManager
+
+
+def new_public_id() -> str:
+    """A webhook address's own part: random, so nobody finds an app's address from its App ID."""
+    return secrets.token_urlsafe(16)
+
+
+def new_verify_token() -> str:
+    """A verify token Meta sends back when it checks the webhook address; random, never chosen by a person."""
+    return secrets.token_urlsafe(32)
+
+
+class MetaApp(TimestampedMixin, models.Model):
+    """
+    An organization's own Meta app, registered on its WhatsApp page (plan Step 2.9) for numbers it
+    connects with the form. Meta signs every webhook with the App secret of the app the number is in, and
+    sends all of one app's webhooks to one address, so the app has its own: /api/whatsapp/webhook/
+    <public_id>/, with its own verify token. A number on no MetaApp is on this service's own app, whose
+    secret and token are settings.
+    """
+
+    id = hashid_field.HashidAutoField(primary_key=True)
+    # One app feeds one organization (decision 1).
+    tenant = models.ForeignKey("multitenancy.Tenant", on_delete=models.CASCADE, related_name="whatsapp_meta_apps")
+    # Meta's App ID, unique across the service: its webhooks can only reach one organization.
+    app_id = models.CharField(max_length=64, unique=True)
+    # Read and written through the properties below, never directly.
+    app_secret_encrypted = models.TextField()
+    verify_token_encrypted = models.TextField()
+    public_id = models.CharField(max_length=64, unique=True, default=new_public_id)
+
+    def __str__(self) -> str:
+        return f"Meta app {self.app_id}"
+
+    @property
+    def app_secret(self) -> str:
+        return decrypt_credential(self.app_secret_encrypted)
+
+    @app_secret.setter
+    def app_secret(self, value: str) -> None:
+        self.app_secret_encrypted = encrypt_credential(value)
+
+    @property
+    def verify_token(self) -> str:
+        return decrypt_credential(self.verify_token_encrypted)
+
+    @verify_token.setter
+    def verify_token(self, value: str) -> None:
+        self.verify_token_encrypted = encrypt_credential(value)
 
 
 class WhatsAppAccount(TimestampedMixin, models.Model):
@@ -53,9 +104,12 @@ class WhatsAppAccount(TimestampedMixin, models.Model):
     # Meta's id for the WhatsApp Business account the number belongs to.
     waba_id = models.CharField(max_length=64)
     # Read and written through the `access_token` property below, never directly. Empty once the
-    # number is disconnected. Every number is on our one Meta app, whose App secret and verify token
-    # are settings (plan Step 1.18).
+    # number is disconnected.
     access_token_encrypted = models.TextField(blank=True)
+    # The organization's own Meta app the number is in, or none for this service's app, whose App secret
+    # and verify token are settings (plan Steps 1.18 and 2.9). Restricted: an app is removed only once no
+    # number uses it (Step 2.9, decision 4), except with its organization, which deletes both.
+    meta_app = models.ForeignKey(MetaApp, null=True, blank=True, on_delete=models.RESTRICT, related_name="accounts")
     # When Meta last subscribed our app to the number's WhatsApp Business account, so its messages
     # reach our webhook: the form's second proof (user story 11, Step 1.18).
     subscribed_at = models.DateTimeField(null=True, blank=True)

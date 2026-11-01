@@ -2,11 +2,12 @@
 Tests for where an organization's plan is checked (WhatsApp plan Step 3.3, phase 3 decisions 3, 4 and
 5, user stories 26 and 27).
 
-- every GraphQL field that acts, or that calls Shopify or Meta, refuses an organization whose plan
-  doesn't include its feature, with "plan_required": connecting a store or a number, changing a
-  number or its store, test messages, troubleshooting, linking a phone, and browsing products
-- reading what's kept stays allowed (decision 5): the numbers, their stores, the stores, the links;
-  and so does disconnecting
+- browsing a store's products refuses an organization whose plan doesn't include Shopify, with
+  "plan_required"
+- setting up needs no plan (Step 2.8, finding 16): connecting and disconnecting numbers and stores,
+  changing whom a number serves, choosing its store and its customers' mode, linking a phone, test
+  messages and troubleshooting, so a business can set everything up before its trial starts
+- reading what's kept stays allowed (decision 5): the numbers, their stores, the stores, the links
 - with PLAN_ENTITLEMENTS_ENABLED off, nothing is refused for the plan
 - the WhatsApp router answers nobody on a lapsed organization's number, store customers and linked
   members alike, while the message is still stored (decision 4)
@@ -34,7 +35,7 @@ ID = to_global_id("Anything", "1")
 
 # Each field that uses a feature, with a request that passes GraphQL's own validation. The plan is
 # checked before anything else, so made-up ids are never looked up.
-LOCKED = {
+FIELDS = {
     "WHATSAPP": {
         "whatsAppNumberStatus": "query($t: ID!) { whatsAppNumberStatus(tenantId: $t, accountId: \"x\") { status } }",
         "connectWhatsAppAccount": (
@@ -75,6 +76,27 @@ LOCKED = {
         "startWhatsAppLink": (
             'mutation($t: ID!) { startWhatsAppLink(input: {tenantId: $t, phoneNumber: "0831234567"}) ' "{ code } }"
         ),
+        # An organization's own Meta apps (WhatsApp plan Step 2.9).
+        "whatsAppMetaApps": "query($t: ID!) { whatsAppMetaApps(tenantId: $t) { id } }",
+        "registerWhatsAppMetaApp": (
+            'mutation($t: ID!) { registerWhatsAppMetaApp(input: {tenantId: $t, appId: "1", appSecret: "s"}) '
+            "{ metaApp { id } } }"
+        ),
+        "updateWhatsAppMetaAppSecret": (
+            'mutation($t: ID!) { updateWhatsAppMetaAppSecret(input: {tenantId: $t, metaAppId: "x", appSecret: "s"}) '
+            "{ metaApp { id } } }"
+        ),
+        "regenerateWhatsAppMetaAppVerifyToken": (
+            'mutation($t: ID!) { regenerateWhatsAppMetaAppVerifyToken(input: {tenantId: $t, metaAppId: "x"}) '
+            "{ metaApp { id } } }"
+        ),
+        "removeWhatsAppMetaApp": (
+            'mutation($t: ID!) { removeWhatsAppMetaApp(input: {tenantId: $t, metaAppId: "x"}) { ok } }'
+        ),
+        "setWhatsAppNumberMetaApp": (
+            'mutation($t: ID!) { setWhatsAppNumberMetaApp(input: {tenantId: $t, accountId: "x", metaAppId: null}) '
+            "{ account { id } } }"
+        ),
     },
     "SHOPIFY": {
         "shopifyProducts": (
@@ -90,7 +112,18 @@ LOCKED = {
         ),
     },
 }
-LOCKED_FIELDS = [(feature, name, request) for feature, fields in LOCKED.items() for name, request in fields.items()]
+# Only using a feature is locked: browsing products. The assistant and replies are locked in the
+# router (TestTheRouter below). Everything else sets up, which needs no plan (Step 2.8, finding 16).
+USING = {"shopifyProducts"}
+LOCKED_FIELDS = [
+    (feature, name, request) for feature, fields in FIELDS.items() for name, request in fields.items() if name in USING
+]
+SETUP_FIELDS = [
+    (feature, name, request)
+    for feature, fields in FIELDS.items()
+    for name, request in fields.items()
+    if name not in USING
+]
 
 # What's kept stays readable on a lapsed plan (decision 5).
 READABLE = {
@@ -136,6 +169,13 @@ class TestTheApi:
 
         assert "plan_required" in errors_of(graphene_client, acme, request_text)
 
+    @pytest.mark.parametrize("feature, name, request_text", SETUP_FIELDS, ids=[name for _, name, _ in SETUP_FIELDS])
+    def test_setting_up_needs_no_plan(self, graphene_client, acme, feature, name, request_text):
+        as_owner(graphene_client, acme)
+
+        # Its own validation may still refuse the made-up ids; never the plan.
+        assert "plan_required" not in errors_of(graphene_client, acme, request_text)
+
     @pytest.mark.parametrize("name", READABLE)
     def test_what_is_kept_stays_readable(self, graphene_client, acme, name):
         as_owner(graphene_client, acme)
@@ -160,13 +200,13 @@ class TestTheApi:
         PayFastSubscriptionFactory(tenant=acme, monthly=True)
         as_owner(graphene_client, acme)
 
-        assert "plan_required" not in errors_of(graphene_client, acme, LOCKED["SHOPIFY"]["shopifyProducts"])
+        assert "plan_required" not in errors_of(graphene_client, acme, FIELDS["SHOPIFY"]["shopifyProducts"])
 
     def test_with_the_setting_off_nothing_is_refused_for_the_plan(self, graphene_client, acme, settings):
         settings.PLAN_ENTITLEMENTS_ENABLED = False
         as_owner(graphene_client, acme)
 
-        assert "plan_required" not in errors_of(graphene_client, acme, LOCKED["SHOPIFY"]["shopifyProducts"])
+        assert "plan_required" not in errors_of(graphene_client, acme, FIELDS["SHOPIFY"]["shopifyProducts"])
 
 
 class TestTheRouter:

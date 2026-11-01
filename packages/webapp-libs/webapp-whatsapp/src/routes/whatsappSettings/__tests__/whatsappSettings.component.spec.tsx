@@ -26,6 +26,14 @@ import {
   whatsAppAccountsQuery,
 } from '../../../graphql/whatsappAccounts.graphql';
 import {
+  regenerateWhatsAppMetaAppVerifyTokenMutation,
+  registerWhatsAppMetaAppMutation,
+  removeWhatsAppMetaAppMutation,
+  setWhatsAppNumberMetaAppMutation,
+  updateWhatsAppMetaAppSecretMutation,
+  whatsAppMetaAppsQuery,
+} from '../../../graphql/whatsappMetaApps.graphql';
+import {
   chooseWhatsAppStoreMutation,
   setWhatsAppStorefrontModeMutation,
   whatsAppEligibleStoresQuery,
@@ -49,6 +57,7 @@ type AccountOverrides = Partial<{
   credentialsVerifiedAt: string | null;
   subscribedAt: string | null;
   lastMessageReceivedAt: string | null;
+  metaAppId: string | null;
 }>;
 
 const account = (overrides: AccountOverrides = {}) => ({
@@ -63,6 +72,8 @@ const account = (overrides: AccountOverrides = {}) => ({
   credentialsVerifiedAt: '2026-10-18T09:00:00+00:00',
   subscribedAt: null,
   lastMessageReceivedAt: null,
+  // This service's Meta app (Step 2.9).
+  metaAppId: null,
   __typename: 'WhatsAppAccountType',
   ...overrides,
 });
@@ -138,14 +149,39 @@ const chooseStoreMock = (accountId: string, shopDomain: string) =>
     },
   });
 
-type StoreOptions = { storefronts?: ReturnType<typeof storefront>[]; eligible?: string[]; features?: string[] };
+// One of the organization's own Meta apps (Step 2.9), as apps/whatsapp/schema.py lists it.
+const META_APP_ID = '1234567890123456';
+const metaApp = (overrides: Partial<{ id: string; appId: string; verifyToken: string }> = {}) => ({
+  id: 'meta-app-1',
+  appId: META_APP_ID,
+  webhookUrl: 'https://api.example.com/api/whatsapp/webhook/aBcD1234eFgH5678iJkL/',
+  verifyToken: 'generated-verify-token-1',
+  createdAt: '2026-11-01T09:00:00+00:00',
+  __typename: 'WhatsAppMetaAppType',
+  ...overrides,
+});
 
-// By default no number has a store yet, the organization has one store that can sell on WhatsApp, and
-// its plan includes WhatsApp.
+const metaAppsMock = (apps: ReturnType<typeof metaApp>[], { reuse = false } = {}) => ({
+  ...composeMockedQueryResult(whatsAppMetaAppsQuery, {
+    variables: { tenantId },
+    data: { whatsAppMetaApps: apps },
+  }),
+  ...(reuse ? { maxUsageCount: Number.POSITIVE_INFINITY } : {}),
+});
+
+type StoreOptions = {
+  storefronts?: ReturnType<typeof storefront>[];
+  eligible?: string[];
+  features?: string[];
+  metaApps?: ReturnType<typeof metaApp>[];
+};
+
+// By default no number has a store yet, the organization has one store that can sell on WhatsApp, no
+// Meta app of its own, and its plan includes WhatsApp.
 const renderTab = (
   permissions: string[],
   mocks: MockedResponse[],
-  { storefronts = [], eligible = [STORE], features = UNLOCKED }: StoreOptions = {}
+  { storefronts = [], eligible = [STORE], features = UNLOCKED, metaApps = [] }: StoreOptions = {}
 ) =>
   render(<WhatsAppSettings />, {
     apolloMocks: [
@@ -154,6 +190,7 @@ const renderTab = (
       ...mocks,
       storefrontsMock(storefronts, { reuse: true }),
       eligibleStoresMock(eligible, { reuse: true }),
+      metaAppsMock(metaApps, { reuse: true }),
       { ...featuresMock(features), maxUsageCount: Number.POSITIVE_INFINITY },
     ],
     routerProps: createMockRouterProps(RoutesConfig.whatsapp, { tenantId }),
@@ -432,11 +469,18 @@ describe('WhatsAppSettings: Component', () => {
       expect(connectMock.result).not.toHaveBeenCalled();
     });
 
-    it('asks for no App secret: every number is on our Meta app', async () => {
+    it('asks for no App secret: an App secret is registered once, with its Meta app (Step 2.9)', async () => {
       renderTab(MANAGE, [accountsMock([])]);
 
-      expect(await within(await connectForm()).findByLabelText(/access token/i)).toBeInTheDocument();
-      expect(screen.queryByLabelText(/app secret/i)).not.toBeInTheDocument();
+      const form = within(await connectForm());
+      expect(await form.findByLabelText(/access token/i)).toBeInTheDocument();
+      expect(form.queryByLabelText(/app secret/i)).not.toBeInTheDocument();
+    });
+
+    it('says the access token must be a permanent one', async () => {
+      renderTab(MANAGE, [accountsMock([])]);
+
+      expect(await within(await connectForm()).findByText(/a system user's permanent token/i)).toBeInTheDocument();
     });
 
     it("shows Meta's rejection under the access token", async () => {
@@ -774,17 +818,21 @@ describe('WhatsAppSettings: Component', () => {
   describe("a plan that doesn't include WhatsApp", () => {
     const lapsedNumber = () => account({ id: 'account-2', displayPhoneNumber: '27000000802' });
 
-    it('shows the numbers kept, with no way to change them', async () => {
+    // Step 2.8, finding 16: setting up needs no plan, so a business can be ready before its trial
+    // starts; only replies wait for a plan.
+    it('keeps everything for setting up, and says replies wait for a plan', async () => {
       renderTab([...MANAGE, 'billing.manage'], [accountsMock([lapsedNumber()])], {
         storefronts: [storefront('account-2', STORE)],
         features: [],
       });
 
       const row = within(await screen.findByTestId('whatsapp-account-account-2'));
-      expect(await screen.findByTestId('plan-required')).toHaveTextContent(/your plan doesn't include whatsapp/i);
-      expect(screen.queryByTestId('whatsapp-connect-form')).not.toBeInTheDocument();
-      expect(row.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
-      expect(row.queryByRole('radio')).not.toBeInTheDocument();
+      const notice = await screen.findByTestId('plan-required');
+      expect(notice).toHaveTextContent(/your plan doesn't include whatsapp/i);
+      expect(notice).toHaveTextContent(/numbers don't reply/i);
+      expect(await screen.findByTestId('whatsapp-connect-form')).toBeInTheDocument();
+      expect(row.getByRole('button', { name: /disconnect/i })).toBeInTheDocument();
+      expect(await row.findAllByRole('radio')).not.toHaveLength(0);
     });
 
     it('offers whoever manages billing a link to choose a plan', async () => {
@@ -869,10 +917,227 @@ describe('WhatsAppSettings: Component', () => {
       expect(disconnectMock.result).not.toHaveBeenCalled();
 
       await user.click(within(row).getByRole('button', { name: /disconnect/i }));
+      // WhatsApp plan Step 2.8, finding 17: the admin is told what's deleted before confirming.
+      expect(await screen.findByText(/its conversations, with every message and customer, are deleted/i)).toBeInTheDocument();
       await user.click(await screen.findByRole('button', { name: /^disconnect number$/i }));
 
       await waitFor(() => expect(disconnectMock.result).toHaveBeenCalled());
       expect(await within(screen.getByTestId('whatsapp-account-account-1')).findByText(/^disconnected$/i)).toBeInTheDocument();
+    });
+  });
+
+  // WhatsApp plan Step 2.9, decisions 1 to 5: an organization registers each of its own Meta apps once,
+  // pastes the address and token we made into Meta, and picks the app when connecting a number.
+  describe("an organization's own Meta apps", () => {
+    const metaAppsCard = () => screen.findByTestId('whatsapp-meta-apps');
+
+    it('shows each app with the callback URL and verify token to paste into Meta, never its secret', async () => {
+      renderTab(MANAGE, [accountsMock([])], { metaApps: [metaApp()] });
+
+      const app = within(await screen.findByTestId('whatsapp-meta-app-meta-app-1'));
+      expect(app.getByText(new RegExp(META_APP_ID))).toBeInTheDocument();
+      expect(app.getByLabelText(/^callback url$/i)).toHaveValue(metaApp().webhookUrl);
+      expect(app.getByLabelText(/^verify token$/i)).toHaveValue('generated-verify-token-1');
+      expect(app.getByRole('button', { name: /copy callback url/i })).toBeInTheDocument();
+      expect(app.getByRole('button', { name: /copy verify token/i })).toBeInTheDocument();
+    });
+
+    it('offers a member no Meta apps card', async () => {
+      renderTab(VIEW_ONLY, [accountsMock([account()])]);
+
+      expect(await screen.findByTestId('whatsapp-account-account-1')).toBeInTheDocument();
+      expect(screen.queryByTestId('whatsapp-meta-apps')).not.toBeInTheDocument();
+    });
+
+    it('registers an app, then shows its callback URL and verify token', async () => {
+      const user = userEvent.setup();
+      const registerMock = composeMockedQueryResult(registerWhatsAppMetaAppMutation, {
+        variables: { input: { tenantId, appId: META_APP_ID, appSecret: 'the-app-secret' } },
+        data: { registerWhatsAppMetaApp: { metaApp: metaApp(), __typename: 'RegisterWhatsAppMetaApp' } },
+      });
+      renderTab(MANAGE, [accountsMock([]), metaAppsMock([]), registerMock, metaAppsMock([metaApp()])]);
+
+      const card = within(await metaAppsCard());
+      await user.type(await card.findByLabelText(/^app id$/i), META_APP_ID);
+      await user.type(card.getByLabelText(/^app secret$/i), 'the-app-secret');
+      await user.click(card.getByRole('button', { name: /register app/i }));
+
+      await waitFor(() => expect(registerMock.result).toHaveBeenCalled());
+      const app = within(await screen.findByTestId('whatsapp-meta-app-meta-app-1'));
+      expect(app.getByLabelText(/^verify token$/i)).toHaveValue('generated-verify-token-1');
+      // The secret leaves the page as soon as it's saved.
+      expect(card.getByLabelText(/^app secret$/i)).toHaveValue('');
+    });
+
+    it('shows why an app is refused, under its App ID', async () => {
+      const user = userEvent.setup();
+      const reason = 'This Meta app is already connected to another organization.';
+      renderTab(MANAGE, [
+        accountsMock([]),
+        composeMockedQueryResult(registerWhatsAppMetaAppMutation, {
+          variables: { input: { tenantId, appId: META_APP_ID, appSecret: 'the-app-secret' } },
+          data: null,
+          errors: [validationError('app_id', reason, 'already_connected')],
+        }),
+      ]);
+
+      const card = within(await metaAppsCard());
+      await user.type(await card.findByLabelText(/^app id$/i), META_APP_ID);
+      await user.type(card.getByLabelText(/^app secret$/i), 'the-app-secret');
+      await user.click(card.getByRole('button', { name: /register app/i }));
+
+      expect(await card.findByText(reason)).toBeInTheDocument();
+    });
+
+    it("updates an app's secret, after it was reset in Meta", async () => {
+      const user = userEvent.setup();
+      const updateMock = composeMockedQueryResult(updateWhatsAppMetaAppSecretMutation, {
+        variables: { input: { tenantId, metaAppId: 'meta-app-1', appSecret: 'a-new-secret' } },
+        data: {
+          updateWhatsAppMetaAppSecret: {
+            metaApp: { id: 'meta-app-1', __typename: 'WhatsAppMetaAppType' },
+            __typename: 'UpdateWhatsAppMetaAppSecret',
+          },
+        },
+      });
+      renderTab(MANAGE, [accountsMock([]), updateMock], { metaApps: [metaApp()] });
+
+      const app = within(await screen.findByTestId('whatsapp-meta-app-meta-app-1'));
+      await user.click(app.getByRole('button', { name: /update secret/i }));
+      await user.type(await app.findByLabelText(/new app secret/i), 'a-new-secret');
+      await user.click(app.getByRole('button', { name: /save secret/i }));
+
+      await waitFor(() => expect(updateMock.result).toHaveBeenCalled());
+      expect(await screen.findByTestId('toast-1')).toHaveTextContent(/app secret is updated/i);
+    });
+
+    it('regenerates the verify token after the admin confirms', async () => {
+      const user = userEvent.setup();
+      const regenerateMock = composeMockedQueryResult(regenerateWhatsAppMetaAppVerifyTokenMutation, {
+        variables: { input: { tenantId, metaAppId: 'meta-app-1' } },
+        data: {
+          regenerateWhatsAppMetaAppVerifyToken: {
+            metaApp: { id: 'meta-app-1', verifyToken: 'generated-verify-token-2', __typename: 'WhatsAppMetaAppType' },
+            __typename: 'RegenerateWhatsAppMetaAppVerifyToken',
+          },
+        },
+      });
+      renderTab(MANAGE, [
+        accountsMock([]),
+        metaAppsMock([metaApp()]),
+        regenerateMock,
+        metaAppsMock([metaApp({ verifyToken: 'generated-verify-token-2' })]),
+      ]);
+
+      const app = within(await screen.findByTestId('whatsapp-meta-app-meta-app-1'));
+      await user.click(app.getByRole('button', { name: /regenerate token/i }));
+      // Messages keep arriving: Meta asks for the token only when its webhook settings are saved.
+      expect(await screen.findByText(/messages keep arriving/i)).toBeInTheDocument();
+      await user.click(await screen.findByRole('button', { name: /^regenerate verify token$/i }));
+
+      await waitFor(() => expect(regenerateMock.result).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(
+          within(screen.getByTestId('whatsapp-meta-app-meta-app-1')).getByLabelText(/^verify token$/i)
+        ).toHaveValue('generated-verify-token-2')
+      );
+    });
+
+    it('says which numbers to disconnect before an app can be removed', async () => {
+      const user = userEvent.setup();
+      const reason = 'Disconnect its numbers first: 27000000801.';
+      renderTab(
+        MANAGE,
+        [
+          accountsMock([account({ metaAppId: 'meta-app-1' })]),
+          composeMockedQueryResult(removeWhatsAppMetaAppMutation, {
+            variables: { input: { tenantId, metaAppId: 'meta-app-1' } },
+            data: null,
+            errors: [validationError('non_field_errors', reason, 'app_in_use')],
+          }),
+        ],
+        { metaApps: [metaApp()] }
+      );
+
+      const app = within(await screen.findByTestId('whatsapp-meta-app-meta-app-1'));
+      await user.click(app.getByRole('button', { name: /^remove$/i }));
+      await user.click(await screen.findByRole('button', { name: /^remove app$/i }));
+
+      expect(await app.findByText(reason)).toBeInTheDocument();
+    });
+
+    it("connects a number in the organization's own app", async () => {
+      const user = userEvent.setup();
+      const connectMock = composeMockedQueryResult(connectWhatsAppAccountMutation, {
+        variables: { input: { ...connectionInput(INTERNAL), metaAppId: 'meta-app-1' } },
+        data: {
+          connectWhatsAppAccount: {
+            account: {
+              id: 'account-9',
+              purpose: INTERNAL,
+              displayPhoneNumber: '27000000901',
+              verifiedName: 'Demo Store',
+              subscribedAt: '2026-11-01T09:00:00+00:00',
+              __typename: 'WhatsAppAccountType',
+            },
+            __typename: 'ConnectWhatsAppAccount',
+          },
+        },
+      });
+      renderTab(MANAGE, [accountsMock([]), connectMock, accountsMock([account({ id: 'account-9' })])], {
+        metaApps: [metaApp()],
+      });
+
+      await fillConnectForm(user, INTERNAL);
+      const form = within(await connectForm());
+      // This service's app is the default; the organization's own are offered by their App IDs.
+      expect(form.getByLabelText(/^meta app$/i)).toHaveValue('');
+      await user.selectOptions(form.getByLabelText(/^meta app$/i), 'meta-app-1');
+      await user.click(await connectButton());
+
+      await waitFor(() => expect(connectMock.result).toHaveBeenCalled());
+    });
+
+    it('offers no choice of app before one is registered', async () => {
+      renderTab(MANAGE, [accountsMock([account()])]);
+
+      const form = within(await connectForm());
+      expect(await form.findByLabelText(/access token/i)).toBeInTheDocument();
+      expect(form.queryByLabelText(/^meta app$/i)).not.toBeInTheDocument();
+      expect(within(screen.getByTestId('whatsapp-account-account-1')).queryByLabelText(/^meta app$/i)).not.toBeInTheDocument();
+    });
+
+    it("moves a number to the organization's app, after a reminder to paste its callback URL and token into Meta", async () => {
+      const user = userEvent.setup();
+      const setMock = composeMockedQueryResult(setWhatsAppNumberMetaAppMutation, {
+        variables: { input: { tenantId, accountId: 'account-1', metaAppId: 'meta-app-1' } },
+        data: {
+          setWhatsAppNumberMetaApp: {
+            account: { id: 'account-1', metaAppId: 'meta-app-1', __typename: 'WhatsAppAccountType' },
+            __typename: 'SetWhatsAppNumberMetaApp',
+          },
+        },
+      });
+      renderTab(MANAGE, [accountsMock([account()]), setMock, accountsMock([account({ metaAppId: 'meta-app-1' })])], {
+        metaApps: [metaApp()],
+      });
+
+      const row = within(await screen.findByTestId('whatsapp-account-account-1'));
+      await user.selectOptions(await row.findByLabelText(/^meta app$/i), 'meta-app-1');
+      await user.click(row.getByRole('button', { name: /^change app$/i }));
+      expect(await screen.findByText(/paste the app's callback url and verify token/i)).toBeInTheDocument();
+      await user.click(await screen.findByRole('button', { name: /^move number$/i }));
+
+      await waitFor(() => expect(setMock.result).toHaveBeenCalled());
+      expect(await screen.findByTestId('toast-1')).toHaveTextContent(new RegExp(`27000000801 is now in app ${META_APP_ID}`, 'i'));
+    });
+
+    it("offers a member no change of a number's app", async () => {
+      renderTab(VIEW_ONLY, [accountsMock([account({ metaAppId: 'meta-app-1' })])]);
+
+      const row = within(await screen.findByTestId('whatsapp-account-account-1'));
+      expect(await row.findByTestId('whatsapp-purpose-account-1')).toBeInTheDocument();
+      expect(row.queryByLabelText(/^meta app$/i)).not.toBeInTheDocument();
     });
   });
 });

@@ -41,6 +41,7 @@ from apps.whatsapp.agent import service as agent
 from apps.whatsapp.agent.service import AgentError
 from apps.whatsapp.builders import (
     LIST_ITEMS_MAX,
+    LIST_ROW_TITLE_MAX,
     MAIN_MENU,
     Choice,
     Row,
@@ -54,7 +55,7 @@ from apps.whatsapp.constants import MessageDirection
 from apps.whatsapp.models import WhatsAppMessage
 
 from . import services
-from .models import StoreCustomer, StorefrontChannel
+from .models import StoreCustomer
 
 BROWSE = "browse"
 SEARCH = "search"
@@ -97,7 +98,7 @@ class StoreHandler:
         return shop is not None and services.can_sell_on_whatsapp(shop)
 
     def conversation_mode(self, contact) -> str:
-        channel = StorefrontChannel.objects.filter(account=contact.account).first()
+        channel = services.channel_for(contact.account)
         return channel.conversation_mode if channel else ""
 
     def help_text(self, turn) -> str:
@@ -197,7 +198,8 @@ class StoreHandler:
         # Back from a product returns to this very page.
         back = {"words": words, **where}
         rows = [
-            Row(turn.choice(PRODUCT, product_id=item["id"], back=back), item["title"], price(item)) for item in products
+            Row(turn.choice(PRODUCT, product_id=item["id"], back=back), item["title"], _row_description(item))
+            for item in products
         ]
         # BROWSE with the search's words pages through the search.
         previous = None
@@ -307,7 +309,8 @@ class StoreHandler:
         return [_checkout_link(cart, f"{data['label']}, {data['price']}. {CHECKOUT_TEXT}")]
 
     def _cart(self, turn, data) -> list[dict]:
-        cart = _open_cart(_store_customer(turn), services.store_for(turn.contact.account))
+        shop = services.store_for(turn.contact.account)
+        cart = _open_cart(_store_customer(turn), shop)
         if cart is None or not cart["lines"]:
             return [_empty_cart_screen(turn, "Your cart is empty.")]
 
@@ -321,7 +324,9 @@ class StoreHandler:
         body = "Your cart:\n" + "\n".join(lines) + f"\n\nTotal: {cart['currency_code']} {_amount(cart['total_amount'])}"
         checkout = Choice(turn.choice(CHECKOUT), "Checkout")
         empty = Choice(turn.choice(EMPTY), "Empty cart")
-        return [reply_buttons(body, [checkout, empty], way_back=MAIN_MENU)]
+        # The cart's buttons are reply buttons, which can't open a link, so the shop's cart page comes
+        # first as a message of its own, and the buttons last, nearest the thumb (Step 2.8, finding 21).
+        return [_cart_page(turn, shop, cart), reply_buttons(body, [checkout, empty], way_back=MAIN_MENU)]
 
     def _checkout(self, turn, data) -> list[dict]:
         cart = _open_cart(_store_customer(turn), services.store_for(turn.contact.account))
@@ -331,11 +336,7 @@ class StoreHandler:
         name = _shop_name(turn)
         # The shop's own cart page to review it, then Checkout, nearest the thumb. A link-button
         # message carries one link, so they're two messages (Step 2.8, finding 10, option A).
-        cart_page = link_button(
-            f"Review your cart on {name}'s website.",
-            display_text="View cart",
-            url=storefront.cart_page_url(shop, cart),
-        )
+        cart_page = _cart_page(turn, shop, cart)
         # Named by the store, so the customer knows whose checkout opens (Step 2.8, finding 11).
         body = f"Your cart from {name} holds {_cart_size(cart)}. {CHECKOUT_TEXT}"
         return [cart_page, _checkout_link(cart, body)]
@@ -345,7 +346,16 @@ class StoreHandler:
         customer = _store_customer(turn)
         customer.cart_id, customer.cart_shop = "", None
         customer.save(update_fields=["cart_id", "cart_shop", "updated_at"])
-        return [_empty_cart_screen(turn, "Your cart is empty now.")]
+        # View cart copied the cart into the browser's own, which the chat can't empty: the customer
+        # gets its page, where Shopify's own buttons empty it (Step 2.8, finding 18, option A).
+        website = link_button(
+            f"If you opened your cart on {_shop_name(turn)}'s website, it's kept there separately: "
+            "you can empty it on its cart page.",
+            display_text="View cart",
+            url=storefront.website_cart_url(services.store_for(turn.contact.account)),
+        )
+        # Says which cart is empty: the chat's own, the one it can verify (maintainer's wording, 2026-11-01).
+        return [website, _empty_cart_screen(turn, "Your cart here in WhatsApp is empty now.")]
 
 
 class UnsafeCheckoutLink(Exception):
@@ -381,6 +391,27 @@ def _open_cart(customer: StoreCustomer, shop) -> dict | None:
     if not customer.cart_id or customer.cart_shop_id != shop.pk:
         return None
     return storefront.get_cart(shop, customer.cart_id)
+
+
+def _row_description(product: dict) -> str:
+    """
+    A product row's second line: its price, and its whole name too when the row's title is cut (Step
+    2.8, finding 15). Meta cuts a row's title at LIST_ROW_TITLE_MAX characters, so "The Collection
+    Snowboard: Liquid" and "…: Oxygen" both read "The Collection Snowboar…"; the description holds up
+    to LIST_ROW_DESCRIPTION_MAX and is cut to fit by the builder.
+    """
+    if len(product["title"]) <= LIST_ROW_TITLE_MAX:
+        return price(product)
+    return f"{product['title']} · {price(product)}"
+
+
+def _cart_page(turn, shop, cart: dict) -> dict:
+    """A link button to the shop's own cart page holding `cart`'s items (Step 2.8, findings 10 and 21)."""
+    return link_button(
+        f"Review your cart on {_shop_name(turn)}'s website.",
+        display_text="View cart",
+        url=storefront.cart_page_url(shop, cart),
+    )
 
 
 def _empty_cart_screen(turn, body: str) -> dict:

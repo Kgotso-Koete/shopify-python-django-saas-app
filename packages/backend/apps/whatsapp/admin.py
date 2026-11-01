@@ -5,7 +5,8 @@ The operator's view of every number, with the same troubleshooting tools organiz
 their WhatsApp tab, for when an organization asks the operator for help: Meta's status, a
 verification code by SMS or voice, and re-subscribing the app are admin actions; registering with the PIN and entering a code have a small
 form page each, like PayFast's refund page (apps/payfast/admin.py). Each repair is recorded in the
-admin's own history, without the PIN or the code. The account's secrets are never shown.
+admin's own history, without the PIN or the code. The account's secrets are never shown, nor an
+organization's Meta app's (plan Step 2.9).
 """
 
 from django import forms
@@ -15,7 +16,7 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from .models import WhatsAppAccount, WhatsAppContact, WhatsAppMessage
+from .models import MetaApp, WhatsAppAccount, WhatsAppContact, WhatsAppMessage
 from .services import number_tools
 from .services.number_tools import NumberToolError
 
@@ -169,6 +170,18 @@ class WhatsAppAccountAdmin(admin.ModelAdmin):
             "submit_label": submit_label,
         }
         return TemplateResponse(request, "admin/whatsapp/number_tool.html", context)
+
+
+@admin.register(MetaApp)
+class MetaAppAdmin(admin.ModelAdmin):
+    """An organization's own Meta app (plan Step 2.9): deleting one here frees its App ID for another."""
+
+    list_display = ("app_id", "tenant", "created_at")
+    search_fields = ("app_id", "tenant__name")
+    raw_id_fields = ("tenant",)
+    # Never shown, not even encrypted; the public id is part of the webhook address, so it's kept as made.
+    exclude = ("app_secret_encrypted", "verify_token_encrypted")
+    readonly_fields = ("public_id",)
 
 
 @admin.register(WhatsAppContact)

@@ -55,7 +55,29 @@
       Upstream has the "Personal account" entry commented out in `tenantSwitchSidebar.component.tsx`, so
       after switching to another organization the only way back to a personal one is its address.
       Upstream code (`agents.md` section 3.4): raise it, don't change it unasked. Found 2026-10-14,
-      Shopify plan human check 21.
+      Shopify plan human check 21. Hit again on 2026-11-01, in the WhatsApp checks (the maintainer:
+      "Very frustrating"). The way back without code: in the browser's developer tools, delete the
+      `currentTenant` local-storage entry for http://localhost:3000, then open http://localhost:3000/en/.
+      With no organization in the address and none stored, the app opens the personal one
+      (`currentTenantProvider.utils.ts`).
+- [ ] **The fork's tables mostly have plain integer ids, which people and AI agents confuse.** A
+      WhatsApp contact or message shows as `2` in the admin, and an id like that can't be told from a
+      quantity or another table's row. Only `WhatsAppAccount` and `MetaApp` use upstream's hashid field.
+      Hashids alone aren't enough either: they encode the same integer the same way in every table, so
+      on 2026-11-01 a Meta app and a WhatsApp number both showed as `7Dbgob4`. Options: A, hashids with
+      a prefix per model (the hashid field's `prefix=`), near no-op migrations, recommended; B, UUIDs, a
+      much bigger migration. Raised by the maintainer, 2026-11-01, WhatsApp plan Step 2.9 human checks.
+- [ ] **`whatsapp_shop_seed_demo` links a fake demo number to the organization's real store.** Its
+      "Demo: app subscribed" number (+27 00 000 0802) sells from the maintainer's own dev store.
+      Harmless (Meta never sends fake numbers anything), but the seed should use only its own demo
+      stores. Found 2026-11-01, WhatsApp plan Step 2.9 human checks.
+- [ ] **A refused WhatsApp webhook's log line wasn't seen.** In human check M4 (a wrong App secret)
+      nothing was stored, as expected, but `docker compose logs backend` showed no "refused with 403"
+      line. Check whether the backend's logging prints `apps.whatsapp.views` warnings. Found 2026-11-01.
+- [ ] **Section 8 of the restore-green plan has two small mistakes.** Its block 4 joins two `node`
+      calls with `;`, so its exit code hides a failure of the first; the README's form uses `&&`. Its
+      human check 3 points at the lint block for the "Tests:" totals, which the test block prints.
+      Found 2026-11-01.
 - [ ] **On the Shopify products page, the sidebar highlights both "Shopify" and "Shopify products".**
       Upstream marks an item active when the address contains its path (`pathname.includes`). Upstream
       code, cosmetic. Found 2026-10-14, Shopify plan step 11.

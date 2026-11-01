@@ -1909,7 +1909,25 @@ The organization's number is already connected and proven by the form (Steps 1.5
     - RED: `TestTheCartPage` in `test_storefront.py`, and the checkout test in `test_product_and_cart.py`: `2 failed, 46 passed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_storefront.py apps/whatsapp_shop/tests/test_product_and_cart.py -q -p no:warnings > logs/step-2.8-10-red.log 2>&1`
     - GREEN: `storefront.cart_page_url` and the checkout screen in `menus.py`. `apps/shopify` and `apps/whatsapp_shop`: `259 passed`; black: `66 files left unchanged`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify apps/whatsapp_shop -q -p no:warnings > logs/step-2.8-10-green.log 2>&1`
   - **Finding 5 waits for evidence:** the lists already ask for `available_for_sale:true`, so why Shopify listed The 3p Fulfilled Snowboard is checked first on the maintainer's dev store, with a read-only Storefront query in the cumulative human checks, before a fix is designed.
-  - **Found in the human checks of 2026-11-01, decided with the maintainer, to build next** (numbered on from 14): 15. **Long product names are cut off, so products look the same.** Meta allows 24 characters in a list row's title (`LIST_ROW_TITLE_MAX` in [`builders.py`](../../../packages/backend/apps/whatsapp/builders.py)), so "The Collection Snowboard: Liquid", "…: Oxygen" and "…: Hydrogen" all read "The Collection Snowboar…". **Decided:** the row's description, up to 72 characters, carries the full name with the price, such as "The Collection Snowboard: Liquid · USD 749.95". Weighed and not chosen: each product as a message of its own (a page of 7 floods the chat, can arrive out of order, and pushes the menu's buttons away), and Meta's product carousels (they need the store's catalog synced to Meta, out of scope in section 3). 16. **Connecting and disconnecting need no plan.** **Decided (changes phase 3, decision 5):** an organization on any plan may connect and disconnect numbers and stores, choose a number's store, link phones, send test messages and use troubleshooting, so a business can set everything up before its trial starts. The plan locks only what's used: replies on WhatsApp, browsing products, and the assistant. 17. **Disconnecting a number deletes its conversations.** Numbers are recycled in South Africa, so a disconnected number's history could reach a stranger who gets it later, or another organization that connects it. **Decided (replaces Step 1.5's choice to keep a disconnected number's contacts and messages):** disconnecting deletes the number's contacts, messages, conversations, assistant history and store customers, after a confirmation saying so. A lapsed plan still keeps everything (phase 3, decision 3): nobody chose to delete it. 18. **Emptying the chat's cart leaves the website's cart as it was.** **View cart** copies the chat cart's items into the browser's own cart, which the chat can't reach. **Decided:** look in Shopify's docs for an address that empties the online store's cart, and send it after **Empty cart** if one exists. 19. **The store assistant couldn't show or clear the cart.** Asked "please clear my cart" and then for the cart's link, it told the customer to remove items themselves and said it had no link; it never called `show_cart`. **Decided:** its instructions say to call `show_cart` for anything about the cart, which ends the turn on the cart's screen with **Checkout** and **Empty cart** for the customer to press, and the **View cart** link (finding 21). The assistant still never changes the cart (phase 2, decision 3). 20. **No logo was seen during the checks (finding 13).** Either the phone had texted the number within the 24 hours before (so it never "started" a conversation), or the app has no logo for the store. **Next:** W2's command, which prints the store's name and `logo_url`, decides which. 21. **"Your cart" offers no link to the shop's cart page.** Its buttons are reply buttons, which can't open a link. **Decided:** "Your cart" sends the **View cart** link message first, then the cart's lines with **Checkout**, **Empty cart** and **Main menu**, last, nearest the thumb.
+  - **Found in the human checks of 2026-11-01, decided with the maintainer, to build next** (numbered on from 14):
+    - **15. Long product names are cut off, so products look the same.** Meta allows 24 characters in a list row's title (`LIST_ROW_TITLE_MAX` in [`builders.py`](../../../packages/backend/apps/whatsapp/builders.py)), so "The Collection Snowboard: Liquid", "…: Oxygen" and "…: Hydrogen" all read "The Collection Snowboar…". **Decided:** the row's description, up to 72 characters, carries the full name with the price, such as "The Collection Snowboard: Liquid · USD 749.95". Weighed and not chosen: each product as a message of its own (a page of 7 floods the chat, can arrive out of order, and pushes the menu's buttons away), and Meta's product carousels (they need the store's catalog synced to Meta, out of scope in section 3).
+    - **16. Connecting and disconnecting need no plan.** **Decided (changes phase 3, decision 5):** an organization on any plan may connect and disconnect numbers and stores, choose a number's store, link phones, send test messages and use troubleshooting, so a business can set everything up before its trial starts. The plan locks only what's used: replies on WhatsApp, browsing products, and the assistant.
+    - **17. Disconnecting a number deletes its conversations.** Numbers are recycled in South Africa, so a disconnected number's history could reach a stranger who gets it later, or another organization that connects it. **Decided (replaces Step 1.5's choice to keep a disconnected number's contacts and messages):** disconnecting deletes the number's contacts, messages, conversations, assistant history and store customers, after a confirmation saying so. A lapsed plan still keeps everything (phase 3, decision 3): nobody chose to delete it.
+    - **18. Emptying the chat's cart leaves the website's cart as it was.** **View cart** copies the chat cart's items into the browser's own cart, which the chat can't reach. **Decided:** look in Shopify's docs for an address that empties the online store's cart, and send it after **Empty cart** if one exists.
+    - **19. The store assistant couldn't show or clear the cart.** Asked "please clear my cart" and then for the cart's link, it told the customer to remove items themselves and said it had no link; it never called `show_cart`. **Decided:** its instructions say to call `show_cart` for anything about the cart, which ends the turn on the cart's screen with **Checkout** and **Empty cart** for the customer to press, and the **View cart** link (finding 21). The assistant still never changes the cart (phase 2, decision 3).
+    - **20. No logo was seen during the checks (finding 13).** Either the phone had texted the number within the 24 hours before (so it never "started" a conversation), or the app has no logo for the store. **Next:** W2's command, which prints the store's name and `logo_url`, decides which.
+    - **21. "Your cart" offers no link to the shop's cart page.** Its buttons are reply buttons, which can't open a link. **Decided:** "Your cart" sends the **View cart** link message first, then the cart's lines with **Checkout**, **Empty cart** and **Main menu**, last, nearest the thumb.
+  - **Findings 15, 16, 17, 19 and 21, done 2026-11-01,** in TDD cycles run by the AI agent (the maintainer's autopilot). Backend commands are `docker compose run --rm -T -e DATABASE_URL= backend pytest <path> -q -p no:warnings > logs/<log> 2>&1`; web commands `pnpm nx run <project>:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/<log> 2>&1`.
+    - **Tests no longer read the plans setting from a local `.env`:** the first RED for 21 and 19 gave `36 failed`, every chat getting no reply, because `docker compose run` passes the maintainer's `.env`, where `PLAN_ENTITLEMENTS_ENABLED=true` since the human checks, and every test organization is on the free plan. An autouse fixture, `plans_dont_decide`, in the backend's root [`conftest.py`](../../../packages/backend/conftest.py) (upstream's file; a small addition) turns it off unless a test turns it on, as `apps/entitlements`' tests do. Log `step-2.8-21-19-red.log`.
+    - **21 and 19:** "Your cart" sends the **View cart** link first, then the lines with their buttons ([`menus.py`](../../../packages/backend/apps/whatsapp_shop/menus.py), `_cart_page`); the store assistant's instructions say "For anything about the cart, such as seeing it, emptying it, checking out or a link to it, call show_cart", which ends its turn on that screen. RED: `2 failed, 86 passed` (with `apps/entitlements`), log `step-2.8-21-19-red-2.log`. GREEN: `apps/whatsapp_shop` first `1 failed, 102 passed`, an older test's fake cart lines lacking the `variant_id` the real ones have; then `103 passed`. Logs `step-2.8-21-19-green.log`, `step-2.8-21-19-green-rerun.log`.
+    - **15:** a product row whose name is longer than `LIST_ROW_TITLE_MAX` gets "_its whole name_ · _its price_" as its description; a name that fits keeps just the price, so nothing is repeated. RED: `test_browsing.py`, `1 failed, 8 passed`, log `step-2.8-15-red.log`. GREEN: `apps/whatsapp_shop`: `104 passed`, log `step-2.8-15-green.log`.
+    - **16:** the plan check is taken off every setup field (connecting, changing whom a number serves, test messages, troubleshooting and registration, choosing a number's store and mode, linking a phone, connecting a Shopify store); it stays on `shopifyProducts`, and in the router for replies and the assistant. The WhatsApp page works as usual on any plan, saying "Your numbers don't reply to anyone, your team or your customers, until your plan includes WhatsApp. You can connect and set them up now, and everything is kept."; the Shopify stores page keeps its connect form. RED: [`test_where_checked.py`](../../../packages/backend/apps/entitlements/tests/test_where_checked.py) with `SETUP_FIELDS`: `13 failed, 11 passed`; the WhatsApp and Shopify pages' specs: `1 failed` each. Logs `step-2.8-16-red.log`, `step-2.8-16-webapp-whatsapp-red.log`, `step-2.8-16-webapp-shopify-red.log`. GREEN: `apps/entitlements` and `apps/whatsapp_shop`: `156 passed`; `webapp-whatsapp` `56 passed`, `webapp-shopify` `32 passed`, lint and type-check exit code `0`. Logs `step-2.8-16-green.log` and `step-2.8-16-<project>-*.log`.
+    - **17:** `disconnect_account` ([`accounts.py`](../../../packages/backend/apps/whatsapp/services/accounts.py)) also deletes the number's contacts; the database's cascades delete their messages, conversations, assistant history, phone links and store customers. The number's row and its store link stay. The confirmation reads "Its conversations, with every message and customer, are deleted, so whoever gets this number next never sees them. Its store link is kept." RED: `test_accounts.py`, `1 failed, 39 passed`; the page's spec `1 failed, 55 passed`. Logs `step-2.8-17-red.log`, `step-2.8-17-web-red.log`. GREEN: `apps/whatsapp` and `apps/whatsapp_shop`: `674 passed`; `webapp-whatsapp`: `56 passed`, lint and type-check exit code `0`. Logs `step-2.8-17-green.log`, `step-2.8-17-web-green.log`. The disconnect mutation's GraphQL description changed with it, so `api.graphql` is regenerated at the next schema download.
+    - Black: `1 file reformatted, 158 files left unchanged`, by `docker compose run --rm -T backend black apps/whatsapp apps/whatsapp_shop apps/shopify apps/entitlements conftest.py`.
+  - **Finding 18, decided and done 2026-11-01 (maintainer's choice, option A):** after **Empty cart**, the reply first sends "If you opened your cart on _the store's name_'s website, it's kept there separately: you can empty it on its cart page." with **View cart**, a link to the online store's own cart page (`storefront.website_cart_url`), where Shopify's own buttons empty it; then "Your cart here in WhatsApp is empty now." with its buttons (the maintainer's wording, the same day: it says which cart is empty, the one the chat can verify; RED `1 failed, 21 passed`, GREEN `apps/whatsapp_shop` `104 passed`, logs `step-2.8-18-wording-red.log` and `step-2.8-18-wording-green.log`). Weighed: a link to `/cart/clear` (undocumented as a GET), and nothing. RED: `test_empty_cart_forgets_it`, `1 failed, 21 passed`, log `step-2.8-18-red.log`. GREEN: `apps/whatsapp_shop` and `test_storefront.py`: `132 passed`, log `step-2.8-18-green.log`; black: `66 files left unchanged`. The research behind it: Shopify's Ajax Cart API documents `POST /{locale}/cart/clear.js`, which "set[s] all quantities of all line items in the cart to zero", for the store's own pages to call, and a tip mentions "the `/{locale}/cart/clear` endpoint" without saying which HTTP method (https://shopify.dev/docs/api/ajax/reference/cart). A WhatsApp link opens with a GET, and no documented GET clears the cart and redirects, so a link to `/cart/clear` would rely on undocumented behaviour.
+  - **Finding 22 (the AI agent's, while designing Step 2.9), done 2026-11-01: a store disconnected on the Shopify page kept selling on WhatsApp.** Disconnecting sets the store's organization to none, but a number's store link still pointed at it, and nothing checked whose store it was; if another organization then connected the store, the first organization's numbers would sell from it and its page would show the store. **Fixed, with no design change:** `channel_for` in [`services.py`](../../../packages/backend/apps/whatsapp_shop/services.py) gives a number's store link only while the store is the number's organization's, and every reader goes through it (the replies, the menus and assistant, the page's list, and setting the mode, which says "Choose the store this number sells from first."). The link is kept, as a disconnected number's is (finding 17), so connecting the store again brings the number back with its mode.
+    - RED: two tests in [`test_handler.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_handler.py) (a store disconnected, a store now another organization's) and two in [`test_schema.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_schema.py) (the page's list, setting the mode): `4 failed`. Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_shop/tests/test_handler.py apps/whatsapp_shop/tests/test_schema.py -k "disconnected or another_organizations_sends" -p no:cacheprovider -q`, log `finding-22-red-2.log`.
+    - GREEN: `apps/whatsapp_shop` and `apps/whatsapp`: `678 passed`; ruff `All checks passed!`; black `23 files would be left unchanged` (`apps/whatsapp_shop`). Command: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_shop apps/whatsapp -p no:cacheprovider -q`, log `finding-22-green.log`.
   9. **Checkout's delivery country is the store's default,** United States on the dev store, because the cart sends no country (Step 2.1b, decision 2). To reconsider later, as its own decision: a country taken from the customer's number would help a local customer, and be wrong for travellers and gifts.
   10. **A cart link beside the Checkout link** (the maintainer's clarification, 2026-10-31): the checkout message gets two link buttons, one opening Shopify Checkout, as now, and one opening the shop's cart page, where the shopper reviews the items in their cart.
       - **To research first:** WhatsApp's link-button message carries a single link, so two link buttons need another message shape. And the shop's cart page on its website uses the browser's own cart, not the Storefront API cart the chat builds, so it needs a way to open with the chat cart's lines; Shopify's cart permalinks are one lead (https://shopify.dev/docs/apps/build/checkout/create-cart-permalinks).
@@ -1921,6 +1939,210 @@ The organization's number is already connected and proven by the form (Steps 1.5
       - WhatsApp shows only JPEG and PNG images, so the logo is asked for in one of those. Doing the same for product pictures may bring back the ones left out today.
       - The name and logo are kept from one fetch, not fetched on every message.
   14. **Changing a setting on the WhatsApp page shows no confirmation.** Choosing **Menus** or **AI assistant** saves at once and shows nothing. It should show a toast, or an error if the save fails. **Save store** and **Change** are to be checked the same way, using the app's existing toasts.
+
+- **Step 2.9 A business's own Meta app (Step 2.8, finding 3).** Use case: a Shopify business connects the WhatsApp number from its own Meta app with the form, and its customers' messages reach it. Until now every webhook was checked with one App secret, `WHATSAPP_APP_SECRET`, so a number in any other app got 403s; the form asks for values a business can in practice only get from an app of its own. Embedded Signup's numbers (phase 5) stay in this service's own app, side by side. Designed on 2026-11-01, one decision at a time (maintainer's decisions):
+  1. **A Meta app belongs to one organization, and an App ID can be registered only once across the service.** Meta sends all of one app's webhooks to a single callback address, so one app can only ever feed one organization. A second organization registering the same App ID is refused: "This Meta app is already connected to another organization." Weighed: several organizations sharing one app (an agency's), which needs the webhook's unverified body read to find the organization; agencies are served by Embedded Signup instead.
+  2. **The webhook address and verify token are generated by the service when an app is registered,** and shown on the WhatsApp page to paste into Meta's "Callback URL" and "Verify token": `/api/whatsapp/webhook/<a random public id>/`, not the App ID, and a random verify token stored encrypted, with **Regenerate**. One view behind one route serves every app: each request costs one indexed lookup of the id, then the signature is checked with that app's secret before anything in the request is read. The general `/api/whatsapp/webhook/` stays for this service's own app. Weighed: the App ID in the address with a token the business chooses, and one general address that reads each body to find the app.
+  3. **A "Your Meta apps" card registers each app once** (App ID and App secret) and shows its address and token; the connect form picks "This service's app" (the default) or one of the organization's registered apps. The app's webhook is set up before any number's messages arrive, and many numbers share one app. Weighed: everything in the connect form.
+  4. **Remove is refused while any connected number uses the app,** naming them: "Disconnect its numbers first: …". Removing an app can never silently cut off a number, and disconnecting stays a deliberate step per number, since it deletes the number's conversations (finding 17). **Update secret** and **Regenerate** for the token come with the card.
+  5. **Each connected number's row has a "Meta app" setting,** changeable without reconnecting, with **Change** and a confirmation reminding to paste the app's address and token into Meta first; `whatsapp.manage` only. Existing numbers start as "This service's app". The maintainer will test it and iterate if needed.
+  - **What stays the same:** past the signature check every webhook is handled the same way; a number connected either way is the same `WhatsAppAccount`, with the same contacts, messages, store link, router, menus, assistant and plan checks; each number already sends with its own stored token. Only the connecting page, the connect service and the webhook's front door know how a number was connected.
+  - **The form tells businesses to use a permanent token:** a temporary token from Meta's API Setup page expires within a day; a system user's token doesn't (https://developers.facebook.com/docs/whatsapp/business-management-api/get-started#system-user-access-tokens).
+  - **Setting a number up with the form, compared with Embedded Signup:**
+
+    ```mermaid
+    flowchart TD
+      subgraph FORM["The form (now, Step 2.9)"]
+        F1["The business creates its own Meta app<br/>and adds WhatsApp to it"] --> F2["Your Meta apps: it registers the app<br/>(App ID, App secret)"]
+        F2 --> F3["We show the app's webhook address<br/>and verify token"]
+        F3 --> F4["It pastes both into its Meta app's<br/>webhook settings"]
+        F4 --> F5["Connect form: phone number ID,<br/>WhatsApp Business Account ID,<br/>a permanent token, and its Meta app"]
+      end
+      subgraph ES["Embedded Signup (phase 5)"]
+        E1["The business clicks<br/>Connect with Facebook"] --> E2["Meta's popup: it logs in, picks its business,<br/>adds and verifies its number"]
+        E2 --> E3["Our page gets a one-time code,<br/>the WhatsApp Business Account ID<br/>and the phone number ID"]
+        E3 --> E4["Our backend swaps the code for a token<br/>issued to our app, subscribes our app<br/>and registers the number"]
+      end
+      F5 --> A[("WhatsAppAccount<br/>meta_app: the business's app<br/>connection_method: MANUAL")]
+      E4 --> B[("WhatsAppAccount<br/>meta_app: none (our app)<br/>connection_method: EMBEDDED_SIGNUP")]
+      A --> W1["Its webhooks: /api/whatsapp/webhook/&lt;the app's public id&gt;/<br/>checked with the business's App secret"]
+      B --> W2["Its webhooks: /api/whatsapp/webhook/<br/>checked with WHATSAPP_APP_SECRET"]
+      W1 --> R["The same router, menus, store, assistant,<br/>plan checks and stored messages"]
+      W2 --> R
+    ```
+
+  - **TDD sub-steps:**
+    - **2.9-1 `apps.whatsapp`, the model and its services:** `MetaApp` (organization, App ID unique across the service, App secret and verify token stored encrypted, a random public id); `WhatsAppAccount.meta_app`, empty for this service's app; registering, updating the secret, regenerating the token, removing (refused while connected numbers use it), and changing a number's app.
+    - **2.9-2 the webhook:** `/api/whatsapp/webhook/<public id>/`: Meta's GET check with that app's verify token, and POSTs checked with that app's secret; an unknown id is not found; events are stored only for numbers in that app. The general address is unchanged.
+    - **2.9-3 GraphQL:** the organization's apps (never their secrets; the address and token for `whatsapp.manage`), and mutations to register, update, regenerate, remove, and change a number's app; connecting takes an optional app.
+    - **2.9-4 web:** the "Your Meta apps" card, the connect form's choice, the row's setting, and the permanent-token help.
+    - **2.9-5 docs and human checks,** including the maintainer's own number moved into the maintainer's own app.
+
+  - **The WhatsApp side's classes after Step 2.9** (key attributes and methods only; the maintainer asked for this once the Meta apps were built). Encrypted fields are read and written through properties of the same name without `_encrypted`. The numbers' handlers are registered by purpose in `apps/whatsapp/registry.py`, so `apps.whatsapp` never imports what users can do in chat.
+
+    ```mermaid
+    classDiagram
+      direction LR
+      class Tenant {
+        name
+        type
+      }
+      class User {
+        email
+      }
+      class MetaApp {
+        app_id : unique across the service
+        app_secret : encrypted
+        verify_token : encrypted
+        public_id : random, in its webhook address
+        register_app()
+        update_secret()
+        regenerate_verify_token()
+        remove_app() : refused while a connected number uses it
+        webhook_url()
+      }
+      class WhatsAppAccount {
+        purpose : team, customers or both
+        phone_number_id : unique
+        waba_id
+        display_phone_number
+        access_token : encrypted
+        meta_app : none for this service's app
+        connection_method : MANUAL, SEED
+        is_active
+        connect_account()
+        change_purpose()
+        set_account_app()
+        disconnect_account() : deletes its contacts
+      }
+      class WhatsAppContact {
+        bsuid : Meta's user id
+        wa_id : phone digits
+        profile_name
+      }
+      class WhatsAppMessage {
+        direction : INBOUND, OUTBOUND
+        wamid
+        kind
+        payload
+        status
+      }
+      class WhatsAppConversation {
+        state
+        state_expires_at
+      }
+      class WhatsAppPendingAction {
+        action
+        arguments
+        expires_at
+        consumed_at
+      }
+      class WhatsAppAgentItem {
+        sequence
+        item
+      }
+      class WhatsAppIdentity {
+        conversation_mode
+        linked_at
+        start_link() : a code to text from the phone
+        unlink()
+      }
+      class StorefrontChannel {
+        conversation_mode : menus or assistant
+        channel_for() : only while the store is the organization's
+      }
+      class ShopifyShop {
+        shop_domain
+        scopes
+        uninstalled_at
+      }
+      class StoreCustomer {
+        cart_id
+      }
+      class PlanFeature {
+        plan
+        feature : SHOPIFY, WHATSAPP
+        has_feature(tenant, feature)
+      }
+      class Permissions {
+        <<permission codes>>
+        whatsapp.view
+        whatsapp.manage
+      }
+      class Handler {
+        <<interface>>
+        answers(contact)
+        conversation_mode(contact)
+        main_menu(turn)
+        on_choice(turn, kind, data)
+        help_text(turn)
+        on_connected(account)
+      }
+      class InternalNumberHandler
+      class StoreHandler
+      class Webhook {
+        <<views>>
+        webhook_view() : this service's app
+        app_webhook_view(public_id) : an organization's app
+      }
+      class Router {
+        route(message_id)
+      }
+
+      Tenant "1" --> "*" MetaApp : owns
+      Tenant "1" --> "*" WhatsAppAccount : owns
+      Tenant "1" --> "*" ShopifyShop : connects
+      WhatsAppAccount "*" --> "0..1" MetaApp : is in
+      WhatsAppAccount "1" --> "*" WhatsAppContact : texted by
+      WhatsAppContact "1" --> "*" WhatsAppMessage
+      WhatsAppContact "1" --> "0..1" WhatsAppConversation
+      WhatsAppConversation "1" --> "*" WhatsAppPendingAction
+      WhatsAppConversation "1" --> "*" WhatsAppAgentItem
+      WhatsAppContact "1" --> "0..1" WhatsAppIdentity : a linked member
+      User "1" --> "*" WhatsAppIdentity
+      WhatsAppAccount "1" --> "0..1" StorefrontChannel : sells through
+      StorefrontChannel "*" --> "1" ShopifyShop
+      WhatsAppContact "1" --> "0..1" StoreCustomer
+      StoreCustomer "*" --> "0..1" ShopifyShop : its cart's store
+      Handler <|.. InternalNumberHandler : team, apps.whatsapp_saas
+      Handler <|.. StoreHandler : customers, apps.whatsapp_shop
+      Webhook ..> MetaApp : checks its token and secret
+      Webhook ..> WhatsAppAccount : stores events for its app's numbers
+      Router ..> Handler : by the number's purpose
+      Router ..> PlanFeature : replies only on a plan with WhatsApp
+      Permissions ..> WhatsAppAccount : view lists, manage changes
+      Permissions ..> MetaApp : manage only
+    ```
+
+  - **Built 2026-11-01,** in TDD cycles run by the AI agent (the maintainer's autopilot). Backend commands are `docker compose run --rm -T -e DATABASE_URL= backend pytest <path> -p no:cacheprovider -q > logs/<log> 2>&1`; web commands `pnpm nx run webapp-whatsapp:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 > logs/<log> 2>&1`.
+    - **2.9-1:** `MetaApp` and `WhatsAppAccount.meta_app` ([`models.py`](../../../packages/backend/apps/whatsapp/models.py), migration `whatsapp` 0019, made by `docker compose run --rm -T backend python manage.py makemigrations whatsapp -n meta_apps`), [`services/meta_apps.py`](../../../packages/backend/apps/whatsapp/services/meta_apps.py), `connect_account(meta_app_id=…)` and `find_app` in [`accounts.py`](../../../packages/backend/apps/whatsapp/services/accounts.py), and an admin page that never shows the secret or the token. An App ID is digits only. `meta_app` is `RESTRICT`ed, not `PROTECT`ed: the first GREEN gave `1 failed, 64 passed`, deleting an organization refused by its own app; `RESTRICT` refuses deleting an app a number uses but allows both going with their organization (https://docs.djangoproject.com/en/5.2/ref/models/fields/#django.db.models.RESTRICT). RED: `test_meta_apps.py` couldn't import `MetaApp`, log `step-2.9-1-red.log`; the admin's `1 failed`, log `step-2.9-1-admin-red.log`. GREEN: `test_meta_apps.py` and `test_accounts.py` `65 passed`, `test_admin.py` `15 passed`; logs `step-2.9-1-green.log`, `step-2.9-1-admin-green.log`.
+    - **2.9-2:** [`views.py`](../../../packages/backend/apps/whatsapp/views.py) serves both addresses with one handler, told which app it's receiving for; the general address now stores events only for numbers on this service's app. RED: `TestAnOrganizationsOwnApp` in [`test_webhook_views.py`](../../../packages/backend/apps/whatsapp/tests/test_webhook_views.py), `8 failed, 26 passed`, log `step-2.9-2-red.log`. GREEN: `34 passed`, log `step-2.9-2-green.log`.
+    - **2.9-3:** `whatsAppMetaApps`, `registerWhatsAppMetaApp`, `updateWhatsAppMetaAppSecret`, `regenerateWhatsAppMetaAppVerifyToken`, `removeWhatsAppMetaApp`, `setWhatsAppNumberMetaApp`, `metaAppId` on numbers and on `connectWhatsAppAccount` ([`schema.py`](../../../packages/backend/apps/whatsapp/schema.py)), every one for `whatsapp.manage` and needing no plan (added to `SETUP_FIELDS` in `test_where_checked.py`). The webhook address is built from `API_URL`, as Shopify's callback is. RED: [`test_meta_apps_schema.py`](../../../packages/backend/apps/whatsapp/tests/test_meta_apps_schema.py), `20 failed, 23 passed` (two of them the service tests, after renaming the row's id to `meta_app_id`), log `step-2.9-3-red.log`. GREEN: `63 passed` with `test_accounts_schema.py`, then `apps/whatsapp`, `apps/whatsapp_shop` and `apps/entitlements`: `790 passed`; `makemigrations --check --dry-run`: `No changes detected`; black `4 files reformatted, 114 files left unchanged`. Logs `step-2.9-3-green.log`, `step-2.9-backend-green.log`, `step-2.9-3-black.log`. Ruff's `S106` flags literal secrets in the new tests as it does in the existing ones; the backend's lint doesn't run it on tests.
+    - **2.9-4:** the schema downloaded with the backend running (`pnpm nx run webapp-api-client:graphql:download-schema`, which also regenerates the types; log `step-2.9-4-download-schema.log`), [`metaAppsCard.component.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/metaAppsCard.component.tsx), the connect form's **Meta app** choice, shown once an app is registered, and its permanent-token line, and the row's **Meta app** with **Change app**. RED: [`whatsappSettings.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/whatsappSettings.component.spec.tsx), `9 failed, 59 passed`, log `step-2.9-4-red.log`. GREEN: `68 passed`; lint and type-check of `webapp-whatsapp`: exit code `0`. Logs `step-2.9-4-green.log`, `step-2.9-4-lint.log`, `step-2.9-4-type-check.log`.
+  - **Human checks, 2026-11-01** (section 13, "Step 2.9 and findings 15 to 22"), run by the maintainer, who had already registered two of their own Meta apps and moved their two real numbers into them before the checks were written:
+    - **Proved:**
+      - Registering apps: each with its own address and token, its secrets stored encrypted (`show_apps`). This is M1, and M3's move, done by the maintainer.
+      - M2: the app's address answered its own verify token (`200` with the challenge), refused another (`403`), and an unknown address was `404`; after **Regenerate token**, the old token was refused and the new one accepted.
+      - M5: **Remove** was refused with "Disconnect its numbers first: _the number_.", and the app was kept.
+      - X22, in the database and pages: disconnecting the store set its links' `shop__tenant__name` to null and took it off the Shopify page; connecting it again restored the organization, with both numbers' `AGENTIC` mode kept.
+    - **Not proved by hand, to come back to:**
+      - M4: with a wrong App secret, nothing was stored, but no "refused with 403" log line was seen (production-readiness roadmap).
+      - X22 from the phone: no reply while disconnected, and a reply after reconnecting.
+      - M6, what a Member sees.
+      - X15, X16, X18, X19 and X21.
+      - Edge cases, deferred by the maintainer for lack of time.
+    - **Seen in the checks, recorded in the production-readiness roadmap:**
+      - plain integer ids, and hashids clashing across tables
+      - the demo seed linking a fake number to the real store
+      - the personal organization missing from the switcher (upstream)
+  - **The pre-commit run, 2026-11-01,** by the maintainer, one command at a time, with the stack stopped first (`pnpm saas down`):
+    - Lint and type-check, 16 frontend projects: 32 of 32 exit code `0`. Command: section 8, command 1, of [`2026-10-07-restore-green-test-suite-plan.md`](2026-10-07-restore-green-test-suite-plan.md).
+    - Frontend tests: 16 projects, 1009 passed, 4 skipped (upstream's), 0 failed; `webapp-whatsapp` 68 passed, `webapp-shopify` 32, `webapp-finances` 100. Command: `for p in webapp … webapp-whatsapp; do pnpm nx run $p:test --watchAll=false --maxWorkers=2 --skip-nx-cache > logs/$p.log 2>&1; …; done`, the README's summary form.
+    - Backend: `2020 tests | 2020 passed, 3272 warnings in 1654.89s`; workers: `2 passed`. Command: `pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1; pnpm nx run workers:test --skip-nx-cache > logs/workers-test.log 2>&1`, then the README's summary loop.
+    - The CI test list: exit code `0` (`check-test-lib-matrix.test.js` and `check-test-lib-matrix.js`).
+    - **Why the stack is stopped first:** an earlier run that afternoon, with `pnpm saas up` running, failed one upstream test, `webapp-finances`' Stripe `subscriptionPlanItem` "should not call onSelect": 2 runs in 4 alone. It passed 10 in 10 with the stack stopped. The race is in upstream's test: `waitForApolloMocks()` waits only for the last mock, the user query, and with no data yet the component reads the plan as active ("Current plan", disabled), so a click that lands after the plans answer but before the subscription's finds the button enabled. A busy machine slows the click into that window. Nothing in this release touches that code. The maintainer's decision: leave upstream's test alone, and always stop the stack before the final runs (README Testing, `agents.md` section 1.3). A failure there still gets its cause found, never just "flaky".
+    - Along the way: the first frontend and workers runs failed with "NX Failed to process project graph"; `pnpm nx reset` fixed it, as on 2026-10-29.
+  - **Open, for the maintainer to decide later (not built):** registering could prove the App secret matches the App ID by asking Meta for an app token with them, instead of waiting for the first 403 (decision 4 accepted the 403); and connecting could ask Meta which app the access token belongs to (`GET /app`) and refuse a choice that doesn't match, since the subscription made at connect time is the token's app's anyway.
 
 ### Phase 3 — Use case 5: Shopify and WhatsApp on a paid plan (outline)
 
@@ -2769,6 +2991,443 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 **In the web app,** only if `packages/backend/.env` has `PAYMENT_BACKEND=payfast`: open **Subscriptions** in the sidebar, then **Transaction history**. **Expect:** the same plan, price and dates as before the restart (a trial still says **Free trial**), and donations still labelled **Donation**.
 
+### Step 2.9 and findings 15 to 22: your own Meta app, and the fixes (2026-11-01)
+
+Brief and essential: about 30 minutes, top to bottom, with the web app at http://localhost:3000, your phone, Meta's App Dashboard at https://developers.facebook.com/apps, and a terminal. M1 to M7 move your number into your own Meta app with the "Your Meta apps" card (Step 2.9), check what a Member sees, and move the number back again. X16 to X22 check Step 2.8's findings 15, 16, 18, 19, 21 and 22. X17 comes last, because it deletes your number's conversations and you connect the number again afterwards.
+
+#### Setup for these checks
+
+1. **The whole stack, in its own terminal, left running:**
+
+   ```shell
+   pnpm saas up
+   ```
+
+   **Expect:** http://localhost:3000 loads.
+
+2. **The new migration,** in a second terminal, where every later command runs:
+
+   ```shell
+   pnpm saas backend migrate
+   ```
+
+   **Expect:** `No migrations to apply.`: `whatsapp.0019_meta_apps` was applied when the backend started on 2026-11-01. On another machine, `Applying whatsapp.0019_meta_apps... OK`.
+
+3. **Your own values, in this terminal:** your organization's name as the sidebar's switcher shows it, your tunnel address, your dev store's domain, and your Meta app's App ID, from https://developers.facebook.com/apps, your app, **App settings**, then **Basic**.
+
+   ```shell
+   read -r -p "Name of your organization: " ORG_A
+   read -r -p "Tunnel address (https://…): " TUNNEL_URL
+   read -r -p "Your dev store's domain (….myshopify.com): " SHOP_DOMAIN
+   read -r -p "Your Meta app's App ID: " APP_ID
+   ```
+
+4. **Four helpers, in this terminal,** so the checks can show the rows they change, whole, with one short word. Each prints every column of every row for your organization, as pretty JSON. A column ending in `_encrypted` holds a secret, so it prints `"encrypted"` when a value is stored encrypted, `""` when there's none, and never the value. `show_links` adds the store's domain and organization next to each link, so the ids are named.
+   - `show_apps`: your organization's Meta apps (`MetaApp`).
+   - `show_numbers`: your organization's numbers (`WhatsAppAccount`).
+   - `show_links`: which store each number sells from (`StorefrontChannel`).
+   - `show_last_message`: the newest message your numbers received (`WhatsAppMessage`).
+
+   ```shell
+   show_apps() { docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import MetaApp; hide = lambda r: {k: ((('encrypted' if str(v).startswith('gAAAA') else 'NOT ENCRYPTED') if v else '') if k.endswith('_encrypted') else v) for k, v in r.items()}; print(json.dumps([hide(r) for r in MetaApp.objects.filter(tenant__name='$ORG_A').values()], indent=4, default=str))"; }
+   show_numbers() { docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppAccount; hide = lambda r: {k: ((('encrypted' if str(v).startswith('gAAAA') else 'NOT ENCRYPTED') if v else '') if k.endswith('_encrypted') else v) for k, v in r.items()}; print(json.dumps([hide(r) for r in WhatsAppAccount.objects.filter(tenant__name='$ORG_A').values()], indent=4, default=str))"; }
+   show_links() { docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp_shop.models import StorefrontChannel; fields = [f.attname for f in StorefrontChannel._meta.concrete_fields]; print(json.dumps(list(StorefrontChannel.objects.filter(account__tenant__name='$ORG_A').values(*fields, 'shop__shop_domain', 'shop__tenant__name')), indent=4, default=str))"; }
+   show_last_message() { docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppMessage; print(json.dumps(WhatsAppMessage.objects.filter(contact__account__tenant__name='$ORG_A', direction='INBOUND').order_by('-created_at').values().first(), indent=4, default=str))"; }
+   ```
+
+   Fernet, which encrypts the secrets, writes values that start with `gAAAA`, so `"encrypted"` proves the value isn't stored as plain text.
+
+   **Expect:** no output: defining a function prints nothing. The helpers run when called by name, from step 6 on. They live only in this terminal: a new one needs step 3's `read` lines and these definitions again.
+
+5. **Your organization on a trial,** so its numbers reply (phase 3, decision 6). This is PL3's command:
+
+   ```shell
+   docker compose run --rm -T backend python manage.py shell -c "import json; from datetime import timedelta; from django.utils import timezone; from apps.payfast.models import PayFastSubscription; s = PayFastSubscription.objects.get(tenant__name='$ORG_A'); s.plan = 'monthly_plan'; s.status = 'TRIALING'; s.trial_end = timezone.now() + timedelta(days=14); s.save(); print(json.dumps(PayFastSubscription.objects.filter(pk=s.pk).values()[0], indent=4, default=str)); print('effective plan:', s.effective_plan())"
+   ```
+
+   **Expect:** `effective plan: monthly_plan`.
+
+6. **The starting state, proved:**
+
+   ```shell
+   show_numbers
+   show_links
+   show_apps
+   ```
+
+   **Expect:** one active number with `"purpose": "INTERNAL_AND_EXTERNAL_COMMUNICATIONS"`, `"meta_app_id": null` (this service's app) and `"access_token_encrypted": "encrypted"`; one store link with `"shop__shop_domain"` your store, `"shop__tenant__name"` your organization and `"conversation_mode": "WHATSAPP_FORM"`; and `[]`, no Meta app yet. Your Meta app's webhook in the App Dashboard points at your tunnel address followed by `/api/whatsapp/webhook/`, and `WHATSAPP_APP_SECRET` in `packages/backend/.env` is its App secret.
+
+**Seeded data:** none new. The checks use your own number, your dev store and your own Meta app.
+
+**Who can do what:** the Owner and Admins have `whatsapp.manage`: they see "Your Meta apps", the connect form's **Meta app** choice, and each number's **Meta app** setting. Members have `whatsapp.view` only and see none of the three. Every check acts as you, the Owner, except M6, which acts as the seeded Member `whatsapp-member@example.com`.
+
+#### M1. Registering your app gives it its own address and token, and the same App ID is refused twice (Step 2.9, decisions 1 to 3)
+
+- **Why:** an app is registered once; the service makes its callback URL and verify token, and stores both secrets encrypted.
+- **Acts on:** a new `MetaApp` row for your organization.
+
+**Prove** there's no app yet:
+
+```shell
+show_apps
+```
+
+**Expect:** `[]`.
+
+Log in as yourself: open http://localhost:3000, log in with your own email and password, then open **WhatsApp** in the sidebar. In the App Dashboard, on your app's **App settings**, **Basic** page, copy the **App ID** and the **App secret** (**Show**). In **Your Meta apps**, paste both and press **Register app**.
+
+**Expect:** a row "App" followed by your App ID, with a **Callback URL** made of your tunnel address, `/api/whatsapp/webhook/` and a random part that isn't your App ID, and a **Verify token**; the **App secret** field is empty again. A URL starting with `http://localhost:5001` means `API_URL` in `packages/backend/.env` isn't your tunnel address. Then:
+
+```shell
+show_apps
+```
+
+**Expect:** one app, with `"app_id"` equal to `$APP_ID`, `"public_id"` equal to the callback URL's random part, `"tenant_id"` your organization's, and `"app_secret_encrypted"` and `"verify_token_encrypted"` both `"encrypted"`.
+
+Paste the same App ID and App secret again and press **Register app**. **Expect:** "This Meta app is already registered: it's in your list of Meta apps." under **App ID**. Then:
+
+```shell
+show_apps
+```
+
+**Expect:** still one app, the same as before.
+
+#### M2. The address answers only its own token, and a new token replaces the old (Step 2.9, decision 2)
+
+- **Why:** Meta checks the callback URL with the verify token before saving it; an address nobody was given doesn't exist.
+- **Acts on:** your app's webhook address and verify token, then its webhook settings at Meta.
+
+Store the two values the card shows (**Copy callback URL**, **Copy verify token**):
+
+```shell
+read -r -p "Callback URL from the card: " APP_WEBHOOK_URL
+read -r -p "Verify token from the card: " APP_VERIFY_TOKEN
+```
+
+Ask the address as Meta does, with the card's token:
+
+```shell
+curl "$APP_WEBHOOK_URL" \
+  -G \
+  --data-urlencode "hub.mode=subscribe" \
+  --data-urlencode "hub.verify_token=$APP_VERIFY_TOKEN" \
+  --data-urlencode "hub.challenge=1158201444" \
+  -s \
+  -w "\n%{http_code}\n"
+```
+
+**Expect:** `1158201444`, then `200`. The same request with only the token changed, to one the service never made:
+
+```shell
+curl "$APP_WEBHOOK_URL" \
+  -G \
+  --data-urlencode "hub.mode=subscribe" \
+  --data-urlencode "hub.verify_token=not-the-token" \
+  --data-urlencode "hub.challenge=1158201444" \
+  -s \
+  -w "\n%{http_code}\n"
+```
+
+**Expect:** an empty line, then `403`. An address nobody was given:
+
+```shell
+curl "$TUNNEL_URL/api/whatsapp/webhook/no-such-app/" \
+  -s \
+  -o /dev/null \
+  -w "%{http_code}\n"
+```
+
+**Expect:** `404`.
+
+On the app's row, press **Regenerate token**. **Expect:** a dialog saying messages keep arriving; press **Regenerate verify token**. **Expect:** a new **Verify token**, and the same **Callback URL**. Store it:
+
+```shell
+read -r -p "The new verify token from the card: " NEW_VERIFY_TOKEN
+```
+
+The old token, now refused:
+
+```shell
+curl "$APP_WEBHOOK_URL" \
+  -G \
+  --data-urlencode "hub.mode=subscribe" \
+  --data-urlencode "hub.verify_token=$APP_VERIFY_TOKEN" \
+  --data-urlencode "hub.challenge=1158201444" \
+  -s \
+  -w "\n%{http_code}\n"
+```
+
+**Expect:** an empty line, then `403`. The same request with only the token changed, to the new one:
+
+```shell
+curl "$APP_WEBHOOK_URL" \
+  -G \
+  --data-urlencode "hub.mode=subscribe" \
+  --data-urlencode "hub.verify_token=$NEW_VERIFY_TOKEN" \
+  --data-urlencode "hub.challenge=1158201444" \
+  -s \
+  -w "\n%{http_code}\n"
+```
+
+**Expect:** `1158201444`, then `200`.
+
+In the App Dashboard, open **WhatsApp**, then **Configuration**, and **Edit** the webhook: paste the **Callback URL** and the new **Verify token** from the card, and press **Verify and save**. **Expect:** Meta saves it. From now until M3's **Move number**, texts to your number are acknowledged but not stored, because the number is still on this service's app in the database; M3's dialog says to paste first for this reason. Go straight on to M3.
+
+#### M3. Your number moves into your app, and its messages arrive there (Step 2.9, decision 5)
+
+- **Why:** a connected number changes app without reconnecting; from then on only its app's signature is accepted for it.
+- **Acts on:** your number's row.
+
+**Prove** it's on this service's app:
+
+```shell
+show_numbers
+```
+
+**Expect:** `"meta_app_id": null`.
+
+Log in as yourself: open http://localhost:3000, log in with your own email and password, then open **WhatsApp**. On your number's row, choose **Meta app**: "Your app" followed by your App ID, and press **Change app**. **Expect:** a dialog "Move _the number_ to app _your App ID_?" saying to paste the callback URL and verify token into Meta first. Press **Move number**. **Expect:** a toast "_the number_ is now in app _your App ID_."
+
+From your phone, send `menu` to your number. **Expect:** the store's main menu. Then:
+
+```shell
+show_numbers
+show_last_message
+```
+
+**Expect:** `"meta_app_id"` equal to M1's app `"id"`; and your `menu`, received this minute: it came in through your app's own address.
+
+#### M4. With a wrong App secret your number doesn't reply, and the log names the app (Step 2.9, decision 4)
+
+- **Why:** a secret reset in Meta but not updated here must be found without guessing, and must never let a forged message in.
+- **Acts on:** your app's stored App secret, made wrong, then put back.
+
+**Prove** the newest stored message, to compare with later:
+
+```shell
+show_last_message
+```
+
+**Expect:** M3's `menu`.
+
+Log in as yourself: open http://localhost:3000, log in with your own email and password, then open **WhatsApp**. On your app's row, press **Update secret**, type `wrong-secret-for-the-check` as **New App secret**, and press **Save secret**. **Expect:** a toast saying your app's App secret is updated.
+
+From your phone, send `menu`. **Expect:** no reply. Then show the refusals, and the newest stored message:
+
+```shell
+docker compose logs backend --since 5m 2>&1 | grep "refused with 403"
+show_last_message
+```
+
+**Expect:** lines "WhatsApp webhook refused with 403: its X-Hub-Signature-256 signature doesn't match the App secret registered for Meta app" followed by your App ID and "(was it reset in Meta's App Dashboard? …)", with no secret in them (Meta retries, so there may be several); and still M3's `menu`: nothing was stored.
+
+**Update secret** again, with the real App secret from the App Dashboard. From your phone, send `menu`. **Expect:** the main menu; Meta's retries of the refused message may bring a second one. Then:
+
+```shell
+show_last_message
+```
+
+**Expect:** a `menu` received this minute.
+
+#### M5. Removing the app is refused while your number is in it (Step 2.9, decision 4)
+
+- **Why:** removing an app must never silently cut a number off.
+- **Acts on:** nothing; the removal is refused.
+
+**Prove** your number is in the app:
+
+```shell
+show_numbers
+```
+
+**Expect:** `"meta_app_id"` equal to M1's app `"id"`.
+
+Log in as yourself: open http://localhost:3000, log in with your own email and password, then open **WhatsApp**. On your app's row, press **Remove**, then **Remove app**. **Expect:** "Disconnect its numbers first:" followed by your number, on the app's row. Then:
+
+```shell
+show_apps
+```
+
+**Expect:** the app, still there.
+
+#### M6. A Member sees no Meta apps and can't change a number's app (Step 2.9, decision 3)
+
+- **Why:** the Meta apps list holds each app's verify token, so it and every change to it are for `whatsapp.manage` (Owner and Admin) only; a Member has `whatsapp.view`.
+- **Acts on:** the seeded Member `whatsapp-member@example.com` of your organization, from `whatsapp_seed_demo`, while your number is still in your app.
+
+**Prove** they're a Member of your organization:
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.multitenancy.models import TenantMembership; print(json.dumps(TenantMembership.objects.filter(user__email='whatsapp-member@example.com', tenant__name='$ORG_A').values().first(), indent=4, default=str))"
+```
+
+**Expect:** a membership with `"role": "MEMBER"` and `"is_accepted": true`. If it prints `null`, seed it, with your own login email:
+
+```shell
+read -r -p "Your login email: " OWNER_EMAIL
+docker compose run --rm -T backend python manage.py whatsapp_seed_demo --email "$OWNER_EMAIL" --organization "$ORG_A"
+```
+
+In the web app, log out, then log in as `whatsapp-member@example.com` with the password `WhatsAppMember123!`, and open **WhatsApp**. **Expect:** your number listed with its status, and no "Your Meta apps" card, no **Meta app** setting on its row, and no connect form. Log out, and log in as yourself again for M7.
+
+#### M7. Your number goes back to this service's app, and the app is removed (Step 2.9, decisions 4 and 5)
+
+- **Why:** the later checks, and your day-to-day use, expect your number on this service's app, as before M3.
+- **Acts on:** your app's webhook settings at Meta, your number's row, and your `MetaApp` row, deleted.
+
+Print the general address, and this service's verify token from your `.env`:
+
+```shell
+echo "$TUNNEL_URL/api/whatsapp/webhook/"
+grep '^WHATSAPP_VERIFY_TOKEN=' packages/backend/.env
+```
+
+In the App Dashboard, open **WhatsApp**, **Configuration**, and **Edit** the webhook: paste that address, and the value after `WHATSAPP_VERIFY_TOKEN=` as the verify token, and press **Verify and save**. **Expect:** Meta saves it.
+
+Log in as yourself: open http://localhost:3000, log in with your own email and password, then open **WhatsApp**. On your number's row, choose **Meta app**: "This service's app", press **Change app**, then **Move number**. **Expect:** a toast "_the number_ is now in this service's app." From your phone, send `menu`. **Expect:** the main menu. On the app's row, press **Remove**, then **Remove app**. **Expect:** no app listed, and no **Meta app** choice in the connect form or on the row. Then:
+
+```shell
+show_numbers
+show_apps
+```
+
+**Expect:** `"meta_app_id": null`, and `[]`.
+
+#### X16. On the free plan, setting up still works, and only replies and products wait for a plan (Step 2.8, finding 16)
+
+- **Why:** a business sets everything up before its trial starts; the plan locks only what's used.
+- **Acts on:** your organization's PayFast subscription row: the free plan, then the trial again.
+
+Put your organization on the free plan (PL1's command):
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from apps.payfast.models import PayFastSubscription; s = PayFastSubscription.objects.get(tenant__name='$ORG_A'); s.plan = 'free_plan'; s.status = 'ACTIVE'; s.save(); print(json.dumps(PayFastSubscription.objects.filter(pk=s.pk).values()[0], indent=4, default=str)); print('effective plan:', s.effective_plan())"
+```
+
+**Expect:** `effective plan: free_plan`.
+
+Log in as yourself: open http://localhost:3000, log in with your own email and password, then open **WhatsApp**. **Expect:** the box "Your numbers don't reply to anyone, your team or your customers, until your plan includes WhatsApp. You can connect and set them up now, and everything is kept."; the connect form, **Your Meta apps**, and on your number's row **Change**, the mode radios, **Send test message**, **Troubleshoot** and **Disconnect**. Open **Shopify**. **Expect:** the plan box, and the connect form. Open **Shopify products**. **Expect:** the plan box, and no products.
+
+Back on the trial (PL3's command):
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "import json; from datetime import timedelta; from django.utils import timezone; from apps.payfast.models import PayFastSubscription; s = PayFastSubscription.objects.get(tenant__name='$ORG_A'); s.plan = 'monthly_plan'; s.status = 'TRIALING'; s.trial_end = timezone.now() + timedelta(days=14); s.save(); print(json.dumps(PayFastSubscription.objects.filter(pk=s.pk).values()[0], indent=4, default=str)); print('effective plan:', s.effective_plan())"
+```
+
+**Expect:** `effective plan: monthly_plan`.
+
+#### X15, X21 and X18. A long name is given whole, "Your cart" offers the cart page first, and emptying says which cart is empty (Step 2.8, findings 15, 21 and 18)
+
+- **Why:** list rows cut titles at 24 characters; reply buttons can't open a link; the website keeps its own cart, which the chat can't empty.
+- **Acts on:** your cart in the chat, filled, then emptied.
+
+**Prove** your number sells from your store, with menus:
+
+```shell
+show_links
+```
+
+**Expect:** `"shop__shop_domain"` your store, `"shop__tenant__name"` your organization, `"conversation_mode": "WHATSAPP_FORM"`.
+
+From your phone, send `menu`, choose **Browse products**, and open the list. **Expect:** rows such as "The Collection Snowboar…" whose description gives the whole name and price, such as "The Collection Snowboard: Liquid · USD 749.95"; a short name keeps only its price. Add any product to your cart, send `menu`, and choose **Your cart**. **Expect:** first "Review your cart on _the store's name_'s website." with a **View cart** link, then the cart's lines with **Checkout**, **Empty cart** and **Main menu**. Tap **View cart**. **Expect:** the store's cart page with the same products. Back in WhatsApp, tap **Empty cart**. **Expect:** first "If you opened your cart on _the store's name_'s website, it's kept there separately: you can empty it on its cart page." with a **View cart** link to the store's `/cart` page, then "Your cart here in WhatsApp is empty now." with its buttons.
+
+#### X19. Asked about the cart, the assistant shows the cart's screen (Step 2.8, finding 19)
+
+- **Why:** asked to clear the cart, the assistant used to tell the customer to do it themselves, and said it had no link.
+- **Acts on:** your number's mode, the assistant, then menus again.
+
+Log in as yourself: open http://localhost:3000, log in with your own email and password, then open **WhatsApp**. On your number's row, choose **AI assistant**. Then:
+
+```shell
+show_links
+```
+
+**Expect:** `"conversation_mode": "AGENTIC"`.
+
+From your phone, add a product (`menu`, **Browse products**), then send "please clear my cart". **Expect:** the **View cart** link, then the cart's screen with **Checkout**, **Empty cart** and **Main menu**; the assistant empties nothing itself. Then send "send me the link to my cart". **Expect:** the same two messages, never "I have no link". Tap **Empty cart**. **Expect:** X18's two messages.
+
+On your number's row, choose **Menus**. Then:
+
+```shell
+show_links
+```
+
+**Expect:** `"conversation_mode": "WHATSAPP_FORM"`.
+
+#### X22. A store disconnected from your organization stops selling, and comes back with its mode when reconnected (Step 2.8, finding 22)
+
+- **Why:** a disconnected store kept selling on WhatsApp, and could have sold under another organization that connected it.
+- **Acts on:** your dev store's link to your organization, removed, then restored.
+
+**Prove** the store is your organization's:
+
+```shell
+show_links
+```
+
+**Expect:** `"shop__tenant__name"` your organization.
+
+Log in as yourself: open http://localhost:3000, log in with your own email and password, then open **Shopify**, and **Disconnect** your dev store. Then:
+
+```shell
+show_links
+```
+
+**Expect:** the link still there, with `"shop__tenant__name": null`. Open **WhatsApp**. **Expect:** your number's row says "No store chosen: its customers get no reply until one is.", with no mode setting. From your phone, send `menu`. **Expect:** no reply. Then:
+
+```shell
+show_last_message
+```
+
+**Expect:** your `menu`, received this minute: kept, but not answered.
+
+Print your store's domain:
+
+```shell
+echo "$SHOP_DOMAIN"
+```
+
+Open **Shopify**, connect that domain with the connect form, and approve on Shopify's page. Then:
+
+```shell
+show_links
+```
+
+**Expect:** `"shop__tenant__name"` your organization again, and `"conversation_mode": "WHATSAPP_FORM"`, as before. From your phone, send `menu`. **Expect:** the main menu, without choosing the store again.
+
+#### X17. Disconnecting your number deletes its conversations and keeps its store link (Step 2.8, finding 17), last
+
+- **Why:** numbers are recycled, so a disconnected number's history must never reach whoever gets it next.
+- **Acts on:** your number: disconnected, its conversations deleted, then connected again with its permanent access token (Meta Business settings, **System users**).
+
+**Prove** what it holds, and note its **Phone number ID** and **WhatsApp Business Account ID** (`"phone_number_id"` and `"waba_id"`) for connecting it again:
+
+```shell
+show_numbers
+docker compose run --rm -T backend python manage.py shell -c "from apps.whatsapp.models import WhatsAppContact, WhatsAppMessage; print('contacts:', WhatsAppContact.objects.filter(account__tenant__name='$ORG_A').count(), '| messages:', WhatsAppMessage.objects.filter(contact__account__tenant__name='$ORG_A').count())"
+```
+
+**Expect:** your active number, and some contacts and messages.
+
+Log in as yourself: open http://localhost:3000, log in with your own email and password, then open **WhatsApp**. On your number's row, press **Disconnect**. **Expect:** the dialog says its conversations, with every message and customer, are deleted, and its store link is kept. Press **Disconnect number**. Then:
+
+```shell
+show_numbers
+show_links
+docker compose run --rm -T backend python manage.py shell -c "from apps.whatsapp.models import WhatsAppContact, WhatsAppMessage; print('contacts:', WhatsAppContact.objects.filter(account__tenant__name='$ORG_A').count(), '| messages:', WhatsAppMessage.objects.filter(contact__account__tenant__name='$ORG_A').count())"
+```
+
+**Expect:** the number with `"is_active": false` and `"access_token_encrypted": ""`; its store link still there; and `contacts: 0 | messages: 0`.
+
+Connect it again with the form: **Your team and your customers**, its **Phone number ID**, its **WhatsApp Business Account ID** and its permanent token, then **Connect number**. Then:
+
+```shell
+show_numbers
+show_links
+```
+
+**Expect:** the number with `"is_active": true` and `"meta_app_id": null`, selling from your store as before. From your phone, send `menu`. **Expect:** the store's logo first (you're a new customer to it), then the main menu.
+
 ### Step 2.8 and phase 3: the fixes, and Shopify and WhatsApp on a paid plan (2026-10-31)
 
 Run these on their own, top to bottom: the web app at http://localhost:3000, your phone, and a terminal. They check Step 2.8's findings 1, 2, 4, 6, 7, 8, 10, 11, 12, 13 and 14, gather finding 5's evidence, prove the GraphQL watcher keeps its patch, and check phase 3 (user stories 26, 27 and 28) on your own organization, whose plan the checks change from the terminal.
@@ -2838,6 +3497,8 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 Then, logged in as yourself (the Owner), open **WhatsApp** in the sidebar.
 
 **Expect:** a box "Your plan doesn't include WhatsApp." with what's kept and a **Choose a plan** link to Subscriptions; your numbers listed with their stores; no connect form, no **Change**, no mode radios, no test message, no **Troubleshoot**, no **Disconnect**. Then **Shopify**: the same box for Shopify, your stores listed, no connect form. Then **Shopify products**: the box, and no products.
+
+**Since Step 2.8, finding 16 (2026-11-01), expect instead:** setting up needs no plan, so the WhatsApp page keeps its connect form, **Change**, the mode radios, the test message, **Troubleshoot** and **Disconnect**, and its box says "Your numbers don't reply to anyone, your team or your customers, until your plan includes WhatsApp. You can connect and set them up now, and everything is kept."; the Shopify page keeps its connect form. **Shopify products** is still locked: the box, and no products.
 
 #### PL2. On the free plan, the number answers nobody, and the message is kept (phase 3, decision 4)
 

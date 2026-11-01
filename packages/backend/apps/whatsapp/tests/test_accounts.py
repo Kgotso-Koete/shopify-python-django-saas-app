@@ -35,10 +35,10 @@ from apps.multitenancy.tests.factories import TenantFactory
 
 from .. import registry
 from ..constants import AccountPurpose, ConnectionMethod, MessageDirection
-from ..models import WhatsAppAccount
+from ..models import WhatsAppAccount, WhatsAppContact, WhatsAppIdentity, WhatsAppMessage
 from ..services import accounts
 from ..services.accounts import AccountError
-from .factories import ContactFactory, ExternalAccountFactory, InternalAccountFactory, MessageFactory
+from .factories import ContactFactory, ExternalAccountFactory, InternalAccountFactory, MessageFactory, link_member
 from .fakes import meta_error, meta_response
 
 INTERNAL = AccountPurpose.INTERNAL_COMMUNICATIONS
@@ -344,18 +344,34 @@ class TestOneOrganizationPerNumber:
 
 
 class TestDisconnecting:
-    def test_disconnecting_wipes_the_secrets_and_keeps_the_history(self, organization, meta_get):
+    def test_disconnecting_wipes_the_secrets_and_deletes_the_conversations(self, organization, meta_get):
+        # Plan Step 2.8, finding 17 (replacing Step 1.5's choice to keep them): numbers are recycled,
+        # so a disconnected number's history must never reach whoever gets the number next.
         account = ExternalAccountFactory(tenant=organization)
         contact = ContactFactory(account=account)
         MessageFactory(contact=contact)
+        member = ContactFactory(account=account, wa_id="27000002002")
+        link_member(member)
 
         accounts.disconnect_account(tenant=organization, account_id=account.pk)
 
         account = WhatsAppAccount.objects.get(pk=account.pk)
         assert account.is_active is False
         assert account.access_token_encrypted == ""
-        # Kept for phase 5's transcript.
-        assert contact.messages.count() == 1
+        # The contacts go, and with them their messages, conversations and phone links.
+        assert not WhatsAppContact.objects.filter(account=account).exists()
+        assert not WhatsAppMessage.objects.filter(contact__account=account).exists()
+        assert not WhatsAppIdentity.objects.filter(account=account).exists()
+
+    def test_another_numbers_conversations_are_kept(self, organization, meta_get):
+        disconnected = ExternalAccountFactory(tenant=organization)
+        other = ExternalAccountFactory(tenant=organization)
+        kept = ContactFactory(account=other)
+        MessageFactory(contact=kept)
+
+        accounts.disconnect_account(tenant=organization, account_id=disconnected.pk)
+
+        assert kept.messages.count() == 1
 
     def test_an_internal_number_can_be_disconnected_too(self, organization, meta_get):
         account = connect(organization, purpose=INTERNAL).account

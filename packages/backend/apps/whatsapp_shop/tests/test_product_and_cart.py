@@ -301,8 +301,29 @@ class TestBuyNow:
 
 class TestYourCart:
     def open_cart(self, customer):
+        """The cart's own screen, with its buttons: the last message "Your cart" sends."""
         [menu] = send(customer, "hi")
-        return send(customer, press=menu.press("Your cart"))[0]
+        return send(customer, press=menu.press("Your cart"))[-1]
+
+    def test_it_offers_the_shops_cart_page_first(self, customer, shopify):
+        # Step 2.8, finding 21: the cart's buttons are reply buttons, which can't open a link, so the
+        # shop's cart page comes as a message of its own, first, and the buttons last.
+        send(customer, press=open_product(customer).press("Add to cart"))
+        shopify.get_cart.return_value = cart()
+        [menu] = send(customer, "hi")
+
+        page, lines = send(customer, press=menu.press("Your cart"))
+
+        assert page.body == "Review your cart on Acme Snow Co's website."
+        assert page.link == {"display_text": "View cart", "url": "https://acme.myshopify.com/cart/11:1?storefront=true"}
+        assert lines.titles == ["Checkout", "Empty cart", "Main menu"]
+
+    def test_an_empty_cart_has_no_page_to_offer(self, customer, shopify):
+        [menu] = send(customer, "hi")
+
+        [screen] = send(customer, press=menu.press("Your cart"))
+
+        assert screen.body == "Your cart is empty."
 
     def test_an_empty_cart_offers_the_products(self, customer, shopify):
         screen = self.open_cart(customer)
@@ -314,8 +335,21 @@ class TestYourCart:
         send(customer, press=open_product(customer).press("Add to cart"))
         shopify.get_cart.return_value = cart(
             [
-                {"title": "Snowboard", "variant": "Large", "quantity": 2, "amount": "49.00"},
-                {"title": "Wax", "variant": "Default Title", "quantity": 1, "amount": "5.00"},
+                # Each line with its variant's id, as storefront.get_cart returns it.
+                {
+                    "title": "Snowboard",
+                    "variant": "Large",
+                    "variant_id": "gid://shopify/ProductVariant/12",
+                    "quantity": 2,
+                    "amount": "49.00",
+                },
+                {
+                    "title": "Wax",
+                    "variant": "Default Title",
+                    "variant_id": "gid://shopify/ProductVariant/31",
+                    "quantity": 1,
+                    "amount": "5.00",
+                },
             ]
         )
 
@@ -347,9 +381,17 @@ class TestYourCart:
         shopify.get_cart.return_value = cart()
         screen = self.open_cart(customer)
 
-        [emptied] = send(customer, press=screen.press("Empty cart"))
+        website, emptied = send(customer, press=screen.press("Empty cart"))
 
-        assert emptied.body == "Your cart is empty now."
+        # Step 2.8, finding 18 (option A): the website's cart is the browser's own, which the chat
+        # can't empty, so the customer gets its page, where Shopify's own buttons empty it.
+        assert website.body == (
+            "If you opened your cart on Acme Snow Co's website, it's kept there separately: "
+            "you can empty it on its cart page."
+        )
+        assert website.link == {"display_text": "View cart", "url": "https://acme.myshopify.com/cart"}
+        # Which cart is empty: the chat's own, not the website's (maintainer's wording, 2026-11-01).
+        assert emptied.body == "Your cart here in WhatsApp is empty now."
         assert emptied.titles == ["Browse products", "Main menu"]
         assert store_customer(customer).cart_id == ""
         assert store_customer(customer).cart_shop is None

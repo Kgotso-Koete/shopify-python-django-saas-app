@@ -100,6 +100,22 @@ class TestBrowsing:
 
         assert screen.descriptions[:2] == ["USD 19.99", "USD 19.99 – 24.50"]
 
+    def test_a_name_too_long_for_its_row_is_given_whole_with_its_price(self, customer, listing):
+        # Step 2.8, finding 15: Meta cuts a row's title at 24 characters, so three products read "The
+        # Collection Snowboar…". The row's description, up to 72, carries the whole name.
+        liquid = {**product(1), "title": "The Collection Snowboard: Liquid"}
+        oxygen = {**product(2, price_min="1025", price_max="1025"), "title": "The Collection Snowboard: Oxygen"}
+        listing.return_value = page([liquid, oxygen, product(3)])
+
+        screen = browse(customer)
+
+        assert screen.descriptions[:3] == [
+            "The Collection Snowboard: Liquid · USD 19.99",
+            "The Collection Snowboard: Oxygen · USD 1025.00",
+            # A name that fits its row keeps just its price.
+            "USD 19.99",
+        ]
+
     def test_next_and_previous_follow_shopifys_cursors(self, customer, shop, listing):
         listing.return_value = page([product()], has_next_page=True)
         first = browse(customer)

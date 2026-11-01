@@ -145,6 +145,16 @@ class TestWhatTheModelGets:
 
         assert "Never list products as text" in provider.requests[0]["instructions"]
 
+    def test_the_instructions_say_to_show_the_cart_for_anything_about_it(self, customer, mocker):
+        # Step 2.8, finding 19: asked to clear the cart, and for its link, it said it couldn't.
+        provider = with_model(mocker, FakeProvider(says("Hi!")))
+
+        send(customer, "hi")
+
+        instructions = provider.requests[0]["instructions"]
+        assert "For anything about the cart" in instructions
+        assert "call show_cart" in instructions
+
     def test_the_customer_is_a_store_customer_from_their_first_words(self, customer, mocker):
         with_model(mocker, FakeProvider(says("Hello!")))
 

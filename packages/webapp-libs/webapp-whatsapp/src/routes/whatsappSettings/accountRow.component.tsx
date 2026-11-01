@@ -13,8 +13,10 @@ import {
   disconnectWhatsAppAccountMutation,
   sendWhatsAppTestMessageMutation,
 } from '../../graphql/whatsappAccounts.graphql';
+import { setWhatsAppNumberMetaAppMutation } from '../../graphql/whatsappMetaApps.graphql';
 import { chooseWhatsAppStoreMutation, setWhatsAppStorefrontModeMutation } from '../../graphql/whatsappStorefronts.graphql';
 import { serverReason } from '../../utils/serverReason';
+import { MetaApp } from './metaAppsCard.component';
 import { TroubleshootPanel } from './troubleshootPanel.component';
 
 export type WhatsAppAccount = {
@@ -27,6 +29,8 @@ export type WhatsAppAccount = {
   credentialsVerifiedAt?: unknown;
   subscribedAt?: unknown;
   lastMessageReceivedAt?: unknown;
+  // The organization's own Meta app it's in, or null for this service's app (Step 2.9).
+  metaAppId?: string | null;
 };
 
 type AccountRowProps = {
@@ -34,6 +38,8 @@ type AccountRowProps = {
   tenantId: string;
   canManage: boolean;
   onChanged: () => void;
+  // The organization's own Meta apps, for whatsapp.manage; with none, there's nothing to change to.
+  metaApps?: MetaApp[];
   // External numbers only (Step 2.1b): the store the number sells from, null while none is chosen,
   // and the stores the picker offers. Undefined for the internal number, which never sells.
   store?: string | null;
@@ -46,9 +52,19 @@ type AccountRowProps = {
  * One of the organization's numbers: the three proofs the connect form tracks (Meta accepted the
  * credentials, our app is subscribed to its WhatsApp Business account, a message arrived), and for
  * whatsapp.manage, a test message, the troubleshooting panel (Step 1.6b) and Disconnect. An external
- * number also shows the store it sells from, which whatsapp.manage can change (Step 2.1b).
+ * number also shows the store it sells from, which whatsapp.manage can change (Step 2.1b). Once the
+ * organization has a Meta app of its own, whatsapp.manage can also change the app a number is in (Step 2.9).
  */
-export const AccountRow = ({ account, tenantId, canManage, onChanged, store, stores, mode }: AccountRowProps) => {
+export const AccountRow = ({
+  account,
+  tenantId,
+  canManage,
+  onChanged,
+  metaApps = [],
+  store,
+  stores,
+  mode,
+}: AccountRowProps) => {
   const intl = useIntl();
   const [disconnect] = useMutation(disconnectWhatsAppAccountMutation);
   const [troubleshooting, setTroubleshooting] = useState(false);
@@ -131,6 +147,10 @@ export const AccountRow = ({ account, tenantId, canManage, onChanged, store, sto
         <PurposeChanger tenantId={tenantId} account={account} onChanged={onChanged} />
       )}
 
+      {canManage && account.isActive && metaApps.length > 0 && (
+        <MetaAppSetting tenantId={tenantId} account={account} metaApps={metaApps} onChanged={onChanged} />
+      )}
+
       {canManage && account.isActive && (
         <div className="flex flex-wrap items-end justify-between gap-4">
           <TestMessageForm tenantId={tenantId} accountId={account.id} />
@@ -148,8 +168,9 @@ export const AccountRow = ({ account, tenantId, canManage, onChanged, store, sto
               { number: account.displayPhoneNumber }
             )}
             description={intl.formatMessage({
+              // WhatsApp plan Step 2.8, finding 17: numbers are recycled, so nothing of its history stays.
               defaultMessage:
-                'Its access token is deleted, and it stops answering messages. Its message history is kept.',
+                "Its access token is deleted, and it stops answering messages. Its conversations, with every message and customer, are deleted, so whoever gets this number next never sees them. Its store link is kept.",
               id: 'WhatsAppSettings / Disconnect / Description',
             })}
             continueLabel={intl.formatMessage({
@@ -389,6 +410,102 @@ const PurposeChanger = ({ tenantId, account, onChanged }: PurposeChangerProps) =
       >
         <Button variant={ButtonVariant.SECONDARY} disabled={loading || chosen === account.purpose}>
           <FormattedMessage defaultMessage="Change" id="WhatsAppSettings / Purpose / Change" />
+        </Button>
+      </ConfirmDialog>
+      {problem && <p className="w-full text-sm text-destructive">{problem}</p>}
+    </div>
+  );
+};
+
+type MetaAppSettingProps = { tenantId: string; account: WhatsAppAccount; metaApps: MetaApp[]; onChanged: () => void };
+
+/**
+ * The Meta app a connected number is in, changed without reconnecting it (WhatsApp plan Step 2.9,
+ * decision 5), after a confirmation reminding the admin to set the app's webhook in Meta first: from then
+ * on, only that app's signature is accepted for the number's messages.
+ */
+const MetaAppSetting = ({ tenantId, account, metaApps, onChanged }: MetaAppSettingProps) => {
+  const intl = useIntl();
+  const { toast } = useToast();
+  const current = account.metaAppId ?? '';
+  const [chosen, setChosen] = useState(current);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [setApp, { loading }] = useMutation(setWhatsAppNumberMetaAppMutation);
+  const selectId = `whatsapp-meta-app-picker-${account.id}`;
+
+  const nameOf = (id: string) => {
+    const app = metaApps.find((candidate) => candidate.id === id);
+    return app
+      ? intl.formatMessage({ defaultMessage: 'app {appId}', id: 'WhatsAppSettings / Meta app / Named' }, { appId: app.appId })
+      : intl.formatMessage({ defaultMessage: "this service's app", id: 'WhatsAppSettings / Meta app / This service named' });
+  };
+
+  const onChange = async () => {
+    setProblem(null);
+    try {
+      await setApp({ variables: { input: { tenantId, accountId: account.id, metaAppId: chosen || null } } });
+      toast({
+        description: intl.formatMessage(
+          { defaultMessage: '{number} is now in {app}.', id: 'WhatsAppSettings / Meta app / Saved' },
+          { number: account.displayPhoneNumber, app: nameOf(chosen) }
+        ),
+        variant: 'success',
+      });
+      onChanged();
+    } catch (error) {
+      setProblem(
+        serverReason(error) ??
+          intl.formatMessage({
+            defaultMessage: "The number's Meta app couldn't be changed. Please try again.",
+            id: 'WhatsAppSettings / Meta app / Generic error',
+          })
+      );
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <div className="space-y-2">
+        <label htmlFor={selectId} className="text-sm font-medium">
+          <FormattedMessage defaultMessage="Meta app" id="WhatsAppSettings / Meta app / Label" />
+        </label>
+        <select
+          id={selectId}
+          value={chosen}
+          onChange={(event) => setChosen(event.target.value)}
+          className="flex h-10 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          <option value="">
+            {intl.formatMessage({ defaultMessage: "This service's app", id: 'WhatsAppSettings / Meta app / This service' })}
+          </option>
+          {metaApps.map((app) => (
+            <option key={app.id} value={app.id}>
+              {intl.formatMessage(
+                { defaultMessage: 'Your app {appId}', id: 'WhatsAppSettings / Meta app / Yours' },
+                { appId: app.appId }
+              )}
+            </option>
+          ))}
+        </select>
+      </div>
+      <ConfirmDialog
+        title={intl.formatMessage(
+          { defaultMessage: 'Move {number} to {app}?', id: 'WhatsAppSettings / Meta app / Confirm title' },
+          { number: account.displayPhoneNumber, app: nameOf(chosen) }
+        )}
+        description={intl.formatMessage({
+          defaultMessage:
+            "Paste the app's callback URL and verify token into its WhatsApp webhook settings in Meta first: from then on, this number's messages are accepted only when that app signs them.",
+          id: 'WhatsAppSettings / Meta app / Confirm description',
+        })}
+        continueLabel={intl.formatMessage({
+          defaultMessage: 'Move number',
+          id: 'WhatsAppSettings / Meta app / Confirm continue',
+        })}
+        onContinue={onChange}
+      >
+        <Button variant={ButtonVariant.SECONDARY} disabled={loading || chosen === current}>
+          <FormattedMessage defaultMessage="Change app" id="WhatsAppSettings / Meta app / Change" />
         </Button>
       </ConfirmDialog>
       {problem && <p className="w-full text-sm text-destructive">{problem}</p>}

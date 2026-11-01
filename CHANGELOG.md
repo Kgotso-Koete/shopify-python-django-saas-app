@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.3.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/7.2.0...7.3.0) (2026-11-01)
+
+### Features
+
+- A business's own Meta apps: numbers connected with the form can now be in a Meta app of the business's own, not only this service's app
+  - The WhatsApp page's new "Your Meta apps" card registers each app once, with its App ID and App secret, and shows the callback URL and verify token the service made for it, to paste into Meta, with **Update secret**, **Regenerate token** and **Remove** (refused while a connected number is in the app). An App ID can be registered by one organization only
+  - Each app has its own webhook address, `/api/whatsapp/webhook/<public id>/`, checked with its own verify token and App secret, and each address stores events only for its own app's numbers; a refused signature is logged naming the app. The general `/api/whatsapp/webhook/` keeps serving this service's app, `WHATSAPP_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN`
+  - The connect form picks the number's app, and each number's row changes it without reconnecting. The form says to use a system user's permanent token
+  - Backend: the `MetaApp` model and `WhatsAppAccount.meta_app` (migration `whatsapp` 0019), `services/meta_apps.py`, the GraphQL fields `whatsAppMetaApps`, `registerWhatsAppMetaApp`, `updateWhatsAppMetaAppSecret`, `regenerateWhatsAppMetaAppVerifyToken`, `removeWhatsAppMetaApp` and `setWhatsAppNumberMetaApp`, all for `whatsapp.manage`, and an admin page that never shows the secrets
+- Setting up needs no plan: connecting and disconnecting numbers and stores, choosing whom a number serves, its store and its mode, linking a phone, test messages and troubleshooting work on any plan, so a business can be ready before its trial starts. The plan still decides replies, the assistant and browsing Shopify products
+- Disconnecting a number deletes its conversations, with every message, customer and assistant history, since numbers are recycled; its store link is kept
+- WhatsApp store customers:
+  - A product name too long for its list row is given whole, with its price, in the row's description
+  - **Your cart** sends a **View cart** link to the shop's cart page first, and **Empty cart** says the chat's cart is empty and links the website's own cart page, which the chat can't empty
+  - The assistant shows the cart's screen for anything about the cart
+
+### Bug Fixes
+
+- WhatsApp: a store disconnected from the organization on the Shopify page no longer keeps selling on its numbers, nor shows on the WhatsApp page; connecting it again brings the numbers back with their mode
+
+### Documentation
+
+- How to add a backend Python package, in the README and the documentation site, both marked as fork additions
+- README Testing and agents.md: stop the stack (`pnpm saas down`) before the final pre-commit test runs; agents.md: never change file ownership or permissions, and use the documented commands
+- WhatsApp plan: Step 2.9 (a business's own Meta app) with its decisions, a flow diagram of the form and Embedded Signup, a class diagram, every RED and GREEN, finding 22, and brief human checks with their results
+
 ## [7.2.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/7.1.0...7.2.0) (2026-11-01)
 
 ### Features

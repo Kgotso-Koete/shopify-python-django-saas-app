@@ -3,7 +3,8 @@ Tests for apps/whatsapp_shop/menus.py's handler, before any product is shown: wh
 number answers, the store customer it keeps, the mode and the main menu (WhatsApp plan Step 2.2,
 phase 2 decision 2, user stories 14, 21 and 25).
 
-- a number with no store chosen, or whose store can't sell on WhatsApp any more, sends no reply
+- a number with no store chosen, or whose store can't sell on WhatsApp any more, sends no reply; nor
+  does one whose store is no longer its organization's (Step 2.8, finding 22)
 - anyone texting a selling number becomes a store customer of the number's organization, once
 - the main menu welcomes them to the store, by its own name in Shopify (Step 2.8, finding 12), or the
   number's business name when Shopify can't be reached, and offers Browse products, Search and Your
@@ -71,6 +72,19 @@ class TestWhoIsAnswered:
     )
     def test_a_store_that_cant_sell_any_more_sends_no_reply(self, acme, problem):
         number = selling_number(acme, store(acme, **problem))
+
+        assert send(customer_of(number), "hi") == []
+
+    def test_a_store_disconnected_from_the_organization_sends_no_reply(self, acme, shop, number):
+        # Step 2.8, finding 22: disconnecting a store on the Shopify page unlinks it from the organization.
+        shop.tenant = None
+        shop.save(update_fields=["tenant"])
+
+        assert send(customer_of(number), "hi") == []
+
+    def test_a_store_now_another_organizations_sends_no_reply(self, acme, shop, number):
+        shop.tenant = TenantFactory(type=TenantType.ORGANIZATION, name="Globex")
+        shop.save(update_fields=["tenant"])
 
         assert send(customer_of(number), "hi") == []
 

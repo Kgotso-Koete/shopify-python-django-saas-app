@@ -605,6 +605,12 @@ module.exports = {
               id: 'working-with-sb/guides/backend/backend-model',
               label: 'Create Django Model',
             },
+            // Fork addition (2026-11-01): not in the original documentation.
+            {
+              type: 'doc',
+              id: 'working-with-sb/guides/backend/adding-a-package',
+              label: 'Add a Python package (fork addition)',
+            },
             {
               type: 'doc',
               id: 'working-with-sb/graphql/conventions/errors-format',
