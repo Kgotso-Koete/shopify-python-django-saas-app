@@ -70,6 +70,16 @@ class TestAsking:
 
         assert "pick" not in provider.requests[0]["instructions"]
 
+    def test_the_instructions_say_to_ask_for_a_value_the_user_didnt_give(self, contact, mocker):
+        # Step 2.8, finding 1: asked to "create a new item", the model named it "New Item" itself.
+        provider = with_model(mocker, FakeProvider(says("What should the new item be called?")))
+
+        send(contact, "I would like to create a new item")
+
+        instructions = provider.requests[0]["instructions"]
+        assert "never make one up" in instructions
+        assert "ask the user for it first" in instructions
+
 
 class TestWriting:
     def test_an_item_is_created_only_when_the_user_confirms(self, contact, acme, mocker):

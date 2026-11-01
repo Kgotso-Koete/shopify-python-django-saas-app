@@ -2,6 +2,7 @@ import type { MockedResponse } from '@apollo/client/testing';
 import { TenantType as TenantTypeField } from '@sb/webapp-api-client/constants';
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
 import { composeMockedQueryResult } from '@sb/webapp-api-client/tests/utils';
+import { organizationFeaturesQuery } from '@sb/webapp-tenants/hooks';
 import { tenantFactory } from '@sb/webapp-tenants/src/tests/factories/tenant';
 import { createMockRouterProps, render } from '@sb/webapp-tenants/src/tests/utils/rendering';
 import { screen, within } from '@testing-library/react';
@@ -107,13 +108,31 @@ const problemMock = (code: string, message: string) =>
 const productsPath = (search = '') =>
   `${createMockRouterProps(RoutesConfig.shopify.products, { tenantId }).initialEntries?.[0]}${search}`;
 
-const renderPage = (mocks: MockedResponse[], search = '') =>
+// What the organization's plan unlocks (WhatsApp plan phase 3, decision 8): Shopify, unless a test says not.
+const featuresMock = (features: string[]) => ({
+  ...composeMockedQueryResult(organizationFeaturesQuery, {
+    variables: { tenantId },
+    data: { organizationFeatures: features },
+  }),
+  maxUsageCount: Number.POSITIVE_INFINITY,
+});
+
+const renderPage = (mocks: MockedResponse[], search = '', features = ['SHOPIFY', 'WHATSAPP']) =>
   render(<ShopifyProducts />, {
-    apolloMocks: [userMock(), ...mocks],
+    apolloMocks: [userMock(), featuresMock(features), ...mocks],
     routerProps: { initialEntries: [productsPath(search)] },
   });
 
 describe('ShopifyProducts: Component', () => {
+  // WhatsApp plan phase 3, decision 5: browsing calls Shopify, so it waits for a plan that includes it.
+  it("says the plan doesn't include Shopify and asks Shopify for nothing", async () => {
+    // No products mock: asking Shopify would show the page's error instead.
+    renderPage([shopsMock([STORE])], '', []);
+
+    expect(await screen.findByTestId('plan-required')).toHaveTextContent(/your plan doesn't include shopify/i);
+    expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument();
+  });
+
   it("shows a page of the store's products with image, title, price and status", async () => {
     renderPage([shopsMock([STORE]), productsMock({ products: [product(1), product(2)] })]);
 

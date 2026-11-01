@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.2.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/7.1.0...7.2.0) (2026-11-01)
+
+### Features
+
+- Paid plans unlock Shopify and WhatsApp: with `PLAN_ENTITLEMENTS_ENABLED` on, the free plan includes neither, and the monthly and yearly plans, trials included, include both. Off by default, so nothing changes for a deployment until it chooses to sell plans; `.env.shared` turns it on for development
+  - The new `apps.entitlements` app holds what each plan includes as database rows, created by migrations (`entitlements` 0001 and 0002) and read-only in the admin. `apps.finances.billing.effective_plan` gives the plan that applies now, the same way under PayFast and Stripe
+  - The backend refuses a locked feature with `plan_required` on each Shopify and WhatsApp field that acts or calls Shopify or Meta, and the WhatsApp router replies to nobody while the plan lacks WhatsApp; incoming messages are still stored. Reading what's kept, and disconnecting, stay allowed, and Shopify's privacy webhooks are always handled
+  - Nothing is deleted when a plan lapses. The Shopify, Shopify products and WhatsApp pages show what's kept, read-only, with **Choose a plan** for whoever manages billing, or "Ask the organization's owner to choose a plan". Any member reads which features are unlocked through the new `organizationFeatures` field, which shows nothing about prices or payments
+- WhatsApp store customers:
+  - The welcome names the store by its Shopify name, and its logo is sent once when a customer starts a conversation (a new outbound picture message kind, migration `whatsapp` 0018)
+  - **Checkout** also sends a **View cart** link to the shop's own cart page, and the checkout message names the store
+  - The assistant welcomes customers to the store, never mentions a product it hasn't found, and shows several products as a list to tap (`show_products`)
+- The WhatsApp page confirms each save with a toast, and on a number serving both, says members choose their own mode on their profile page
+
+### Bug Fixes
+
+- WhatsApp cart: a product that sold out no longer makes every later add say it failed, naming the wrong product, though the adds worked. An add is judged by its own line in the cart; lines Shopify set to 0 are taken out and named once, and the cart screen leaves them out
+- The team assistant asks for a name the user didn't give, instead of creating an item called "New Item"
+- `pnpm saas up`'s GraphQL type watcher no longer strips the patch from the generated `gql.ts`: the code generator applies it after every write, and a test fails CI if an unpatched file is committed
+- Tests: three PayFast tests failed from 2026-10-31, when the real clock passed a fixture's fixed date; every test in that file now starts with the clock at its fixed `NOW`
+
+### Documentation
+
+- WhatsApp plan: Step 2.8's findings with every RED and GREEN, a new phase 3 (Shopify and WhatsApp on a paid plan) with its user stories 26 to 28 and decisions 1 to 8, the later phases moved down by one, the cumulative human checks and their first results, and findings 15 to 21 to build next
+- Restore-green plan section 9: the GraphQL watcher, fixed
+
 ## [7.1.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/7.0.0...7.1.0) (2026-10-31)
 
 ### Features

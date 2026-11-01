@@ -13,6 +13,11 @@ module only checks permissions, calls it and shapes the answer. No secret is eve
 import graphene
 from graphql_relay import from_global_id, to_global_id
 
+from rest_framework.exceptions import PermissionDenied
+
+from apps.entitlements import services as entitlements
+from apps.entitlements.constants import Feature
+from apps.entitlements.permissions import PLAN_REQUIRED_MESSAGE, requires_feature
 from apps.multitenancy.models import Tenant, TenantMembership
 from common.acl.policies import IsAuthenticatedFullAccess, IsTenantMemberAccess
 from common.graphql import exceptions
@@ -27,6 +32,10 @@ from .services.number_tools import NumberToolError
 
 ConnectionMethodEnum = graphene.Enum.from_enum(ConnectionMethod)
 AccountPurposeEnum = graphene.Enum.from_enum(AccountPurpose)
+
+# Fields that use WhatsApp need the organization's plan to include it (plan phase 3, decision 5).
+# Reading its numbers, and disconnecting one, don't: a lapsed organization's numbers are kept.
+WHATSAPP_PLAN = requires_feature(Feature.WHATSAPP)
 
 
 class WhatsAppAccountType(graphene.ObjectType):
@@ -238,7 +247,8 @@ class NumberToolsQuery(graphene.ObjectType):
     )
 
     @staticmethod
-    @permission_classes(IsTenantMemberAccess, requires("whatsapp.manage"))
+    # It asks Meta, so the plan must include WhatsApp (plan phase 3, decision 5).
+    @permission_classes(IsTenantMemberAccess, requires("whatsapp.manage"), WHATSAPP_PLAN)
     def resolve_whats_app_number_status(root, info, tenant_id, account_id):
         status = _run_tool(info, account_id, lambda account, user: number_tools.get_status(account))
         return WhatsAppNumberStatusType(**{field: status.get(field) for field in WhatsAppNumberStatusType._meta.fields})
@@ -441,7 +451,12 @@ class StartWhatsAppLink(graphene.Mutation):
     def mutate(cls, root, info, input):
         user = info.context.user
         try:
-            started = identity.start_link(user, _users_tenant(user, input.tenant_id), input.phone_number)
+            tenant = _users_tenant(user, input.tenant_id)
+            # This mutation has no organization in its context, so the plan is checked here, once the
+            # organization is known (plan phase 3, decision 5): linking a phone uses WhatsApp.
+            if not entitlements.has_feature(tenant, Feature.WHATSAPP):
+                raise PermissionDenied(PLAN_REQUIRED_MESSAGE)
+            started = identity.start_link(user, tenant, input.phone_number)
         except IdentityError as error:
             field = "phone_number" if error.code == "invalid_phone_number" else None
             raise _identity_error(error, field) from error
@@ -519,15 +534,27 @@ class Query(AccountsQuery, NumberToolsQuery, IdentityQuery):
 
 @permission_classes(IsTenantMemberAccess)
 class Mutation(graphene.ObjectType):
-    connect_whats_app_account = permission_classes(requires("whatsapp.manage"))(ConnectWhatsAppAccount.Field())
-    send_whats_app_test_message = permission_classes(requires("whatsapp.manage"))(SendWhatsAppTestMessage.Field())
+    # WHATSAPP_PLAN: the organization's plan must include WhatsApp (plan phase 3, decision 5);
+    # disconnecting stays allowed, since nothing is used.
+    connect_whats_app_account = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(
+        ConnectWhatsAppAccount.Field()
+    )
+    send_whats_app_test_message = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(
+        SendWhatsAppTestMessage.Field()
+    )
     disconnect_whats_app_account = permission_classes(requires("whatsapp.manage"))(DisconnectWhatsAppAccount.Field())
-    change_whats_app_number_purpose = permission_classes(requires("whatsapp.manage"))(
+    change_whats_app_number_purpose = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(
         ChangeWhatsAppNumberPurpose.Field()
     )
-    request_whats_app_verification_code = permission_classes(requires("whatsapp.manage"))(
+    request_whats_app_verification_code = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(
         RequestWhatsAppVerificationCode.Field()
     )
-    verify_whats_app_number = permission_classes(requires("whatsapp.manage"))(VerifyWhatsAppNumber.Field())
-    register_whats_app_number = permission_classes(requires("whatsapp.manage"))(RegisterWhatsAppNumber.Field())
-    subscribe_whats_app_app = permission_classes(requires("whatsapp.manage"))(SubscribeWhatsAppApp.Field())
+    verify_whats_app_number = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(
+        VerifyWhatsAppNumber.Field()
+    )
+    register_whats_app_number = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(
+        RegisterWhatsAppNumber.Field()
+    )
+    subscribe_whats_app_app = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(
+        SubscribeWhatsAppApp.Field()
+    )

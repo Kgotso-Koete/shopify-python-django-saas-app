@@ -21,6 +21,7 @@ Meta's limits, linked next to where each is used:
 - link buttons: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/interactive-cta-url-messages.md
 - Flows: https://developers.facebook.com/docs/whatsapp/flows/guides/sendingaflow
 - text: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/text-messages.md
+- pictures: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/image-messages.md
 """
 
 from dataclasses import dataclass
@@ -44,6 +45,8 @@ LIST_BODY_MAX = 4096
 # Link buttons (cta_url): display_text up to 20 characters; body up to 1024.
 LINK_TEXT_MAX = 20
 LINK_BODY_MAX = 1024
+# Pictures: the caption is at most 1024 characters; JPEG or PNG, up to 5 MB.
+IMAGE_CAPTION_MAX = 1024
 # Flows: Meta advises a call-to-action of 30 characters or fewer.
 FLOW_CTA_MAX = 30
 
@@ -138,6 +141,15 @@ def list_message(
 
     section = {"title": _fit(section_title, LIST_SECTION_TITLE_MAX), "rows": [_row(row) for row in all_rows]}
     return _interactive("list", body, {"button": _fit(button_label, LIST_BUTTON_MAX), "sections": [section]})
+
+
+def image_message(link: str, *, caption: str) -> dict:
+    """
+    A picture on its own, fetched by Meta from `link`, such as a store's logo at its welcome (WhatsApp
+    plan Step 2.8, finding 13). It has no buttons, so it's only ever sent just before a message that
+    carries the way back (D17). The caption comes from data, so it's cut to fit.
+    """
+    return {"type": "image", "image": {"link": link, "caption": _fit(caption, IMAGE_CAPTION_MAX)}}
 
 
 def link_button(body: str, *, display_text: str, url: str) -> dict:

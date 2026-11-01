@@ -97,6 +97,7 @@ LOCAL_APPS = [
     "apps.phone_verification",
     "apps.whatsapp_saas",
     "apps.whatsapp_shop",
+    "apps.entitlements",
 ]
 
 INSTALLED_APPS = (
@@ -815,6 +816,15 @@ SHOPIFY_AUTH_TIMEOUT = env.int("SHOPIFY_AUTH_TIMEOUT", default=600)  # 10 minute
 # Switch to "celery" when handlers start doing slow work (API calls, syncing products).
 SHOPIFY_WEBHOOK_DISPATCH = env("SHOPIFY_WEBHOOK_DISPATCH", default="sync")
 SHOPIFY_ENABLED = bool(SHOPIFY_API_KEY and SHOPIFY_API_SECRET)
+
+# ==============================================================================
+# PLAN ENTITLEMENTS
+# ==============================================================================
+# Whether an organization's plan decides which features it may use, from the catalog in
+# apps.entitlements (WhatsApp plan phase 3, decision 7). Off by default, so an upgrade changes
+# nothing until an operator chooses to sell plans, and a deployment without billing, where every
+# organization stays on the free plan, keeps its features.
+PLAN_ENTITLEMENTS_ENABLED = env.bool("PLAN_ENTITLEMENTS_ENABLED", default=False)
 
 # ==============================================================================
 # WHATSAPP CONFIGURATION

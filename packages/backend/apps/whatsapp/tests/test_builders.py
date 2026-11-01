@@ -27,6 +27,7 @@ from ..builders import (
     Choice,
     Row,
     flow_message,
+    image_message,
     link_button,
     list_message,
     reply_buttons,
@@ -43,6 +44,28 @@ def buttons_of(message):
 
 def rows_of(message):
     return [row for section in message["interactive"]["action"]["sections"] for row in section["rows"]]
+
+
+class TestPictures:
+    """
+    A picture on its own, such as a store's logo at its welcome (WhatsApp plan Step 2.8, finding 13).
+    Meta: "Maximum 1024 characters" of caption, JPEG or PNG:
+    https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/image-messages.md
+    """
+
+    def test_a_picture_by_its_link_with_a_caption(self):
+        message = image_message("https://cdn.shopify.com/logo.png", caption="Acme Snow Co")
+
+        assert message == {
+            "type": "image",
+            "image": {"link": "https://cdn.shopify.com/logo.png", "caption": "Acme Snow Co"},
+        }
+
+    def test_a_caption_from_data_is_cut_to_fit(self):
+        message = image_message("https://cdn.shopify.com/logo.png", caption="x" * 1025)
+
+        assert len(message["image"]["caption"]) == 1024
+        assert message["image"]["caption"].endswith("…")
 
 
 class TestReplyButtons:

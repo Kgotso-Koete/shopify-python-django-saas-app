@@ -3,7 +3,8 @@ import { AccountPurpose, ConversationMode } from '@sb/webapp-api-client/graphql'
 import { PageLayout } from '@sb/webapp-core/components/pageLayout';
 import { Paragraph } from '@sb/webapp-core/components/typography';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@sb/webapp-core/components/ui/card';
-import { usePermissionCheck } from '@sb/webapp-tenants/hooks';
+import { PlanRequiredNotice } from '@sb/webapp-tenants/components/planRequiredNotice';
+import { useOrganizationFeatures, usePermissionCheck } from '@sb/webapp-tenants/hooks';
 import { useCurrentTenant } from '@sb/webapp-tenants/providers';
 import { AlertTriangle, MessageCircle } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
@@ -47,7 +48,13 @@ export const WhatsAppSettings = () => {
   const intl = useIntl();
   const { data: currentTenant } = useCurrentTenant();
   const tenantId = currentTenant?.id ?? '';
-  const { hasPermission: canManage } = usePermissionCheck('whatsapp.manage');
+  const { hasPermission: mayManage } = usePermissionCheck('whatsapp.manage');
+  // While the plan doesn't include WhatsApp, the page is read-only: the numbers are kept and shown,
+  // and nothing on it can change or send (WhatsApp plan phase 3, decision 5). The backend refuses
+  // those actions anyway.
+  const { isUnlocked } = useOrganizationFeatures();
+  const unlocked = isUnlocked('WHATSAPP');
+  const canManage = mayManage && unlocked;
   const { data, loading, error, refetch } = useQuery(whatsAppAccountsQuery, {
     variables: { tenantId },
     skip: !tenantId,
@@ -94,6 +101,15 @@ export const WhatsAppSettings = () => {
             />
           </Paragraph>
         </div>
+
+        {!unlocked && (
+          <PlanRequiredNotice feature="WhatsApp">
+            <FormattedMessage
+              defaultMessage="Your numbers, their stores and their customers are kept, and come back as they are on a plan that includes WhatsApp. WhatsApp comes with the paid plans, free trial included."
+              id="WhatsAppSettings / Plan required"
+            />
+          </PlanRequiredNotice>
+        )}
 
         {error && (
           // A failed load must not look like "no numbers connected".

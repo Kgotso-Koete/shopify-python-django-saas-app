@@ -24,6 +24,13 @@ const codegenConfigs = webappLibs
 const config: CodegenConfig = {
   overwrite: true,
   ignoreNoDocuments: true,
+  // Fork addition (restore-green plan section 9): patch gql.ts after every write, so a query missing
+  // from the generated list fails loudly. The generator runs this hook in the one-off run and in the
+  // watcher `pnpm saas up` starts, which used to rewrite gql.ts without the patch:
+  // https://the-guild.dev/graphql/codegen/docs/config-reference/lifecycle-hooks
+  hooks: {
+    afterAllFileWrite: [`node ${path.resolve(__dirname, '../scripts/patch-gql.js')}`],
+  },
   parserOptions: {
     plugins: [
       'typescript',

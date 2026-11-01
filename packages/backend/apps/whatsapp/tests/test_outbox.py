@@ -93,6 +93,15 @@ class TestQueueing:
         # Meta gives the id only when it accepts the message.
         assert [row.wamid for row in rows] == ["", ""]
 
+    def test_a_picture_is_stored_as_an_image(self, contact, delay):
+        # A store's logo at its welcome (WhatsApp plan Step 2.8, finding 13).
+        picture = {"type": "image", "image": {"link": "https://cdn.shopify.com/logo.png", "caption": "Acme"}}
+
+        [row] = outbox.queue_messages(contact, [picture])
+
+        assert row.kind == MessageKind.IMAGE
+        assert row.payload == picture
+
     def test_queueing_schedules_one_send_for_the_contact_after_commit(
         self, contact, delay, django_capture_on_commit_callbacks
     ):

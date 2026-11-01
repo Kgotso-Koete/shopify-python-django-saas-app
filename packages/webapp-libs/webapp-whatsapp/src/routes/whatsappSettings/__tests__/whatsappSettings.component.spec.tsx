@@ -9,6 +9,7 @@ import type { MockedResponse } from '@apollo/client/testing';
 import { TenantType as TenantTypeField } from '@sb/webapp-api-client/constants';
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
 import { composeMockedQueryResult } from '@sb/webapp-api-client/tests/utils';
+import { organizationFeaturesQuery } from '@sb/webapp-tenants/hooks';
 import { currentUserPermissionsQuery } from '@sb/webapp-tenants/routes/tenantSettings/tenantRoles/tenantRoles.graphql';
 import { tenantFactory } from '@sb/webapp-tenants/tests/factories/tenant';
 import { createMockRouterProps, render } from '@sb/webapp-tenants/tests/utils/rendering';
@@ -92,6 +93,14 @@ const validationError = (field: string, message: string, code: string) =>
 const MANAGE = ['whatsapp.view', 'whatsapp.manage'];
 const VIEW_ONLY = ['whatsapp.view'];
 
+// What the organization's plan unlocks (WhatsApp plan phase 3, decision 8): WhatsApp, unless a test says not.
+const featuresMock = (features: string[]) =>
+  composeMockedQueryResult(organizationFeaturesQuery, {
+    variables: { tenantId },
+    data: { organizationFeatures: features },
+  });
+const UNLOCKED = ['SHOPIFY', 'WHATSAPP'];
+
 // Which store each external number sells from (Step 2.1b, apps/whatsapp_shop/schema.py).
 const STORE = 'demo-store.myshopify.com';
 const OTHER_STORE = 'second-store.myshopify.com';
@@ -129,10 +138,15 @@ const chooseStoreMock = (accountId: string, shopDomain: string) =>
     },
   });
 
-type StoreOptions = { storefronts?: ReturnType<typeof storefront>[]; eligible?: string[] };
+type StoreOptions = { storefronts?: ReturnType<typeof storefront>[]; eligible?: string[]; features?: string[] };
 
-// By default no number has a store yet, and the organization has one store that can sell on WhatsApp.
-const renderTab = (permissions: string[], mocks: MockedResponse[], { storefronts = [], eligible = [STORE] }: StoreOptions = {}) =>
+// By default no number has a store yet, the organization has one store that can sell on WhatsApp, and
+// its plan includes WhatsApp.
+const renderTab = (
+  permissions: string[],
+  mocks: MockedResponse[],
+  { storefronts = [], eligible = [STORE], features = UNLOCKED }: StoreOptions = {}
+) =>
   render(<WhatsAppSettings />, {
     apolloMocks: [
       userMock(),
@@ -140,6 +154,7 @@ const renderTab = (permissions: string[], mocks: MockedResponse[], { storefronts
       ...mocks,
       storefrontsMock(storefronts, { reuse: true }),
       eligibleStoresMock(eligible, { reuse: true }),
+      { ...featuresMock(features), maxUsageCount: Number.POSITIVE_INFINITY },
     ],
     routerProps: createMockRouterProps(RoutesConfig.whatsapp, { tenantId }),
   });
@@ -335,6 +350,8 @@ describe('WhatsAppSettings: Component', () => {
       await waitFor(() =>
         expect(row.getByTestId('whatsapp-purpose-account-1')).toHaveTextContent(/your team and your customers/i)
       );
+      // Step 2.8, finding 14.
+      expect(await screen.findByTestId('toast-1')).toHaveTextContent(/now serves your team and your customers/i);
     });
 
     it('offers a member no change', async () => {
@@ -655,6 +672,8 @@ describe('WhatsAppSettings: Component', () => {
       await waitFor(() =>
         expect(row.getByTestId('whatsapp-store-account-2')).toHaveTextContent(/sells from second-store\.myshopify\.com/i)
       );
+      // Step 2.8, finding 14.
+      expect(await screen.findByTestId('toast-1')).toHaveTextContent(/now sells from second-store\.myshopify\.com/i);
     });
   });
 
@@ -724,6 +743,72 @@ describe('WhatsAppSettings: Component', () => {
 
       await waitFor(() => expect(setModeMock.result).toHaveBeenCalled());
       await waitFor(() => expect(row.getByRole('radio', { name: /ai assistant/i })).toBeChecked());
+      // Step 2.8, finding 14: the admin sees it saved, not just a radio that moved.
+      expect(await screen.findByTestId('toast-1')).toHaveTextContent(/customers now get the ai assistant/i);
+    });
+
+    // Step 2.8, finding 2: on a number serving both, a linked member's own setting decides their mode.
+    it('says on a number serving both that members choose their own on their profile page', async () => {
+      renderTab(MANAGE, [accountsMock([account({ id: 'account-2', displayPhoneNumber: '27000000802', purpose: BOTH })])], {
+        storefronts: [storefront('account-2', STORE)],
+      });
+
+      await waitFor(async () =>
+        expect(await screen.findByTestId('whatsapp-mode-account-2')).toHaveTextContent(
+          /members who linked their phone choose their own on their profile page/i
+        )
+      );
+    });
+
+    it('says nothing about members on a number serving only customers', async () => {
+      renderTab(MANAGE, [accountsMock([account({ id: 'account-2', displayPhoneNumber: '27000000802' })])], {
+        storefronts: [storefront('account-2', STORE)],
+      });
+
+      await waitFor(async () => expect(await screen.findByTestId('whatsapp-mode-account-2')).toBeInTheDocument());
+      expect(screen.getByTestId('whatsapp-mode-account-2')).not.toHaveTextContent(/members who linked/i);
+    });
+  });
+
+  // WhatsApp plan phase 3, decision 5: the page stays, read-only, with one way back to a plan.
+  describe("a plan that doesn't include WhatsApp", () => {
+    const lapsedNumber = () => account({ id: 'account-2', displayPhoneNumber: '27000000802' });
+
+    it('shows the numbers kept, with no way to change them', async () => {
+      renderTab([...MANAGE, 'billing.manage'], [accountsMock([lapsedNumber()])], {
+        storefronts: [storefront('account-2', STORE)],
+        features: [],
+      });
+
+      const row = within(await screen.findByTestId('whatsapp-account-account-2'));
+      expect(await screen.findByTestId('plan-required')).toHaveTextContent(/your plan doesn't include whatsapp/i);
+      expect(screen.queryByTestId('whatsapp-connect-form')).not.toBeInTheDocument();
+      expect(row.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
+      expect(row.queryByRole('radio')).not.toBeInTheDocument();
+    });
+
+    it('offers whoever manages billing a link to choose a plan', async () => {
+      renderTab([...MANAGE, 'billing.manage'], [accountsMock([lapsedNumber()])], { features: [] });
+
+      const link = await within(await screen.findByTestId('plan-required')).findByRole('link', {
+        name: /choose a plan/i,
+      });
+      expect(link).toHaveAttribute('href', expect.stringMatching(/\/subscriptions$/));
+    });
+
+    it('asks anyone else to ask the owner', async () => {
+      renderTab(VIEW_ONLY, [accountsMock([lapsedNumber()])], { features: [] });
+
+      const notice = await screen.findByTestId('plan-required');
+      expect(notice).toHaveTextContent(/ask the organization's owner to choose a plan/i);
+      expect(within(notice).queryByRole('link')).not.toBeInTheDocument();
+    });
+
+    it('shows nothing about plans while WhatsApp is included', async () => {
+      renderTab(MANAGE, [accountsMock([lapsedNumber()])]);
+
+      await screen.findByTestId('whatsapp-account-account-2');
+      expect(screen.queryByTestId('plan-required')).not.toBeInTheDocument();
     });
   });
 
