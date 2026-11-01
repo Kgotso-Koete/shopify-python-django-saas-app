@@ -14,6 +14,19 @@ from apps.users.tests.factories import UserFactory
 from .. import constants, models
 
 
+class MetaAppFactory(factory.django.DjangoModelFactory):
+    """An organization's own Meta app (plan Step 2.9)."""
+
+    tenant = factory.SubFactory(TenantFactory, type=TenantType.ORGANIZATION)
+    app_id = factory.Sequence(lambda n: f"{300000000000000 + n}")
+    # Set through the model's properties, so they're stored encrypted like real code does.
+    app_secret = factory.Sequence(lambda n: f"test-app-secret-{n}")
+    verify_token = factory.LazyFunction(models.new_verify_token)
+
+    class Meta:
+        model = models.MetaApp
+
+
 class InternalAccountFactory(factory.django.DjangoModelFactory):
     """An organization's internal communications number, the one its own team texts (plan Step 1.17)."""
 

@@ -41,6 +41,7 @@ type Query {
   whatsAppEligibleStores(tenantId: ID!): [String!]!
   whatsAppLinks: [WhatsAppLinkType!]!
   whatsAppNumberStatus(tenantId: ID!, accountId: ID!): WhatsAppNumberStatusType!
+  whatsAppMetaApps(tenantId: ID!): [WhatsAppMetaAppType!]!
   whatsAppAccounts(tenantId: ID!): [WhatsAppAccountType!]!
   shopifyConfig: ShopifyConfigType!
   shopifyShops(tenantId: ID!): [ShopifyShopType!]!
@@ -155,6 +156,14 @@ type WhatsAppNumberStatusType {
   verifiedName: String
   displayPhoneNumber: String
 }
+"One of the organization's own Meta apps, with what to paste into its webhook settings; never its App secret."
+type WhatsAppMetaAppType {
+  id: ID!
+  appId: String!
+  webhookUrl: String!
+  verifyToken: String!
+  createdAt: DateTime!
+}
 "One of the organization's WhatsApp numbers, with the form's three proofs (user story 11)."
 type WhatsAppAccountType {
   id: ID!
@@ -168,6 +177,7 @@ type WhatsAppAccountType {
   credentialsVerifiedAt: DateTime
   subscribedAt: DateTime
   lastMessageReceivedAt: DateTime
+  metaAppId: ID
 }
 type ShopifyConfigType {
   enabled: Boolean!
@@ -1480,13 +1490,16 @@ type ApiMutation {
   """
   disconnectWhatsApp(input: DisconnectWhatsAppInput!): DisconnectWhatsApp
   """
-  Connect a number with the form. Meta checks the id and token, and our app is subscribed to the
-  number's WhatsApp Business account, before anything is saved (Step 1.18).
+  Connect a number with the form. Meta checks the id and token, and the token's app is subscribed to
+  the number's WhatsApp Business account, before anything is saved (Steps 1.18 and 2.9).
   """
   connectWhatsAppAccount(input: ConnectWhatsAppAccountInput!): ConnectWhatsAppAccount
   "Send Meta's hello_world template from the number, directly, so Meta's answer shows in the form."
   sendWhatsAppTestMessage(input: SendWhatsAppTestMessageInput!): SendWhatsAppTestMessage
-  "Wipe the number's secrets and mark it inactive; its history stays (maintainer's decision)."
+  """
+  Wipe the number's secrets, mark it inactive and delete its conversations (plan Step 2.8, finding
+  17): numbers are recycled, so its history must never reach whoever gets it next.
+  """
   disconnectWhatsAppAccount(input: DisconnectWhatsAppAccountInput!): DisconnectWhatsAppAccount
   """
   Change whom a connected number serves: the team, customers, or both (plan Step 2.7). It keeps its
@@ -1497,6 +1510,16 @@ type ApiMutation {
   verifyWhatsAppNumber(input: VerifyWhatsAppNumberInput!): VerifyWhatsAppNumber
   registerWhatsAppNumber(input: RegisterWhatsAppNumberInput!): RegisterWhatsAppNumber
   subscribeWhatsAppApp(input: SubscribeWhatsAppAppInput!): SubscribeWhatsAppApp
+  "Register one of the organization's own Meta apps, giving it its webhook address and verify token."
+  registerWhatsAppMetaApp(input: RegisterWhatsAppMetaAppInput!): RegisterWhatsAppMetaApp
+  "Replace an app's App secret, after it's reset in Meta's App Dashboard."
+  updateWhatsAppMetaAppSecret(input: UpdateWhatsAppMetaAppSecretInput!): UpdateWhatsAppMetaAppSecret
+  "A new verify token for the app, to paste into Meta; its webhook address stays the same."
+  regenerateWhatsAppMetaAppVerifyToken(input: RegenerateWhatsAppMetaAppVerifyTokenInput!): RegenerateWhatsAppMetaAppVerifyToken
+  "Remove an app no connected number uses; otherwise the answer names the numbers to disconnect first."
+  removeWhatsAppMetaApp(input: RemoveWhatsAppMetaAppInput!): RemoveWhatsAppMetaApp
+  "Change the Meta app a connected number is in, without reconnecting it (plan Step 2.9, decision 5)."
+  setWhatsAppNumberMetaApp(input: SetWhatsAppNumberMetaAppInput!): SetWhatsAppNumberMetaApp
   shopifyStartInstall(input: ShopifyStartInstallInput!): ShopifyStartInstall
   shopifyLinkShop(input: ShopifyLinkShopInput!): ShopifyLinkShop
   shopifyDisconnectShop(input: ShopifyDisconnectShopInput!): ShopifyDisconnectShop
@@ -1703,8 +1726,8 @@ type DisconnectWhatsApp {
   link: WhatsAppLinkType!
 }
 """
-Connect a number with the form. Meta checks the id and token, and our app is subscribed to the
-number's WhatsApp Business account, before anything is saved (Step 1.18).
+Connect a number with the form. Meta checks the id and token, and the token's app is subscribed to
+the number's WhatsApp Business account, before anything is saved (Steps 1.18 and 2.9).
 """
 type ConnectWhatsAppAccount {
   account: WhatsAppAccountType!
@@ -1713,7 +1736,10 @@ type ConnectWhatsAppAccount {
 type SendWhatsAppTestMessage {
   messageId: String!
 }
-"Wipe the number's secrets and mark it inactive; its history stays (maintainer's decision)."
+"""
+Wipe the number's secrets, mark it inactive and delete its conversations (plan Step 2.8, finding
+17): numbers are recycled, so its history must never reach whoever gets it next.
+"""
 type DisconnectWhatsAppAccount {
   account: WhatsAppAccountType!
 }
@@ -1735,6 +1761,26 @@ type RegisterWhatsAppNumber {
 }
 type SubscribeWhatsAppApp {
   ok: Boolean!
+}
+"Register one of the organization's own Meta apps, giving it its webhook address and verify token."
+type RegisterWhatsAppMetaApp {
+  metaApp: WhatsAppMetaAppType!
+}
+"Replace an app's App secret, after it's reset in Meta's App Dashboard."
+type UpdateWhatsAppMetaAppSecret {
+  metaApp: WhatsAppMetaAppType!
+}
+"A new verify token for the app, to paste into Meta; its webhook address stays the same."
+type RegenerateWhatsAppMetaAppVerifyToken {
+  metaApp: WhatsAppMetaAppType!
+}
+"Remove an app no connected number uses; otherwise the answer names the numbers to disconnect first."
+type RemoveWhatsAppMetaApp {
+  ok: Boolean!
+}
+"Change the Meta app a connected number is in, without reconnecting it (plan Step 2.9, decision 5)."
+type SetWhatsAppNumberMetaApp {
+  account: WhatsAppAccountType!
 }
 type ShopifyStartInstall {
   authorizeUrl: String!
@@ -3125,6 +3171,7 @@ input ConnectWhatsAppAccountInput {
   phoneNumberId: String!
   wabaId: String!
   accessToken: String!
+  metaAppId: ID
 }
 input SendWhatsAppTestMessageInput {
   tenantId: ID!
@@ -3158,6 +3205,29 @@ input RegisterWhatsAppNumberInput {
 input SubscribeWhatsAppAppInput {
   tenantId: ID!
   accountId: ID!
+}
+input RegisterWhatsAppMetaAppInput {
+  tenantId: ID!
+  appId: String!
+  appSecret: String!
+}
+input UpdateWhatsAppMetaAppSecretInput {
+  tenantId: ID!
+  metaAppId: ID!
+  appSecret: String!
+}
+input RegenerateWhatsAppMetaAppVerifyTokenInput {
+  tenantId: ID!
+  metaAppId: ID!
+}
+input RemoveWhatsAppMetaAppInput {
+  tenantId: ID!
+  metaAppId: ID!
+}
+input SetWhatsAppNumberMetaAppInput {
+  tenantId: ID!
+  accountId: ID!
+  metaAppId: ID
 }
 input ShopifyStartInstallInput {
   tenantId: ID!

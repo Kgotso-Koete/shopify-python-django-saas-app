@@ -64,13 +64,16 @@ const renderPage = (mocks: MockedResponse[], features = ['SHOPIFY', 'WHATSAPP'])
   });
 
 describe('ShopifyShops: Component', () => {
-  // WhatsApp plan phase 3, decisions 3 and 5: the stores are kept and shown, but no new one is connected.
-  it("shows the stores kept, without the connect form, while the plan doesn't include Shopify", async () => {
+  // WhatsApp plan Step 2.8, finding 16: connecting a store needs no plan, so a business can be ready
+  // before its trial starts; browsing its products waits for a plan.
+  it("keeps the stores and the connect form while the plan doesn't include Shopify", async () => {
     renderPage([configMock(), shopsMock([shop({ shopDomain: 'kept.myshopify.com' })])], []);
 
-    expect(await screen.findByTestId('plan-required')).toHaveTextContent(/your plan doesn't include shopify/i);
+    const notice = await screen.findByTestId('plan-required');
+    expect(notice).toHaveTextContent(/your plan doesn't include shopify/i);
+    expect(notice).toHaveTextContent(/products show/i);
     expect(await screen.findByTestId('shopify-shop-kept.myshopify.com')).toBeInTheDocument();
-    expect(screen.queryByTestId('shopify-domain-input')).not.toBeInTheDocument();
+    expect(screen.getByTestId('shopify-domain-input')).toBeInTheDocument();
   });
 
   it('says the integration is not configured when Shopify is disabled', async () => {

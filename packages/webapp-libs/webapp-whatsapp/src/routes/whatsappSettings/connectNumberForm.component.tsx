@@ -12,6 +12,7 @@ import { connectWhatsAppAccountMutation } from '../../graphql/whatsappAccounts.g
 import { chooseWhatsAppStoreMutation } from '../../graphql/whatsappStorefronts.graphql';
 import { servesCustomers } from '../../utils/purposes';
 import { serverReason } from '../../utils/serverReason';
+import { MetaApp } from './metaAppsCard.component';
 
 type ConnectNumberFields = {
   // Whom the number serves: the team, the customers, or both (WhatsApp plan Step 2.7); empty until chosen.
@@ -21,6 +22,8 @@ type ConnectNumberFields = {
   accessToken: string;
   // Numbers serving customers only: the store the number sells from (Step 2.1b).
   shopDomain: string;
+  // One of the organization's own Meta apps (Step 2.9); empty for this service's app.
+  metaAppId: string;
 };
 
 type ConnectNumberFormProps = {
@@ -29,17 +32,27 @@ type ConnectNumberFormProps = {
   // The organization's stores that can sell on WhatsApp, and whether that list has arrived.
   stores: string[];
   storesLoaded: boolean;
+  // The organization's own Meta apps; with none, there's nothing to choose.
+  metaApps: MetaApp[];
 };
 
-const EMPTY: ConnectNumberFields = { purpose: '', phoneNumberId: '', wabaId: '', accessToken: '', shopDomain: '' };
+const EMPTY: ConnectNumberFields = {
+  purpose: '',
+  phoneNumberId: '',
+  wabaId: '',
+  accessToken: '',
+  shopDomain: '',
+  metaAppId: '',
+};
 
 /**
  * The form that connects one of the organization's own WhatsApp numbers for one purpose (WhatsApp plan
- * Steps 1.5, 1.17 and 1.18, user story 11). Every number is on our one Meta app, so the form takes no
- * App secret and there's no webhook for the organization to set up. The backend asks Meta about the
- * number and subscribes our app to its WhatsApp Business account before saving anything; a refusal
- * comes back under the field at fault, such as Meta's rejection of the access token, or as a general
- * reason, such as a second number for the team.
+ * Steps 1.5, 1.17 and 1.18, user story 11). It takes no App secret: a number is in this service's Meta
+ * app, or in one of the organization's own, whose App secret is registered once on the "Your Meta apps"
+ * card (Step 2.9, decision 3) and chosen here. The backend asks Meta about the number and subscribes the
+ * token's app to its WhatsApp Business account before saving anything; a refusal comes back under the
+ * field at fault, such as Meta's rejection of the access token, or as a general reason, such as a second
+ * number for the team.
  *
  * It first asks who texts the number (Step 2.7, decision 4): the team, the customers, or both. A number
  * serving customers also needs the store it sells from (Step 2.1b, user story 25), chosen here and
@@ -47,7 +60,7 @@ const EMPTY: ConnectNumberFields = { purpose: '', phoneNumberId: '', wabaId: '',
  * numbers, knows nothing about Shopify. If that second call fails, the number stays connected, and its
  * row offers the store picker.
  */
-export const ConnectNumberForm = ({ tenantId, onConnected, stores, storesLoaded }: ConnectNumberFormProps) => {
+export const ConnectNumberForm = ({ tenantId, onConnected, stores, storesLoaded, metaApps }: ConnectNumberFormProps) => {
   const intl = useIntl();
   const [connectedNumber, setConnectedNumber] = useState<string | null>(null);
   const [storeProblem, setStoreProblem] = useState<string | null>(null);
@@ -94,11 +107,13 @@ export const ConnectNumberForm = ({ tenantId, onConnected, stores, storesLoaded 
     },
   ];
 
-  const onSubmit = handleSubmit(async ({ shopDomain, purpose: chosen, ...values }) => {
+  const onSubmit = handleSubmit(async ({ shopDomain, purpose: chosen, metaAppId, ...values }) => {
     setStoreProblem(null);
     if (chosen === '') return;
+    // Left out for this service's app, its default.
+    const app = metaAppId ? { metaAppId } : {};
     try {
-      const { data } = await connect({ variables: { input: { tenantId, purpose: chosen, ...values } } });
+      const { data } = await connect({ variables: { input: { tenantId, purpose: chosen, ...values, ...app } } });
       const result = data?.connectWhatsAppAccount;
       if (!result) return;
       setConnectedNumber(result.account.displayPhoneNumber);
@@ -274,6 +289,39 @@ export const ConnectNumberForm = ({ tenantId, onConnected, stores, storesLoaded 
             error={errors.accessToken?.message}
             autoComplete="off"
           />
+          {metaApps.length > 0 && (
+            <div className="space-y-2">
+              <label htmlFor="whatsapp-connect-meta-app" className="text-sm font-medium">
+                <FormattedMessage defaultMessage="Meta app" id="WhatsAppSettings / Connect / Meta app" />
+              </label>
+              <select
+                id="whatsapp-connect-meta-app"
+                {...register('metaAppId')}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">
+                  {intl.formatMessage({
+                    defaultMessage: "This service's app",
+                    id: 'WhatsAppSettings / Meta app / This service',
+                  })}
+                </option>
+                {metaApps.map((app) => (
+                  <option key={app.id} value={app.id}>
+                    {intl.formatMessage(
+                      { defaultMessage: 'Your app {appId}', id: 'WhatsAppSettings / Meta app / Yours' },
+                      { appId: app.appId }
+                    )}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground sm:col-span-2">
+            <FormattedMessage
+              defaultMessage="Use a system user's permanent token, made in your Meta Business settings: the temporary token on the API Setup page stops working within a day."
+              id="WhatsAppSettings / Connect / Permanent token"
+            />
+          </p>
           {genericError && <p className="text-sm text-destructive sm:col-span-2">{genericError}</p>}
           <div className="sm:col-span-2">
             <Button type="submit" disabled={loading || noStore}>

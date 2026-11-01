@@ -17,13 +17,12 @@ import graphene
 
 from apps.whatsapp.constants import AccountPurpose, ConversationMode
 from apps.whatsapp.models import WhatsAppAccount
-from apps.whatsapp.schema import WHATSAPP_PLAN, ConversationModeEnum
+from apps.whatsapp.schema import ConversationModeEnum
 from common.acl.policies import IsTenantMemberAccess
 from common.graphql import exceptions
 from common.graphql.acl import permission_classes, requires
 
 from . import services
-from .models import StorefrontChannel
 from .services import StoreChannelError
 
 
@@ -39,7 +38,7 @@ class WhatsAppStorefrontType(graphene.ObjectType):
 
 
 def _storefront(account) -> dict:
-    channel = StorefrontChannel.objects.filter(account=account).select_related("shop").first()
+    channel = services.channel_for(account)
     return {
         # The account's hashid, as WhatsAppAccountType.id gives it, so the web app can match the rows.
         "account_id": str(account.id),
@@ -140,9 +139,7 @@ class SetWhatsAppStorefrontMode(graphene.Mutation):
 
 @permission_classes(IsTenantMemberAccess)
 class Mutation(graphene.ObjectType):
-    # Changing a number's store or mode uses WhatsApp, so the plan must include it (plan phase 3,
-    # decision 5); listing the numbers' stores doesn't.
-    choose_whats_app_store = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(ChooseWhatsAppStore.Field())
-    set_whats_app_storefront_mode = permission_classes(requires("whatsapp.manage"), WHATSAPP_PLAN)(
-        SetWhatsAppStorefrontMode.Field()
-    )
+    # Choosing a number's store and its customers' mode sets it up, which needs no plan (plan Step
+    # 2.8, finding 16); its customers get replies only on a plan that includes WhatsApp.
+    choose_whats_app_store = permission_classes(requires("whatsapp.manage"))(ChooseWhatsAppStore.Field())
+    set_whats_app_storefront_mode = permission_classes(requires("whatsapp.manage"))(SetWhatsAppStorefrontMode.Field())

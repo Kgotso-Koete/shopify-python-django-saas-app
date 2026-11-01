@@ -7,6 +7,7 @@ they reach, and what reaches the browser.
 - whatsAppStorefronts lists each external number with its store, or none; it needs whatsapp.view
 - whatsAppEligibleStores and chooseWhatsAppStore are for the picker; they need whatsapp.manage
 - another organization's numbers and stores never appear, and read as "not found"
+- a store disconnected from the organization is no number's store any more (Step 2.8, finding 22)
 
 Kind of test: integration (agents.md section 2.5). Why: queries and mutations go through the real
 GraphQL schema, permissions and test database; nothing is faked.
@@ -117,6 +118,22 @@ class TestListingStorefronts:
         response = graphene_client.query(STOREFRONTS, variable_values={"tenantId": tenant_id(organization)})
 
         assert response["data"]["whatsAppStorefronts"] == []
+
+    def test_a_store_disconnected_from_the_organization_is_no_numbers_store(self, graphene_client, organization):
+        # Step 2.8, finding 22: the number shows no store, and no mode, until one is chosen again.
+        act_as(graphene_client, organization, TenantUserRole.MEMBER)
+        number = ExternalAccountFactory(tenant=organization)
+        shop = store(organization, "acme.myshopify.com")
+        services.choose_store(tenant=organization, account_id=str(number.pk), shop_domain="acme.myshopify.com")
+        shop.tenant = TenantFactory(type=TenantType.ORGANIZATION)
+        shop.save(update_fields=["tenant"])
+
+        response = graphene_client.query(
+            "query($tenantId: ID!) { whatsAppStorefronts(tenantId: $tenantId) { shopDomain conversationMode } }",
+            variable_values={"tenantId": tenant_id(organization)},
+        )
+
+        assert response["data"]["whatsAppStorefronts"] == [{"shopDomain": None, "conversationMode": None}]
 
     def test_a_member_without_whatsapp_view_is_refused(self, graphene_client, organization):
         act_as(graphene_client, organization, TenantUserRole.MEMBER)
@@ -257,6 +274,16 @@ class TestTheMode:
     def test_a_number_with_no_store_chosen_says_so(self, graphene_client, organization):
         act_as(graphene_client, organization, TenantUserRole.ADMIN)
         number = ExternalAccountFactory(tenant=organization)
+
+        response = self.set_mode(graphene_client, organization, number, "AGENTIC")
+
+        assert problem(response)["non_field_errors"][0]["code"] == "no_store"
+
+    def test_a_number_whose_store_was_disconnected_says_so(self, graphene_client, organization):
+        # Step 2.8, finding 22.
+        act_as(graphene_client, organization, TenantUserRole.ADMIN)
+        number = self.selling(organization)
+        ShopifyShop.objects.filter(shop_domain="acme.myshopify.com").update(tenant=None)
 
         response = self.set_mode(graphene_client, organization, number, "AGENTIC")
 

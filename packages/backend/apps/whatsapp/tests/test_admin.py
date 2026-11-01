@@ -3,7 +3,7 @@ Tests for the WhatsApp Django admin (apps/whatsapp/admin.py, plan Step 1.5b, D18
 view of every number, with the same troubleshooting tools organization admins get in the WhatsApp
 tab (user story 23), for when an organization asks the operator for help.
 
-- the account's secrets are never shown
+- the account's secrets are never shown, nor an organization's Meta app's (plan Step 2.9)
 - Meta's status, a verification code by SMS or voice, and re-subscribing the app are admin actions
 - registering with the PIN and entering a code have a small form page each, as PayFast's refund does
 - every repair is recorded in the admin's own history, without the PIN or the code
@@ -16,7 +16,7 @@ import pytest
 from django.contrib.admin.models import LogEntry
 from django.urls import reverse
 
-from .factories import InternalAccountFactory
+from .factories import InternalAccountFactory, MetaAppFactory
 from .fakes import meta_error, meta_response
 
 pytestmark = pytest.mark.django_db
@@ -73,6 +73,19 @@ class TestPages:
         assert response.status_code == 200
         assert ACCESS_TOKEN not in page
         assert number.access_token_encrypted not in page
+
+    def test_an_organizations_meta_app_is_listed_and_its_secrets_never_shown(self, operator_client):
+        # Plan Step 2.9: the operator can find, and free, an App ID another organization needs.
+        app = MetaAppFactory(app_secret="meta-app-secret-value")
+
+        listing = operator_client.get(reverse("admin:whatsapp_metaapp_changelist"))
+        response = operator_client.get(reverse("admin:whatsapp_metaapp_change", args=[app.pk]))
+
+        assert app.app_id in listing.content.decode()
+        page = response.content.decode()
+        assert response.status_code == 200
+        for secret in ["meta-app-secret-value", app.app_secret_encrypted, app.verify_token, app.verify_token_encrypted]:
+            assert secret not in page
         assert "access_token_encrypted" not in page
 
 

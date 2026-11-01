@@ -312,6 +312,16 @@ def cart_page_url(shop, cart: dict[str, Any]) -> str:
     return f"https://{shop.shop_domain}/cart/{items}?storefront=true"
 
 
+def website_cart_url(shop) -> str:
+    """
+    The online store's own cart page, which shows the browser's cart, the one a cart permalink fills
+    (WhatsApp plan Step 2.8, finding 18). The chat can't empty it: Shopify documents clearing it only
+    as `POST /cart/clear.js`, for the store's own pages (https://shopify.dev/docs/api/ajax/reference/cart),
+    so the customer empties it there with Shopify's own buttons.
+    """
+    return f"https://{shop.shop_domain}/cart"
+
+
 def get_shop(shop) -> dict[str, Any]:
     """The store's details as Shopify has them, kept for SHOP_KEPT_SECONDS (WhatsApp plan Step 2.8, finding 12)."""
     key = shop_cache_key(shop)

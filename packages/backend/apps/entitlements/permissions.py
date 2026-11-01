@@ -4,8 +4,10 @@ phase 3 decision 5). It sits beside the role check in a field's permission_class
 questions every action answers: is the feature deployed here (its *_ENABLED setting), has the
 organization paid for it (this class), and may this person do it (requires(...)).
 
-It's put only on fields that act, or that call Shopify or Meta. Reading what an organization keeps
-while its plan has lapsed (its numbers, stores and links) stays allowed (decision 3).
+It's put only on fields that use a feature, such as browsing a store's products. Setting up needs no
+plan (Step 2.8, finding 16): connecting, changing and disconnecting numbers and stores, linking
+phones, test messages and troubleshooting. Reading what's kept stays allowed (decision 3). Replies on
+WhatsApp, the assistant's included, are checked in apps.whatsapp's router.
 """
 
 from typing import Type

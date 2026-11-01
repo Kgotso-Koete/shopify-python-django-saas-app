@@ -50,9 +50,22 @@ def eligible_stores(tenant) -> list[ShopifyShop]:
     return [shop for shop in shops if can_sell_on_whatsapp(shop)]
 
 
+def channel_for(account: WhatsAppAccount) -> StorefrontChannel | None:
+    """
+    `account`'s store link, or None while none is chosen. A store disconnected from the organization on
+    the Shopify page, or linked to another organization since, is no store of the number's (Step 2.8,
+    finding 22); its link is kept, so connecting the store again brings the number back with its mode.
+    """
+    return (
+        StorefrontChannel.objects.filter(account=account, shop__tenant_id=account.tenant_id)
+        .select_related("shop")
+        .first()
+    )
+
+
 def store_for(account: WhatsAppAccount) -> ShopifyShop | None:
     """The store `account` sells from, or None while none is chosen."""
-    channel = StorefrontChannel.objects.filter(account=account).select_related("shop").first()
+    channel = channel_for(account)
     return channel.shop if channel else None
 
 
@@ -91,10 +104,11 @@ def set_mode(*, tenant, account_id: str, mode: str) -> StorefrontChannel:
     number `account_id` (phase 2, decision 2). The setting lives with the number's store link, so a
     number needs its store first.
     """
-    channel = StorefrontChannel.objects.filter(account__tenant=tenant, account__pk=account_id).first()
+    account = WhatsAppAccount.objects.filter(tenant=tenant, pk=account_id).first()
+    if account is None:
+        raise StoreChannelError("WhatsApp number not found.", code="not_found")
+    channel = channel_for(account)
     if channel is None:
-        if not WhatsAppAccount.objects.filter(tenant=tenant, pk=account_id).exists():
-            raise StoreChannelError("WhatsApp number not found.", code="not_found")
         raise StoreChannelError("Choose the store this number sells from first.", code="no_store")
     channel.conversation_mode = mode
     channel.save(update_fields=["conversation_mode", "updated_at"])

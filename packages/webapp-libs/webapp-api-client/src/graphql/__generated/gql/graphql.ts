@@ -211,8 +211,8 @@ export type ApiMutation = {
   chooseWhatsAppStore?: Maybe<ChooseWhatsAppStore>;
   confirm?: Maybe<ConfirmEmailMutationPayload>;
   /**
-   * Connect a number with the form. Meta checks the id and token, and our app is subscribed to the
-   * number's WhatsApp Business account, before anything is saved (Step 1.18).
+   * Connect a number with the form. Meta checks the id and token, and the token's app is subscribed to
+   * the number's WhatsApp Business account, before anything is saved (Steps 1.18 and 2.9).
    */
   connectWhatsAppAccount?: Maybe<ConnectWhatsAppAccount>;
   createCrudDemoItem?: Maybe<CreateCrudDemoItemMutationPayload>;
@@ -277,7 +277,10 @@ export type ApiMutation = {
    * conversation is forgotten, the assistant's history included (Step 1.13).
    */
   disconnectWhatsApp?: Maybe<DisconnectWhatsApp>;
-  /** Wipe the number's secrets and mark it inactive; its history stays (maintainer's decision). */
+  /**
+   * Wipe the number's secrets, mark it inactive and delete its conversations (plan Step 2.8, finding
+   * 17): numbers are recycled, so its history must never reach whoever gets it next.
+   */
   disconnectWhatsAppAccount?: Maybe<DisconnectWhatsAppAccount>;
   /** Download a backup file with decryption applied in-memory. */
   downloadBackupDecrypted?: Maybe<DownloadBackupDecryptedMutation>;
@@ -304,6 +307,10 @@ export type ApiMutation = {
   payfastCreateDonationCheckout?: Maybe<PayFastCreateDonationCheckoutMutationPayload>;
   /** Publish translations for a locale to S3/CDN. */
   publishTranslations?: Maybe<PublishTranslationsMutationPayload>;
+  /** A new verify token for the app, to paste into Meta; its webhook address stays the same. */
+  regenerateWhatsAppMetaAppVerifyToken?: Maybe<RegenerateWhatsAppMetaAppVerifyToken>;
+  /** Register one of the organization's own Meta apps, giving it its webhook address and verify token. */
+  registerWhatsAppMetaApp?: Maybe<RegisterWhatsAppMetaApp>;
   registerWhatsAppNumber?: Maybe<RegisterWhatsAppNumber>;
   /**
    * Remove a specific role from a member.
@@ -315,6 +322,8 @@ export type ApiMutation = {
    * - Non-owners cannot modify owner memberships
    */
   removeRoleFromMember?: Maybe<RemoveRoleFromMemberMutation>;
+  /** Remove an app no connected number uses; otherwise the answer names the numbers to disconnect first. */
+  removeWhatsAppMetaApp?: Maybe<RemoveWhatsAppMetaApp>;
   /** Rename a passkey. */
   renamePasskey?: Maybe<RenamePasskeyMutation>;
   requestWhatsAppVerificationCode?: Maybe<RequestWhatsAppVerificationCode>;
@@ -336,6 +345,8 @@ export type ApiMutation = {
   sendAiMessage?: Maybe<SendAiMessageMutation>;
   /** Send Meta's hello_world template from the number, directly, so Meta's answer shows in the form. */
   sendWhatsAppTestMessage?: Maybe<SendWhatsAppTestMessage>;
+  /** Change the Meta app a connected number is in, without reconnecting it (plan Step 2.9, decision 5). */
+  setWhatsAppNumberMetaApp?: Maybe<SetWhatsAppNumberMetaApp>;
   /** Menus or the assistant for every customer of one of the organization's external numbers. */
   setWhatsAppStorefrontMode?: Maybe<SetWhatsAppStorefrontMode>;
   shopifyDisconnectShop?: Maybe<ShopifyDisconnectShop>;
@@ -383,6 +394,8 @@ export type ApiMutation = {
    * AI assistant.
    */
   updateWhatsAppConversationMode?: Maybe<UpdateWhatsAppConversationMode>;
+  /** Replace an app's App secret, after it's reset in Meta's App Dashboard. */
+  updateWhatsAppMetaAppSecret?: Maybe<UpdateWhatsAppMetaAppSecret>;
   validateOtp?: Maybe<ValidateOtpMutationPayload>;
   verifyOtp?: Maybe<VerifyOtpMutationPayload>;
   verifyWhatsAppNumber?: Maybe<VerifyWhatsAppNumber>;
@@ -646,6 +659,16 @@ export type ApiMutationPublishTranslationsArgs = {
 };
 
 
+export type ApiMutationRegenerateWhatsAppMetaAppVerifyTokenArgs = {
+  input: RegenerateWhatsAppMetaAppVerifyTokenInput;
+};
+
+
+export type ApiMutationRegisterWhatsAppMetaAppArgs = {
+  input: RegisterWhatsAppMetaAppInput;
+};
+
+
 export type ApiMutationRegisterWhatsAppNumberArgs = {
   input: RegisterWhatsAppNumberInput;
 };
@@ -655,6 +678,11 @@ export type ApiMutationRemoveRoleFromMemberArgs = {
   membershipId: Scalars['ID']['input'];
   roleId: Scalars['ID']['input'];
   tenantId: Scalars['ID']['input'];
+};
+
+
+export type ApiMutationRemoveWhatsAppMetaAppArgs = {
+  input: RemoveWhatsAppMetaAppInput;
 };
 
 
@@ -707,6 +735,11 @@ export type ApiMutationSendAiMessageArgs = {
 
 export type ApiMutationSendWhatsAppTestMessageArgs = {
   input: SendWhatsAppTestMessageInput;
+};
+
+
+export type ApiMutationSetWhatsAppNumberMetaAppArgs = {
+  input: SetWhatsAppNumberMetaAppInput;
 };
 
 
@@ -839,6 +872,11 @@ export type ApiMutationUpdateTenantMembershipArgs = {
 
 export type ApiMutationUpdateWhatsAppConversationModeArgs = {
   input: UpdateWhatsAppConversationModeInput;
+};
+
+
+export type ApiMutationUpdateWhatsAppMetaAppSecretArgs = {
+  input: UpdateWhatsAppMetaAppSecretInput;
 };
 
 
@@ -1441,8 +1479,8 @@ export enum ConflictStrategyEnum {
 }
 
 /**
- * Connect a number with the form. Meta checks the id and token, and our app is subscribed to the
- * number's WhatsApp Business account, before anything is saved (Step 1.18).
+ * Connect a number with the form. Meta checks the id and token, and the token's app is subscribed to
+ * the number's WhatsApp Business account, before anything is saved (Steps 1.18 and 2.9).
  */
 export type ConnectWhatsAppAccount = {
   __typename?: 'ConnectWhatsAppAccount';
@@ -1451,6 +1489,7 @@ export type ConnectWhatsAppAccount = {
 
 export type ConnectWhatsAppAccountInput = {
   accessToken: Scalars['String']['input'];
+  metaAppId?: InputMaybe<Scalars['ID']['input']>;
   phoneNumberId: Scalars['String']['input'];
   purpose: AccountPurpose;
   tenantId: Scalars['ID']['input'];
@@ -2080,7 +2119,10 @@ export type DisconnectWhatsApp = {
   link: WhatsAppLinkType;
 };
 
-/** Wipe the number's secrets and mark it inactive; its history stays (maintainer's decision). */
+/**
+ * Wipe the number's secrets, mark it inactive and delete its conversations (plan Step 2.8, finding
+ * 17): numbers are recycled, so its history must never reach whoever gets it next.
+ */
 export type DisconnectWhatsAppAccount = {
   __typename?: 'DisconnectWhatsAppAccount';
   account: WhatsAppAccountType;
@@ -3317,6 +3359,7 @@ export type Query = {
   whatsAppAccounts: Array<WhatsAppAccountType>;
   whatsAppEligibleStores: Array<Scalars['String']['output']>;
   whatsAppLinks: Array<WhatsAppLinkType>;
+  whatsAppMetaApps: Array<WhatsAppMetaAppType>;
   whatsAppNumberStatus: WhatsAppNumberStatusType;
   whatsAppStorefronts: Array<WhatsAppStorefrontType>;
 };
@@ -3705,6 +3748,11 @@ export type QueryWhatsAppEligibleStoresArgs = {
 };
 
 
+export type QueryWhatsAppMetaAppsArgs = {
+  tenantId: Scalars['ID']['input'];
+};
+
+
 export type QueryWhatsAppNumberStatusArgs = {
   accountId: Scalars['ID']['input'];
   tenantId: Scalars['ID']['input'];
@@ -3712,6 +3760,29 @@ export type QueryWhatsAppNumberStatusArgs = {
 
 
 export type QueryWhatsAppStorefrontsArgs = {
+  tenantId: Scalars['ID']['input'];
+};
+
+/** A new verify token for the app, to paste into Meta; its webhook address stays the same. */
+export type RegenerateWhatsAppMetaAppVerifyToken = {
+  __typename?: 'RegenerateWhatsAppMetaAppVerifyToken';
+  metaApp: WhatsAppMetaAppType;
+};
+
+export type RegenerateWhatsAppMetaAppVerifyTokenInput = {
+  metaAppId: Scalars['ID']['input'];
+  tenantId: Scalars['ID']['input'];
+};
+
+/** Register one of the organization's own Meta apps, giving it its webhook address and verify token. */
+export type RegisterWhatsAppMetaApp = {
+  __typename?: 'RegisterWhatsAppMetaApp';
+  metaApp: WhatsAppMetaAppType;
+};
+
+export type RegisterWhatsAppMetaAppInput = {
+  appId: Scalars['String']['input'];
+  appSecret: Scalars['String']['input'];
   tenantId: Scalars['ID']['input'];
 };
 
@@ -3739,6 +3810,17 @@ export type RemoveRoleFromMemberMutation = {
   __typename?: 'RemoveRoleFromMemberMutation';
   membership?: Maybe<TenantMembershipType>;
   ok?: Maybe<Scalars['Boolean']['output']>;
+};
+
+/** Remove an app no connected number uses; otherwise the answer names the numbers to disconnect first. */
+export type RemoveWhatsAppMetaApp = {
+  __typename?: 'RemoveWhatsAppMetaApp';
+  ok: Scalars['Boolean']['output'];
+};
+
+export type RemoveWhatsAppMetaAppInput = {
+  metaAppId: Scalars['ID']['input'];
+  tenantId: Scalars['ID']['input'];
 };
 
 /** Rename a passkey. */
@@ -4098,6 +4180,18 @@ export type SendWhatsAppTestMessageInput = {
   accountId: Scalars['ID']['input'];
   tenantId: Scalars['ID']['input'];
   to: Scalars['String']['input'];
+};
+
+/** Change the Meta app a connected number is in, without reconnecting it (plan Step 2.9, decision 5). */
+export type SetWhatsAppNumberMetaApp = {
+  __typename?: 'SetWhatsAppNumberMetaApp';
+  account: WhatsAppAccountType;
+};
+
+export type SetWhatsAppNumberMetaAppInput = {
+  accountId: Scalars['ID']['input'];
+  metaAppId?: InputMaybe<Scalars['ID']['input']>;
+  tenantId: Scalars['ID']['input'];
 };
 
 /** Menus or the assistant for every customer of one of the organization's external numbers. */
@@ -5376,6 +5470,18 @@ export type UpdateWhatsAppConversationModeInput = {
   tenantId: Scalars['ID']['input'];
 };
 
+/** Replace an app's App secret, after it's reset in Meta's App Dashboard. */
+export type UpdateWhatsAppMetaAppSecret = {
+  __typename?: 'UpdateWhatsAppMetaAppSecret';
+  metaApp: WhatsAppMetaAppType;
+};
+
+export type UpdateWhatsAppMetaAppSecretInput = {
+  appSecret: Scalars['String']['input'];
+  metaAppId: Scalars['ID']['input'];
+  tenantId: Scalars['ID']['input'];
+};
+
 export type UserDeviceConnection = {
   __typename?: 'UserDeviceConnection';
   /** Contains the nodes in this connection. */
@@ -5492,6 +5598,7 @@ export type WhatsAppAccountType = {
   id: Scalars['ID']['output'];
   isActive: Scalars['Boolean']['output'];
   lastMessageReceivedAt?: Maybe<Scalars['DateTime']['output']>;
+  metaAppId?: Maybe<Scalars['ID']['output']>;
   phoneNumberId: Scalars['String']['output'];
   purpose: AccountPurpose;
   subscribedAt?: Maybe<Scalars['DateTime']['output']>;
@@ -5512,6 +5619,16 @@ export type WhatsAppLinkType = {
   maskedNumber?: Maybe<Scalars['String']['output']>;
   organizationName: Scalars['String']['output'];
   tenantId: Scalars['ID']['output'];
+};
+
+/** One of the organization's own Meta apps, with what to paste into its webhook settings; never its App secret. */
+export type WhatsAppMetaAppType = {
+  __typename?: 'WhatsAppMetaAppType';
+  appId: Scalars['String']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  verifyToken: Scalars['String']['output'];
+  webhookUrl: Scalars['String']['output'];
 };
 
 /** Meta's own view of a number, its values exactly as Meta sends them. */
@@ -6654,7 +6771,7 @@ export type WhatsAppAccountsQueryQueryVariables = Exact<{
 }>;
 
 
-export type WhatsAppAccountsQueryQuery = { __typename?: 'Query', whatsAppAccounts: Array<{ __typename?: 'WhatsAppAccountType', id: string, purpose: AccountPurpose, phoneNumberId: string, wabaId: string, displayPhoneNumber: string, verifiedName: string, connectionMethod: ConnectionMethod, isActive: boolean, credentialsVerifiedAt?: any | null, subscribedAt?: any | null, lastMessageReceivedAt?: any | null }> };
+export type WhatsAppAccountsQueryQuery = { __typename?: 'Query', whatsAppAccounts: Array<{ __typename?: 'WhatsAppAccountType', id: string, purpose: AccountPurpose, phoneNumberId: string, wabaId: string, displayPhoneNumber: string, verifiedName: string, connectionMethod: ConnectionMethod, isActive: boolean, credentialsVerifiedAt?: any | null, subscribedAt?: any | null, lastMessageReceivedAt?: any | null, metaAppId?: string | null }> };
 
 export type ConnectWhatsAppAccountMutationMutationVariables = Exact<{
   input: ConnectWhatsAppAccountInput;
@@ -6709,6 +6826,48 @@ export type DisconnectWhatsAppMutationMutationVariables = Exact<{
 
 
 export type DisconnectWhatsAppMutationMutation = { __typename?: 'ApiMutation', disconnectWhatsApp?: { __typename?: 'DisconnectWhatsApp', link: { __typename?: 'WhatsAppLinkType', tenantId: string, organizationName: string, internalNumber: string, linked: boolean, maskedNumber?: string | null, conversationMode?: ConversationMode | null, linkedAt?: any | null } } | null };
+
+export type WhatsAppMetaAppsQueryQueryVariables = Exact<{
+  tenantId: Scalars['ID']['input'];
+}>;
+
+
+export type WhatsAppMetaAppsQueryQuery = { __typename?: 'Query', whatsAppMetaApps: Array<{ __typename?: 'WhatsAppMetaAppType', id: string, appId: string, webhookUrl: string, verifyToken: string, createdAt: any }> };
+
+export type RegisterWhatsAppMetaAppMutationMutationVariables = Exact<{
+  input: RegisterWhatsAppMetaAppInput;
+}>;
+
+
+export type RegisterWhatsAppMetaAppMutationMutation = { __typename?: 'ApiMutation', registerWhatsAppMetaApp?: { __typename?: 'RegisterWhatsAppMetaApp', metaApp: { __typename?: 'WhatsAppMetaAppType', id: string, appId: string, webhookUrl: string, verifyToken: string, createdAt: any } } | null };
+
+export type UpdateWhatsAppMetaAppSecretMutationMutationVariables = Exact<{
+  input: UpdateWhatsAppMetaAppSecretInput;
+}>;
+
+
+export type UpdateWhatsAppMetaAppSecretMutationMutation = { __typename?: 'ApiMutation', updateWhatsAppMetaAppSecret?: { __typename?: 'UpdateWhatsAppMetaAppSecret', metaApp: { __typename?: 'WhatsAppMetaAppType', id: string } } | null };
+
+export type RegenerateWhatsAppMetaAppVerifyTokenMutationMutationVariables = Exact<{
+  input: RegenerateWhatsAppMetaAppVerifyTokenInput;
+}>;
+
+
+export type RegenerateWhatsAppMetaAppVerifyTokenMutationMutation = { __typename?: 'ApiMutation', regenerateWhatsAppMetaAppVerifyToken?: { __typename?: 'RegenerateWhatsAppMetaAppVerifyToken', metaApp: { __typename?: 'WhatsAppMetaAppType', id: string, verifyToken: string } } | null };
+
+export type RemoveWhatsAppMetaAppMutationMutationVariables = Exact<{
+  input: RemoveWhatsAppMetaAppInput;
+}>;
+
+
+export type RemoveWhatsAppMetaAppMutationMutation = { __typename?: 'ApiMutation', removeWhatsAppMetaApp?: { __typename?: 'RemoveWhatsAppMetaApp', ok: boolean } | null };
+
+export type SetWhatsAppNumberMetaAppMutationMutationVariables = Exact<{
+  input: SetWhatsAppNumberMetaAppInput;
+}>;
+
+
+export type SetWhatsAppNumberMetaAppMutationMutation = { __typename?: 'ApiMutation', setWhatsAppNumberMetaApp?: { __typename?: 'SetWhatsAppNumberMetaApp', account: { __typename?: 'WhatsAppAccountType', id: string, metaAppId?: string | null } } | null };
 
 export type WhatsAppStorefrontsQueryQueryVariables = Exact<{
   tenantId: Scalars['ID']['input'];
@@ -6992,7 +7151,7 @@ export const RequestWhatsAppVerificationCodeMutationDocument = {"kind":"Document
 export const VerifyWhatsAppNumberMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"verifyWhatsAppNumberMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"VerifyWhatsAppNumberInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"verifyWhatsAppNumber"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<VerifyWhatsAppNumberMutationMutation, VerifyWhatsAppNumberMutationMutationVariables>;
 export const RegisterWhatsAppNumberMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"registerWhatsAppNumberMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"RegisterWhatsAppNumberInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"registerWhatsAppNumber"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<RegisterWhatsAppNumberMutationMutation, RegisterWhatsAppNumberMutationMutationVariables>;
 export const SubscribeWhatsAppAppMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"subscribeWhatsAppAppMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SubscribeWhatsAppAppInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"subscribeWhatsAppApp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<SubscribeWhatsAppAppMutationMutation, SubscribeWhatsAppAppMutationMutationVariables>;
-export const WhatsAppAccountsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppAccountsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppAccounts"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"purpose"}},{"kind":"Field","name":{"kind":"Name","value":"phoneNumberId"}},{"kind":"Field","name":{"kind":"Name","value":"wabaId"}},{"kind":"Field","name":{"kind":"Name","value":"displayPhoneNumber"}},{"kind":"Field","name":{"kind":"Name","value":"verifiedName"}},{"kind":"Field","name":{"kind":"Name","value":"connectionMethod"}},{"kind":"Field","name":{"kind":"Name","value":"isActive"}},{"kind":"Field","name":{"kind":"Name","value":"credentialsVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"subscribedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastMessageReceivedAt"}}]}}]}}]} as unknown as DocumentNode<WhatsAppAccountsQueryQuery, WhatsAppAccountsQueryQueryVariables>;
+export const WhatsAppAccountsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppAccountsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppAccounts"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"purpose"}},{"kind":"Field","name":{"kind":"Name","value":"phoneNumberId"}},{"kind":"Field","name":{"kind":"Name","value":"wabaId"}},{"kind":"Field","name":{"kind":"Name","value":"displayPhoneNumber"}},{"kind":"Field","name":{"kind":"Name","value":"verifiedName"}},{"kind":"Field","name":{"kind":"Name","value":"connectionMethod"}},{"kind":"Field","name":{"kind":"Name","value":"isActive"}},{"kind":"Field","name":{"kind":"Name","value":"credentialsVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"subscribedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastMessageReceivedAt"}},{"kind":"Field","name":{"kind":"Name","value":"metaAppId"}}]}}]}}]} as unknown as DocumentNode<WhatsAppAccountsQueryQuery, WhatsAppAccountsQueryQueryVariables>;
 export const ConnectWhatsAppAccountMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"connectWhatsAppAccountMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ConnectWhatsAppAccountInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"connectWhatsAppAccount"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"account"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"purpose"}},{"kind":"Field","name":{"kind":"Name","value":"displayPhoneNumber"}},{"kind":"Field","name":{"kind":"Name","value":"verifiedName"}},{"kind":"Field","name":{"kind":"Name","value":"subscribedAt"}}]}}]}}]}}]} as unknown as DocumentNode<ConnectWhatsAppAccountMutationMutation, ConnectWhatsAppAccountMutationMutationVariables>;
 export const SendWhatsAppTestMessageMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"sendWhatsAppTestMessageMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SendWhatsAppTestMessageInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sendWhatsAppTestMessage"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"messageId"}}]}}]}}]} as unknown as DocumentNode<SendWhatsAppTestMessageMutationMutation, SendWhatsAppTestMessageMutationMutationVariables>;
 export const DisconnectWhatsAppAccountMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"disconnectWhatsAppAccountMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DisconnectWhatsAppAccountInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"disconnectWhatsAppAccount"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"account"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"isActive"}}]}}]}}]}}]} as unknown as DocumentNode<DisconnectWhatsAppAccountMutationMutation, DisconnectWhatsAppAccountMutationMutationVariables>;
@@ -7001,6 +7160,12 @@ export const WhatsAppLinksQueryDocument = {"kind":"Document","definitions":[{"ki
 export const StartWhatsAppLinkMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"startWhatsAppLinkMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"StartWhatsAppLinkInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startWhatsAppLink"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"link"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"expiresAt"}}]}}]}}]} as unknown as DocumentNode<StartWhatsAppLinkMutationMutation, StartWhatsAppLinkMutationMutationVariables>;
 export const UpdateWhatsAppConversationModeMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"updateWhatsAppConversationModeMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateWhatsAppConversationModeInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateWhatsAppConversationMode"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"link"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"organizationName"}},{"kind":"Field","name":{"kind":"Name","value":"internalNumber"}},{"kind":"Field","name":{"kind":"Name","value":"linked"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"conversationMode"}},{"kind":"Field","name":{"kind":"Name","value":"linkedAt"}}]}}]}}]}}]} as unknown as DocumentNode<UpdateWhatsAppConversationModeMutationMutation, UpdateWhatsAppConversationModeMutationMutationVariables>;
 export const DisconnectWhatsAppMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"disconnectWhatsAppMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DisconnectWhatsAppInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"disconnectWhatsApp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"link"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"organizationName"}},{"kind":"Field","name":{"kind":"Name","value":"internalNumber"}},{"kind":"Field","name":{"kind":"Name","value":"linked"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"conversationMode"}},{"kind":"Field","name":{"kind":"Name","value":"linkedAt"}}]}}]}}]}}]} as unknown as DocumentNode<DisconnectWhatsAppMutationMutation, DisconnectWhatsAppMutationMutationVariables>;
+export const WhatsAppMetaAppsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppMetaAppsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppMetaApps"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"appId"}},{"kind":"Field","name":{"kind":"Name","value":"webhookUrl"}},{"kind":"Field","name":{"kind":"Name","value":"verifyToken"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]} as unknown as DocumentNode<WhatsAppMetaAppsQueryQuery, WhatsAppMetaAppsQueryQueryVariables>;
+export const RegisterWhatsAppMetaAppMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"registerWhatsAppMetaAppMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"RegisterWhatsAppMetaAppInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"registerWhatsAppMetaApp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"metaApp"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"appId"}},{"kind":"Field","name":{"kind":"Name","value":"webhookUrl"}},{"kind":"Field","name":{"kind":"Name","value":"verifyToken"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]}}]} as unknown as DocumentNode<RegisterWhatsAppMetaAppMutationMutation, RegisterWhatsAppMetaAppMutationMutationVariables>;
+export const UpdateWhatsAppMetaAppSecretMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"updateWhatsAppMetaAppSecretMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateWhatsAppMetaAppSecretInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateWhatsAppMetaAppSecret"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"metaApp"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]}}]} as unknown as DocumentNode<UpdateWhatsAppMetaAppSecretMutationMutation, UpdateWhatsAppMetaAppSecretMutationMutationVariables>;
+export const RegenerateWhatsAppMetaAppVerifyTokenMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"regenerateWhatsAppMetaAppVerifyTokenMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"RegenerateWhatsAppMetaAppVerifyTokenInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"regenerateWhatsAppMetaAppVerifyToken"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"metaApp"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"verifyToken"}}]}}]}}]}}]} as unknown as DocumentNode<RegenerateWhatsAppMetaAppVerifyTokenMutationMutation, RegenerateWhatsAppMetaAppVerifyTokenMutationMutationVariables>;
+export const RemoveWhatsAppMetaAppMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"removeWhatsAppMetaAppMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"RemoveWhatsAppMetaAppInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"removeWhatsAppMetaApp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<RemoveWhatsAppMetaAppMutationMutation, RemoveWhatsAppMetaAppMutationMutationVariables>;
+export const SetWhatsAppNumberMetaAppMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"setWhatsAppNumberMetaAppMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SetWhatsAppNumberMetaAppInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"setWhatsAppNumberMetaApp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"account"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"metaAppId"}}]}}]}}]}}]} as unknown as DocumentNode<SetWhatsAppNumberMetaAppMutationMutation, SetWhatsAppNumberMetaAppMutationMutationVariables>;
 export const WhatsAppStorefrontsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppStorefrontsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppStorefronts"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"accountId"}},{"kind":"Field","name":{"kind":"Name","value":"shopDomain"}},{"kind":"Field","name":{"kind":"Name","value":"conversationMode"}}]}}]}}]} as unknown as DocumentNode<WhatsAppStorefrontsQueryQuery, WhatsAppStorefrontsQueryQueryVariables>;
 export const WhatsAppEligibleStoresQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppEligibleStoresQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppEligibleStores"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}]}]}}]} as unknown as DocumentNode<WhatsAppEligibleStoresQueryQuery, WhatsAppEligibleStoresQueryQueryVariables>;
 export const ChooseWhatsAppStoreMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"chooseWhatsAppStoreMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ChooseWhatsAppStoreInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"chooseWhatsAppStore"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"storefront"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"accountId"}},{"kind":"Field","name":{"kind":"Name","value":"shopDomain"}}]}}]}}]}}]} as unknown as DocumentNode<ChooseWhatsAppStoreMutationMutation, ChooseWhatsAppStoreMutationMutationVariables>;

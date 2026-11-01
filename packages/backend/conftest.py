@@ -67,6 +67,17 @@ class CustomGrapheneClient(GrapheneClient):
         return request
 
 
+@pytest.fixture(autouse=True)
+def plans_dont_decide(settings):
+    """
+    Fork addition (WhatsApp plan phase 3): every organization has every feature unless a test turns
+    PLAN_ENTITLEMENTS_ENABLED on itself, as apps/entitlements' tests do. Without it, a test run with
+    `docker compose run` would take the setting from a developer's local .env, where it's on for
+    development, and every test organization, on the free plan, would get no WhatsApp replies.
+    """
+    settings.PLAN_ENTITLEMENTS_ENABLED = False
+
+
 @pytest.fixture
 def api_client():
     return APIClient()

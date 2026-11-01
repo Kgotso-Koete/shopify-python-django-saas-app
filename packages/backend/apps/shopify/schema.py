@@ -16,8 +16,9 @@ from common.acl.policies import AnyoneFullAccess, IsTenantMemberAccess, IsAuthen
 from apps.entitlements.constants import Feature
 from apps.entitlements.permissions import requires_feature
 
-# Fields that use Shopify need the organization's plan to include it (WhatsApp plan phase 3, decision
-# 5). Listing its stores, and disconnecting one, don't: a lapsed organization's stores are kept.
+# Browsing a store's products uses Shopify, so it needs the organization's plan to include it
+# (WhatsApp plan phase 3, decision 5). Connecting, listing and disconnecting stores don't (Step 2.8,
+# finding 16): a business sets up before its trial starts, and a lapsed one keeps its stores.
 SHOPIFY_PLAN = requires_feature(Feature.SHOPIFY)
 
 
@@ -257,6 +258,8 @@ class ShopifyDisconnectShop(graphene.Mutation):
 
 @permission_classes(IsTenantMemberAccess)
 class Mutation(graphene.ObjectType):
-    shopify_start_install = permission_classes(requires("shopify.manage"), SHOPIFY_PLAN)(ShopifyStartInstall.Field())
-    shopify_link_shop = permission_classes(requires("shopify.manage"), SHOPIFY_PLAN)(ShopifyLinkShop.Field())
+    # Connecting a store sets it up, which needs no plan (WhatsApp plan Step 2.8, finding 16); browsing
+    # its products waits for a plan that includes Shopify (SHOPIFY_PLAN above).
+    shopify_start_install = permission_classes(requires("shopify.manage"))(ShopifyStartInstall.Field())
+    shopify_link_shop = permission_classes(requires("shopify.manage"))(ShopifyLinkShop.Field())
     shopify_disconnect_shop = permission_classes(requires("shopify.manage"))(ShopifyDisconnectShop.Field())

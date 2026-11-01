@@ -237,73 +237,71 @@ export const ShopifyShops: FC = () => {
           </Paragraph>
         </div>
 
-        {/* While the plan doesn't include Shopify, the stores are kept and listed, but no new one is
-            connected (WhatsApp plan phase 3, decisions 3 and 5). The backend refuses it anyway. */}
+        {/* Connecting a store needs no plan, so a business is ready before its trial starts; browsing
+            its products waits for a plan (WhatsApp plan Step 2.8, finding 16). */}
         {!shopifyUnlocked && (
           <PlanRequiredNotice feature="Shopify">
             <FormattedMessage
               id="ShopifyShops / Plan required"
-              defaultMessage="Your stores are kept, and come back as they are on a plan that includes Shopify. Shopify comes with the paid plans, free trial included."
+              defaultMessage="You can connect your stores now, and they're kept. Their products show here, and sell on WhatsApp, on a plan that includes Shopify. Shopify comes with the paid plans, free trial included."
             />
           </PlanRequiredNotice>
         )}
 
         {/* Connect a store form */}
-        {shopifyUnlocked && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Plus className="h-5 w-5" />
-                <FormattedMessage
-                  id="ShopifyShops / Connect title"
-                  defaultMessage="Connect a store"
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              <FormattedMessage
+                id="ShopifyShops / Connect title"
+                defaultMessage="Connect a store"
+              />
+            </CardTitle>
+            <CardDescription>
+              <FormattedMessage
+                id="ShopifyShops / Connect description"
+                defaultMessage="Enter your Shopify store domain to start the installation"
+              />
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleStartInstall} className="flex gap-3">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  value={shopDomain}
+                  onChange={(e) => {
+                    setShopDomain(e.target.value);
+                    setDomainError('');
+                  }}
+                  placeholder="my-store.myshopify.com"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  data-testid="shopify-domain-input"
                 />
-              </CardTitle>
-              <CardDescription>
+                {domainError && (
+                  <p
+                    className="mt-1 text-sm text-destructive"
+                    data-testid="shopify-domain-error"
+                  >
+                    {domainError}
+                  </p>
+                )}
+              </div>
+              <button
+                type="submit"
+                disabled={installLoading || !shopDomain}
+                className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                data-testid="shopify-connect-button"
+              >
                 <FormattedMessage
-                  id="ShopifyShops / Connect description"
-                  defaultMessage="Enter your Shopify store domain to start the installation"
+                  id="ShopifyShops / Connect button"
+                  defaultMessage="Connect"
                 />
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleStartInstall} className="flex gap-3">
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    value={shopDomain}
-                    onChange={(e) => {
-                      setShopDomain(e.target.value);
-                      setDomainError('');
-                    }}
-                    placeholder="my-store.myshopify.com"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    data-testid="shopify-domain-input"
-                  />
-                  {domainError && (
-                    <p
-                      className="mt-1 text-sm text-destructive"
-                      data-testid="shopify-domain-error"
-                    >
-                      {domainError}
-                    </p>
-                  )}
-                </div>
-                <button
-                  type="submit"
-                  disabled={installLoading || !shopDomain}
-                  className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-                  data-testid="shopify-connect-button"
-                >
-                  <FormattedMessage
-                    id="ShopifyShops / Connect button"
-                    defaultMessage="Connect"
-                  />
-                </button>
-              </form>
-            </CardContent>
-          </Card>
-        )}
+              </button>
+            </form>
+          </CardContent>
+        </Card>
 
         {/* Stores list */}
         {shopsLoading ? (

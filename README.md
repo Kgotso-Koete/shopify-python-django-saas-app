@@ -238,6 +238,41 @@ After starting the application, you'll have these services available:
 > 2. Check [http://localhost:1080](http://localhost:1080) for the verification email
 > 3. Log in to the Admin Panel at [http://admin.localhost:5001](http://admin.localhost:5001) using credentials from your `.env` file
 
+### Adding a backend package
+
+> **Fork addition.** Not part of the original SaaS Boilerplate's documentation, which doesn't cover adding a backend package. Written for this fork on 2026-11-01, when ReportLab was added.
+
+The backend's Python packages live in its Docker image: the image installs exactly what `packages/backend/uv.lock` lists (`uv sync --frozen` in `packages/backend/Dockerfile`). So adding a package means changing `pyproject.toml` and `uv.lock`, then rebuilding the image. Don't install into `packages/backend/.venv` on your machine: a container may have created it, owned by root, and `uv` then fails with "Permission denied".
+
+1. Add the package to `pyproject.toml` and `uv.lock`, without installing it locally (`--no-sync`):
+
+   ```shell
+   cd packages/backend
+   uv add --no-sync <package>
+   cd ../..
+   ```
+
+2. Pin it exactly: in `packages/backend/pyproject.toml`, change the line `uv` added, such as `"<package>>=1.2.3"`, to `"<package>==1.2.3"` (every new dependency is pinned exactly, `docs/superpowers/agents.md` section 5.3). Then update the lock to match:
+
+   ```shell
+   cd packages/backend
+   uv lock
+   cd ../..
+   ```
+
+3. Rebuild the backend's image, so the containers have the package:
+
+   ```shell
+   pnpm nx run backend:compose-build-image
+   ```
+
+4. Check it: the pin is in `pyproject.toml`, and the package is in the lock (a count of 1 or more):
+
+   ```shell
+   grep -n '"<package>==' packages/backend/pyproject.toml
+   grep -c 'name = "<package>"' packages/backend/uv.lock
+   ```
+
 ### Testing
 
 Run these from the repository root, with Node 20 (`nvm use 20`). The backend tests run inside Docker, so Docker must be running; the frontend tests run on your machine (the web app isn't a Docker service).
@@ -247,11 +282,13 @@ Every command saves the full output to the gitignored `logs/` folder, and comes 
 - **Summary:** the terminal shows only the counts (tests, passed, failed, skipped), one line per module or project. The full output is in the log if something fails.
 - **Verbose:** the terminal shows every test as it runs, with its file and its result, and the same text is saved to the log. `tee` does both: it prints its input and writes it to a file. `${PIPESTATUS[0]}` is the tests' own exit code (`0` = passed); a plain `$?` would be `tee`'s, which is always 0.
 
+**Stop the stack first, before the final full runs:** `pnpm saas down`. A running stack (the web app, its watchers, the workers and webhooks) loads the machine enough to make timing-sensitive tests fail. On 2026-11-01 one upstream Stripe test failed 2 runs in 4 with the stack up, and passed 10 runs in 10 with it stopped. The backend tests still need Docker running; they start only the containers they need.
+
 Run one command at a time, never side by side: `pnpm nx run-many` runs three projects at once by default, which can run a 16 GB machine out of memory, so the commands below loop through projects one by one.
 
 #### Backend
 
-The backend tests live in 16 modules: the Django apps in `packages/backend/apps/` that have tests, plus `common`. `apps/content` and `apps/websockets` have no tests, so they aren't in the lists; when an app gets its first tests, add its folder to the lists below. The 16 modules add up to the same total as `pnpm nx run backend:test` (1951 on 2026-11-01). pytest's last line names every non-zero count, so a module with skipped tests shows `N skipped`, and one without shows nothing about skips. `-e DATABASE_URL=` keeps the tests on the local database even if your `.env` points `DATABASE_URL` elsewhere. The backend's `setup.cfg` already runs pytest with `-v`, so the logs always list every test. pytest prints no total in its last line, so the summaries take it from the `collected N items` line.
+The backend tests live in 16 modules: the Django apps in `packages/backend/apps/` that have tests, plus `common`. `apps/content` and `apps/websockets` have no tests, so they aren't in the lists; when an app gets its first tests, add its folder to the lists below. The 16 modules add up to the same total as `pnpm nx run backend:test` (2020 on 2026-11-01). pytest's last line names every non-zero count, so a module with skipped tests shows `N skipped`, and one without shows nothing about skips. `-e DATABASE_URL=` keeps the tests on the local database even if your `.env` points `DATABASE_URL` elsewhere. The backend's `setup.cfg` already runs pytest with `-v`, so the logs always list every test. pytest prints no total in its last line, so the summaries take it from the `collected N items` line.
 
 **Every module, one at a time.** Each module runs in its own container and gets its own log, `logs/backend-<module>.log`.
 

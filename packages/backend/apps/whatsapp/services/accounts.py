@@ -15,9 +15,10 @@ is then the team's number; an admin changes a connected number's role with chang
 number is saved, the app that answers each audience it serves may set it up, through its handler's
 optional on_connected(account): apps.whatsapp_saas publishes its forms that way.
 
-Since Step 1.18 every number is on our one Meta app, whose App secret and verify token are settings.
+Since Step 1.18 a number is on our one Meta app, whose App secret and verify token are settings, and
+since Step 2.9 it can instead be on one of its organization's own Meta apps (services/meta_apps.py).
 The form takes the number's id, its WhatsApp Business account's id and an access token; connecting
-then subscribes our app to that WhatsApp Business account, so its messages reach our webhook.
+then subscribes the token's app to that WhatsApp Business account, so its messages reach a webhook.
 
 Meta's references: checking a number,
 https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/phone-numbers.md
@@ -37,7 +38,7 @@ from django.utils import timezone
 from .. import registry
 from ..client import PermanentSendError, RetryableSendError, TokenRejectedError, WhatsAppClient, send_backend
 from ..constants import AccountPurpose, ConnectionMethod, MessageDirection
-from ..models import WhatsAppAccount, WhatsAppIdentity, WhatsAppMessage
+from ..models import MetaApp, WhatsAppAccount, WhatsAppIdentity, WhatsAppMessage
 from ..phone_numbers import InvalidPhoneNumber, normalize_phone_number
 from . import identity
 
@@ -74,11 +75,12 @@ class ConnectedAccount:
     account: WhatsAppAccount
 
 
-def connect_account(*, tenant, purpose: str, phone_number_id: str, waba_id: str, access_token: str):
+def connect_account(*, tenant, purpose: str, phone_number_id: str, waba_id: str, access_token: str, meta_app_id=None):
     """
     Connect a number for `tenant` with the form's fields. Meta is asked about the number with the
-    given token first, then our app is subscribed to its WhatsApp Business account; nothing is saved
-    unless Meta accepts both. Returns a ConnectedAccount.
+    given token first, then the token's app is subscribed to its WhatsApp Business account; nothing is
+    saved unless Meta accepts both. The number is on the organization's Meta app `meta_app_id`, or on
+    this service's app when it's None (plan Step 2.9). Returns a ConnectedAccount.
     """
     if purpose not in AccountPurpose.values:
         raise AccountError("Choose what the number is for.", code="invalid_purpose", field="purpose")
@@ -108,6 +110,7 @@ def connect_account(*, tenant, purpose: str, phone_number_id: str, waba_id: str,
             field="phone_number_id",
         )
     _check_one_team_number(tenant, purpose, existing)
+    meta_app = find_app(tenant, meta_app_id, field="meta_app_id") if meta_app_id else None
 
     # Checked with an unsaved account, so a refused id or token leaves nothing behind.
     candidate = WhatsAppAccount(phone_number_id=values["phone_number_id"], waba_id=values["waba_id"])
@@ -125,6 +128,7 @@ def connect_account(*, tenant, purpose: str, phone_number_id: str, waba_id: str,
     account.display_phone_number = details.display_phone_number
     account.verified_name = details.verified_name
     account.connection_method = ConnectionMethod.MANUAL
+    account.meta_app = meta_app
     account.credentials_verified_at = credentials_verified_at
     account.subscribed_at = timezone.now()
     account.is_active = True
@@ -194,11 +198,18 @@ def _set_up(account: WhatsAppAccount, audiences: list[str]) -> None:
 
 @transaction.atomic
 def disconnect_account(*, tenant, account_id) -> None:
-    """Wipe the number's access token and mark it inactive; its contacts and messages stay."""
+    """
+    Wipe the number's access token, mark it inactive, and delete its contacts (plan Step 2.8, finding
+    17). Numbers are recycled, so whoever gets the number next must never reach its history. Deleting
+    a contact deletes, through the database's cascades, its messages, its conversation with the
+    assistant's history, its phone link and its store customer. The number's own row and its store
+    link stay, as configuration, for when it's connected again; a lapsed plan deletes nothing.
+    """
     account = find_account(tenant, account_id, for_update=True)
     account.access_token_encrypted = ""
     account.is_active = False
     account.save(update_fields=["access_token_encrypted", "is_active", "updated_at"])
+    account.contacts.all().delete()
 
 
 def send_test_message(*, tenant, account_id, to: str) -> str:
@@ -242,6 +253,17 @@ def find_account(tenant, account_id, *, for_update: bool = False) -> WhatsAppAcc
     if account is None:
         raise AccountError("WhatsApp number not found.", code="not_found")
     return account
+
+
+def find_app(tenant, meta_app_id, *, for_update: bool = False, field: str | None = None) -> MetaApp:
+    """The organization's own Meta app (plan Step 2.9); another organization's is "not found", as a missing one is."""
+    apps = MetaApp.objects.filter(tenant=tenant)
+    if for_update:
+        apps = apps.select_for_update()
+    app = apps.filter(pk=meta_app_id).first()
+    if app is None:
+        raise AccountError("Meta app not found.", code="app_not_found", field=field)
+    return app
 
 
 def _ask_meta(call):

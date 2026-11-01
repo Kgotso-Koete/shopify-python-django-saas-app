@@ -186,6 +186,8 @@ When giving manual verification steps, use the real top-level command a user or 
 
 For example, migrations are made with `pnpm saas backend makemigrations`, not a hand-built `docker compose run --rm backend python manage.py makemigrations`.
 
+**Never change file ownership or permissions** (set by the human maintainer on 2026-11-01). Neither hand over nor run `chown`, `chmod` or a `sudo` command to fix a file's owner. The backend container runs as root, so a file it creates in the repository, such as a new migration, belongs to root: that's normal in upstream's workflow, and the file still migrates, tests and commits as it is. The human maintainer's words: "I dont like us running commands to change file permissions. We never ever had to do this."
+
 ### 1.3 The verification ladder
 
 - **RED step:** run the single test file.
@@ -200,6 +202,7 @@ For example, migrations are made with `pnpm saas backend makemigrations`, not a 
   - Backend: `pnpm nx run backend:test`. It runs `ruff check` (report-only), `black`, `manage.py makemigrations --check --dry-run`, then the whole pytest suite with coverage.
   - **When the full backend run is needed** (set by the human maintainer on 2026-10-16). It takes 10 to 15 minutes, so it runs only where it can catch something.
     - **Full run:** `pnpm nx run backend:test` when a step touches anything outside its own Django app (`config/`, `common/`, another app, `pyproject.toml`, the root `conftest.py`), and always before a commit.
+    - **Stop the stack before the final full runs** (set by the human maintainer on 2026-11-01): hand over `pnpm saas down` before the pre-commit backend and frontend runs. A running stack's load makes timing-sensitive tests fail: with `pnpm saas up` running, one upstream Stripe test in `webapp-finances` failed 2 runs in 4, and passed 10 in 10 with the stack stopped. Its race is in upstream's test, which stays unchanged (section 3.4); the human maintainer's words: "no need to change upstream code to fix the so called flaky test. We just have to remember to always run pnpm saas down before final back/frontend tests." A test failing in a final run still gets its cause found, never just "flaky".
     - **A step that touches only its own app's files** runs that app's tests (`docker compose run --rm -T -e DATABASE_URL= backend pytest apps/<app>`) plus `pnpm saas backend black`.
     - **If that step changed a model,** `pnpm saas backend makemigrations` must list only the app's expected migration, and a second run must say "No changes detected". That stands in for the full run's missing-migrations check.
   - Frontend: `pnpm nx run <project>:lint`, `pnpm nx run <project>:type-check` and `pnpm nx run <project>:test --watchAll=false`, for every Nx project touched.

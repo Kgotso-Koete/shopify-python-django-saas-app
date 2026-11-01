@@ -1,0 +1,63 @@
+---
+title: How to add a Python package to the back-end? (fork addition)
+description: Add a backend dependency through pyproject.toml and uv.lock, then rebuild the backend's Docker image
+---
+
+:::info Fork addition
+
+This page isn't part of the original SaaS Boilerplate's documentation, which doesn't cover adding a backend package.
+It was added by this fork on 2026-11-01, when ReportLab was added for invoices, and every other page of this site is
+left as the original maintainers wrote it. The same steps are in the repository's `README.md`, under "Adding a
+backend package".
+
+:::
+
+## Why it's done this way
+
+The backend's Python packages live in its Docker image. The image installs exactly what `packages/backend/uv.lock`
+lists, with `uv sync --frozen`, in
+[`packages/backend/Dockerfile`](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/blob/master/packages/backend/Dockerfile).
+So adding a package means changing `pyproject.toml` and `uv.lock`, then rebuilding the image.
+
+Don't install into `packages/backend/.venv` on your machine: a container may have created that folder, owned by root,
+and `uv` then fails with "Permission denied".
+
+## Steps
+
+### 1. Add the package, without installing it locally
+
+`--no-sync` changes only `pyproject.toml` and `uv.lock`, and leaves `.venv` alone.
+
+```shell
+cd packages/backend
+uv add --no-sync <package>
+cd ../..
+```
+
+### 2. Pin it exactly
+
+In `packages/backend/pyproject.toml`, change the line `uv` added, such as `"<package>>=1.2.3"`, to
+`"<package>==1.2.3"`: this fork pins every new dependency exactly. Then update the lock to match:
+
+```shell
+cd packages/backend
+uv lock
+cd ../..
+```
+
+### 3. Rebuild the backend's image
+
+So the containers have the package:
+
+```shell
+pnpm nx run backend:compose-build-image
+```
+
+### 4. Check it
+
+The pin is in `pyproject.toml`, and the package is in the lock (a count of 1 or more):
+
+```shell
+grep -n '"<package>==' packages/backend/pyproject.toml
+grep -c 'name = "<package>"' packages/backend/uv.lock
+```

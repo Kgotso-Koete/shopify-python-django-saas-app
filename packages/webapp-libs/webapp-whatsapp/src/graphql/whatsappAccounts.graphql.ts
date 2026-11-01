@@ -2,9 +2,9 @@ import { gql } from '@sb/webapp-api-client/graphql';
 
 // The organization's WhatsApp numbers (WhatsApp plan Steps 1.5 and 1.17, user story 11), each with
 // its purpose: the internal communications number its team texts, or an external communications
-// number its store customers text. Every number is on our one Meta app (Step 1.18), so connecting
-// takes no App secret. Reading needs whatsapp.view; connecting, testing and disconnecting need
-// whatsapp.manage.
+// number its store customers text. A number is on this service's Meta app (Step 1.18), or on one of
+// the organization's own (Step 2.9, metaAppId), whose App secret is registered once with the app, never
+// with a number. Reading needs whatsapp.view; connecting, testing and disconnecting need whatsapp.manage.
 
 export const whatsAppAccountsQuery = gql(/* GraphQL */ `
   query whatsAppAccountsQuery($tenantId: ID!) {
@@ -20,6 +20,7 @@ export const whatsAppAccountsQuery = gql(/* GraphQL */ `
       credentialsVerifiedAt
       subscribedAt
       lastMessageReceivedAt
+      metaAppId
     }
   }
 `);

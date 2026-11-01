@@ -11,10 +11,12 @@ import { Helmet } from 'react-helmet-async';
 import { FormattedMessage, useIntl } from 'react-intl';
 
 import { whatsAppAccountsQuery } from '../../graphql/whatsappAccounts.graphql';
+import { whatsAppMetaAppsQuery } from '../../graphql/whatsappMetaApps.graphql';
 import { whatsAppEligibleStoresQuery, whatsAppStorefrontsQuery } from '../../graphql/whatsappStorefronts.graphql';
 import { servesCustomers } from '../../utils/purposes';
 import { AccountRow, WhatsAppAccount } from './accountRow.component';
 import { ConnectNumberForm } from './connectNumberForm.component';
+import { MetaApp, MetaAppsCard } from './metaAppsCard.component';
 
 /**
  * Which store each number serving customers sells from, and the stores the picker offers (WhatsApp plan
@@ -41,20 +43,19 @@ type ListedAccount = WhatsAppAccount & { purpose: AccountPurpose };
  * every number with whom it serves: one number for both, or two numbers kept apart.
  *
  * Everyone with whatsapp.view sees the numbers and their status; whatsapp.manage also connects, changes,
- * tests and disconnects them. The backend checks the same permissions on every request: hiding the
- * controls is a courtesy, not the protection.
+ * tests and disconnects them, and registers the organization's own Meta apps on a card of their own
+ * (Step 2.9). The backend checks the same permissions on every request: hiding the controls is a
+ * courtesy, not the protection.
  */
 export const WhatsAppSettings = () => {
   const intl = useIntl();
   const { data: currentTenant } = useCurrentTenant();
   const tenantId = currentTenant?.id ?? '';
-  const { hasPermission: mayManage } = usePermissionCheck('whatsapp.manage');
-  // While the plan doesn't include WhatsApp, the page is read-only: the numbers are kept and shown,
-  // and nothing on it can change or send (WhatsApp plan phase 3, decision 5). The backend refuses
-  // those actions anyway.
+  const { hasPermission: canManage } = usePermissionCheck('whatsapp.manage');
+  // Setting numbers up needs no plan, so a business is ready before its trial starts (WhatsApp plan
+  // Step 2.8, finding 16): the page works as usual, and only says the numbers don't reply yet.
   const { isUnlocked } = useOrganizationFeatures();
   const unlocked = isUnlocked('WHATSAPP');
-  const canManage = mayManage && unlocked;
   const { data, loading, error, refetch } = useQuery(whatsAppAccountsQuery, {
     variables: { tenantId },
     skip: !tenantId,
@@ -68,6 +69,12 @@ export const WhatsAppSettings = () => {
     variables: { tenantId },
     skip: !tenantId || !canManage,
   });
+  // The organization's own Meta apps (Step 2.9): only whatsapp.manage, since the list holds their tokens.
+  const { data: metaAppsData, refetch: refetchMetaApps } = useQuery(whatsAppMetaAppsQuery, {
+    variables: { tenantId },
+    skip: !tenantId || !canManage,
+  });
+  const metaApps: MetaApp[] = metaAppsData?.whatsAppMetaApps ?? [];
   const reload = () => {
     void refetch();
     void refetchStorefronts();
@@ -105,7 +112,7 @@ export const WhatsAppSettings = () => {
         {!unlocked && (
           <PlanRequiredNotice feature="WhatsApp">
             <FormattedMessage
-              defaultMessage="Your numbers, their stores and their customers are kept, and come back as they are on a plan that includes WhatsApp. WhatsApp comes with the paid plans, free trial included."
+              defaultMessage="Your numbers don't reply to anyone, your team or your customers, until your plan includes WhatsApp. You can connect and set them up now, and everything is kept. WhatsApp comes with the paid plans, free trial included."
               id="WhatsAppSettings / Plan required"
             />
           </PlanRequiredNotice>
@@ -156,6 +163,7 @@ export const WhatsAppSettings = () => {
                 onConnected={reload}
                 stores={storefronts.eligibleStores}
                 storesLoaded={storefronts.storesLoaded}
+                metaApps={metaApps}
               />
             )}
 
@@ -174,6 +182,7 @@ export const WhatsAppSettings = () => {
                     tenantId={tenantId}
                     canManage={canManage}
                     onChanged={reload}
+                    metaApps={metaApps}
                     // Only a number serving customers sells from a store (Step 2.1b).
                     store={servesCustomers(account.purpose) ? (storefronts.storeOf.get(account.id) ?? null) : undefined}
                     stores={storefronts.eligibleStores}
@@ -184,6 +193,8 @@ export const WhatsAppSettings = () => {
             )}
           </CardContent>
         </Card>
+
+        {canManage && <MetaAppsCard tenantId={tenantId} apps={metaApps} onChanged={() => void refetchMetaApps()} />}
       </div>
     </PageLayout>
   );

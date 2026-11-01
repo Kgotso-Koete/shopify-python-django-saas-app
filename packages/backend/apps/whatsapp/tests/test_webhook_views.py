@@ -9,6 +9,8 @@ Meta's rules for it: https://developers.facebook.com/docs/graph-api/webhooks/get
   the signature passes.
 - Meta retries anything but a 200 for days, so a signed body that can never succeed still gets a 200:
   https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/overview.md
+- Since Step 2.9 an organization's own Meta app has its own address, /api/whatsapp/webhook/<public
+  id>/, with its own verify token and App secret; each address stores events only for its app's numbers.
 
 Kind of test: integration (agents.md section 2.5). Why: requests go through the real route with
 Django's test client, against the test database; the Celery task's delay is patched, and Meta is
@@ -25,7 +27,7 @@ from ..constants import MessageDirection, MessageKind, MessageStatus
 from ..models import WhatsAppAccount, WhatsAppContact, WhatsAppMessage
 from ..normalize import MalformedWebhook
 from . import payloads
-from .factories import ContactFactory, ExternalAccountFactory, InternalAccountFactory, MessageFactory
+from .factories import ContactFactory, ExternalAccountFactory, InternalAccountFactory, MessageFactory, MetaAppFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -258,6 +260,119 @@ class TestRefusalsAreLogged:
             post_signed(client, payloads.envelope(payloads.messages_change(payloads.text_message())))
 
         assert self.refusal_logs(caplog) == []
+
+
+class TestAnOrganizationsOwnApp:
+    """
+    Plan Step 2.9: a number in an organization's own Meta app has its webhooks at that app's address,
+    /api/whatsapp/webhook/<public id>/, checked with that app's verify token and App secret; events are
+    stored only for the numbers on that app, and the general address stays for this service's app.
+    """
+
+    APP_SECRET = "the-organizations-app-secret"
+
+    @pytest.fixture
+    def app(self):
+        return MetaAppFactory(app_secret=self.APP_SECRET)
+
+    @pytest.fixture
+    def number_on_it(self, app):
+        return ExternalAccountFactory(tenant=app.tenant, meta_app=app, phone_number_id=payloads.PHONE_NUMBER_ID)
+
+    def url(self, app):
+        return f"{WEBHOOK_URL}{app.public_id}/"
+
+    def post(self, client, url, body, secret):
+        raw_body = json.dumps(body).encode("utf-8")
+        return client.post(
+            url, data=raw_body, content_type="application/json", HTTP_X_HUB_SIGNATURE_256=sign(raw_body, secret)
+        )
+
+    def check(self, client, url, token):
+        return client.get(url, {"hub.mode": "subscribe", "hub.verify_token": token, "hub.challenge": "1158201444"})
+
+    def test_meta_s_check_with_the_apps_token_gets_the_challenge(self, client, app):
+        response = self.check(client, self.url(app), app.verify_token)
+
+        assert response.status_code == 200
+        assert response.content == b"1158201444"
+        assert response["Content-Type"].startswith("text/plain")
+
+    def test_another_token_is_refused_at_each_address(self, client, app):
+        assert self.check(client, self.url(app), VERIFY_TOKEN).status_code == 403
+        assert self.check(client, WEBHOOK_URL, app.verify_token).status_code == 403
+
+    def test_a_regenerated_token_replaces_the_old_one(self, client, app):
+        old = app.verify_token
+        app.verify_token = "a-new-verify-token"
+        app.save()
+
+        assert self.check(client, self.url(app), old).status_code == 403
+        assert self.check(client, self.url(app), "a-new-verify-token").status_code == 200
+
+    def test_an_address_nobody_was_given_is_not_found(self, client, delay):
+        url = f"{WEBHOOK_URL}no-such-app-address/"
+        body = payloads.envelope(payloads.messages_change(payloads.text_message()))
+
+        assert self.check(client, url, VERIFY_TOKEN).status_code == 404
+        assert self.post(client, url, body, APP_SECRET).status_code == 404
+
+    def test_the_address_does_not_exist_when_whatsapp_is_off(self, client, settings, app):
+        settings.WHATSAPP_ENABLED = False
+
+        assert self.check(client, self.url(app), app.verify_token).status_code == 404
+
+    def test_a_message_signed_with_the_apps_secret_is_stored_and_queued(
+        self, client, app, number_on_it, delay, django_capture_on_commit_callbacks
+    ):
+        body = payloads.envelope(payloads.messages_change(payloads.text_message()))
+
+        with django_capture_on_commit_callbacks(execute=True):
+            response = self.post(client, self.url(app), body, self.APP_SECRET)
+
+        assert response.status_code == 200
+        message = WhatsAppMessage.objects.get(wamid="wamid.TEXT1")
+        assert message.contact.account == number_on_it
+        delay.assert_called_once_with(message.pk)
+
+    def test_another_secret_is_refused_at_each_address_and_nothing_stored(self, client, app, number_on_it, delay):
+        body = payloads.envelope(payloads.messages_change(payloads.text_message()))
+
+        # This service's secret at the app's address, and the app's secret at the general one.
+        assert self.post(client, self.url(app), body, APP_SECRET).status_code == 403
+        assert self.post(client, WEBHOOK_URL, body, self.APP_SECRET).status_code == 403
+        assert WhatsAppMessage.objects.count() == 0
+
+    def test_a_number_on_another_app_is_never_stored_from_this_one(
+        self, client, app, acme_account, delay, django_capture_on_commit_callbacks
+    ):
+        # acme_account is on this service's app: a body signed by the organization's app can't speak for it.
+        body = payloads.envelope(payloads.messages_change(payloads.text_message()))
+
+        with django_capture_on_commit_callbacks(execute=True):
+            assert self.post(client, self.url(app), body, self.APP_SECRET).status_code == 200
+
+        assert WhatsAppMessage.objects.count() == 0
+        delay.assert_not_called()
+
+    def test_a_number_on_an_organizations_app_is_never_stored_from_the_general_address(
+        self, client, number_on_it, delay, django_capture_on_commit_callbacks
+    ):
+        body = payloads.envelope(payloads.messages_change(payloads.text_message()))
+
+        with django_capture_on_commit_callbacks(execute=True):
+            assert post_signed(client, body).status_code == 200
+
+        assert WhatsAppMessage.objects.count() == 0
+
+    def test_a_refusal_names_the_app_and_never_its_secret(self, client, app, number_on_it, delay, caplog):
+        body = payloads.envelope(payloads.messages_change(payloads.text_message()))
+
+        with caplog.at_level("WARNING", logger="apps.whatsapp.views"):
+            self.post(client, self.url(app), body, "wrong-secret")
+
+        assert f"doesn't match the App secret registered for Meta app {app.app_id}" in caplog.text
+        assert self.APP_SECRET not in caplog.text
 
 
 class TestStatuses:
