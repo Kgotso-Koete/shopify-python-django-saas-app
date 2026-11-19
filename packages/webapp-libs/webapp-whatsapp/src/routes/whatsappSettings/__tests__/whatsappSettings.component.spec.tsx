@@ -1208,7 +1208,10 @@ describe('WhatsAppSettings: Component', () => {
       const form = within(await connectForm());
       expect(await form.findByLabelText(/access token/i)).toBeInTheDocument();
       expect(form.queryByLabelText(/^meta app$/i)).not.toBeInTheDocument();
-      expect(within(screen.getByTestId('whatsapp-account-account-1')).queryByLabelText(/^meta app$/i)).not.toBeInTheDocument();
+      // The number's row comes from the accounts query, apart from the form: wait for it too (CI, Node 22, 2026-11-19).
+      expect(
+        within(await screen.findByTestId('whatsapp-account-account-1')).queryByLabelText(/^meta app$/i)
+      ).not.toBeInTheDocument();
     });
 
     it("moves a number to the organization's app, after a reminder to paste its callback URL and token into Meta", async () => {

@@ -225,6 +225,9 @@ For example, migrations are made with `pnpm saas backend makemigrations`, not a 
 
   Lint, type-check and other non-test commands keep writing only to their log, with `> logs/<name>.log 2>&1`. The workers' `pnpm nx run workers:test` is the one exception: its upstream script runs `pytest` without `-v` and has only 2 tests, so it shows the summary line only.
 
+- **A file CI reads is changed only after reading how CI uses it, and CI runs on the branch soon after** (set by the human maintainer on 2026-11-19). On 2026-11-05 an AI agent deleted `PROJECT_NAME=saas` from `.env.test` to fix a local test run, saying "If CI sets its project name to saas elsewhere, CI behaves the same as now" without checking; CI's setup action copies `.env.test` to `.env`, so every backend and docs build broke, and nobody saw it for two weeks, until the release's pull request.
+  - **Read first, then claim.** A change to a file CI reads (`.env.test`, anything in `.github/workflows/`, `docker-compose*.yml`, a Dockerfile) starts with reading how the workflows use that file, and the proposal quotes what was found. A claim about what CI does that wasn't checked is never made.
+  - **Push and watch.** After such a change, the branch is pushed and its CI watched (`gh run watch`, or `gh pr checks <PR number> --watch`) soon after, not only at the final pull request: CI is the only run from a clean copy of the repository.
 - **Anything touching infrastructure (Postgres, Redis, Celery, the worker, external APIs such as Stripe or PayFast):** run the GREEN targets, then start the whole stack with `pnpm saas up`, and only then do manual checks. Don't skip the automated tier.
 - **The final and ultimate check: simple, human-driven, common-sense verification.** Automated tests prove what they were written to prove. The last rung is a small list of manual checks the human maintainer can do and see for themselves, without complex container workflows or reading test output:
   - a click-through in the browser, or a request from Postman
@@ -292,12 +295,14 @@ When committing, pushing or opening a PR, follow the repository's documented pro
 
 - GitHub Flow: a feature branch off `master`, then a pull request based on `master`.
 - The README's "Commit Protocol" section, followed exactly (set by the human maintainer on 2026-10-07;
-  release steps 2 and 6 added on 2026-10-09): (1) `git checkout -b feature/<short-description>`,
+  release steps 2 and 6 added on 2026-10-09; the push step on 2026-11-19, "Its better to be explicit
+  instead of relying on creatig the pull request to push"): (1) `git checkout -b feature/<short-description>`,
   (2) the `CHANGELOG.md` entry and
   `npx standard-version --release-as X.Y.Z --skip.changelog --skip.tag --skip.commit`, (3) `git add .`
-  and `git commit -m "type(scope): description (vX.Y.Z)"`, (4) `gh pr create --title … --body …`,
-  (5) `gh pr checks <PR number> --watch` until every check has passed (added 2026-10-12), then
-  `gh pr merge --squash --delete-branch`, (6) `git checkout master`, `git pull`, `git tag X.Y.Z`,
+  and `git commit -m "type(scope): description (vX.Y.Z)"`, (4) `git push -u origin feature/<short-description>`,
+  (5) `gh pr create --title … --body …`,
+  (6) `gh pr checks <PR number> --watch` until every check has passed (added 2026-10-12), then
+  `gh pr merge --squash --delete-branch`, (7) `git checkout master`, `git pull`, `git tag X.Y.Z`,
   `git push origin X.Y.Z`. Hand these over filled in, without extra or reordered steps; anything worth
   flagging goes in a separate short note. The README is the source for the commands; keep this summary
   in step with it.

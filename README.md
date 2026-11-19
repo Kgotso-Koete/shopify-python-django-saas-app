@@ -432,7 +432,7 @@ git checkout -b feature/<short-description>
 ```
 
 **2. Update the changelog and bump the version**
-Add an entry for the new version at the top of `CHANGELOG.md` (major for a breaking change, minor for a new feature, patch for fixes only). Then set that version in every `package.json` listed in `.versionrc.js`. `--skip.changelog` keeps your entry, `--skip.tag` leaves tagging until after the merge (step 6), and `--skip.commit` lets step 3 commit everything together.
+Add an entry for the new version at the top of `CHANGELOG.md` (major for a breaking change, minor for a new feature, patch for fixes only). Then set that version in every `package.json` listed in `.versionrc.js`. `--skip.changelog` keeps your entry, `--skip.tag` leaves tagging until after the merge (step 7), and `--skip.commit` lets step 3 commit everything together.
 
 ```shell
 npx standard-version --release-as X.Y.Z --skip.changelog --skip.tag --skip.commit
@@ -447,15 +447,22 @@ git commit -m "feat(scope): brief description (vX.Y.Z)"
 
 Common prefixes: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`
 
-**4. Create a Pull Request**
+**4. Push the branch to GitHub**
+Send the branch to GitHub explicitly, rather than leaving it to `gh pr create`, which otherwise asks where to push. `-u` makes the local branch track the one on GitHub, so later fix commits on it need only `git push`.
+
+```shell
+git push -u origin feature/<short-description>
+```
+
+**5. Create a Pull Request**
 Use the GitHub CLI to open a PR for review.
 
 ```shell
 gh pr create --title "feat(scope): brief description" --body "Detailed explanation of changes."
 ```
 
-**5. Wait for the checks, then merge and delete the branch**
-Watch the PR's GitHub Actions checks in the terminal until they finish: `--watch` refreshes the list until every check is done, then prints the totals (`0 failing, N successful, …`). Use the PR number from step 4.
+**6. Wait for the checks, then merge and delete the branch**
+Watch the PR's GitHub Actions checks in the terminal until they finish: `--watch` refreshes the list until every check is done, then prints the totals (`0 failing, N successful, …`). Use the PR number from step 5.
 
 ```shell
 gh pr checks <PR number> --watch
@@ -467,7 +474,7 @@ Once every check has passed and the PR is approved, squash and merge it, and aut
 gh pr merge --squash --delete-branch
 ```
 
-**6. Tag the release**
+**7. Tag the release**
 Switch back to `master`, pull the merge commit, tag it with the version from step 2, and push the tag.
 
 ```shell
