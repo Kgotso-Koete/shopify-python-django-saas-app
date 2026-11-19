@@ -1,10 +1,12 @@
 import { gql } from '@sb/webapp-api-client/graphql';
 
-// The organization's WhatsApp numbers (WhatsApp plan Steps 1.5 and 1.17, user story 11), each with
+// The organization's WhatsApp numbers (WhatsApp plan Steps 1.5 and 1.17, user story WA.D3.OM.J1.A1), each with
 // its purpose: the internal communications number its team texts, or an external communications
 // number its store customers text. A number is on this service's Meta app (Step 1.18), or on one of
 // the organization's own (Step 2.9, metaAppId), whose App secret is registered once with the app, never
 // with a number. Reading needs whatsapp.view; connecting, testing and disconnecting need whatsapp.manage.
+// Each number lists its WhatsApp Business account's templates with Meta's review status (Step 4.7, user story
+// WA.D3.OM.J2.A2); the backend asks Meta again when its last answer is more than 10 minutes old.
 
 export const whatsAppAccountsQuery = gql(/* GraphQL */ `
   query whatsAppAccountsQuery($tenantId: ID!) {
@@ -21,6 +23,12 @@ export const whatsAppAccountsQuery = gql(/* GraphQL */ `
       subscribedAt
       lastMessageReceivedAt
       metaAppId
+      templates {
+        name
+        status
+        rejectedReason
+        statusCheckedAt
+      }
     }
   }
 `);

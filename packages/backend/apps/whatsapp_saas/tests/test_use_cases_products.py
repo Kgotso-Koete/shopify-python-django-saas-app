@@ -1,6 +1,6 @@
 """
 Tests for the Shopify product operations in apps/whatsapp_saas/use_cases.py (plan Step 1.12b,
-decision D10, user story 7).
+decision D10, user story WA.D2.OM.J2.A2).
 
 Each checks what its GraphQL twin checks (shopifyShops and shopifyProducts in apps/shopify/schema.py):
 membership plus shopify.view, and a store only of the selected organization. Products are read live
@@ -23,7 +23,7 @@ from apps.users.tests.factories import UserFactory
 from .. import use_cases
 from ..use_cases import PAGE_SIZE, UseCaseError
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D2.OM.J2.A2")]
 
 PRODUCT = {
     "id": "gid://shopify/Product/1",

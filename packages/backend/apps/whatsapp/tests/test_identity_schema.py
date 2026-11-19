@@ -1,7 +1,7 @@
 """
 Tests for the profile page's WhatsApp GraphQL fields in apps/whatsapp/schema.py (plan Step 1.7c,
-user stories 1 and 3, Step 1.17): whatsAppLinks, startWhatsAppLink, updateWhatsAppConversationMode
-and disconnectWhatsApp.
+user stories WA.D1.OM.J1.A2 and WA.D2.OM.J1.A1, Step 1.17): whatsAppLinks, startWhatsAppLink,
+updateWhatsAppConversationMode and disconnectWhatsApp.
 
 - they act only on the logged-in user; there's no argument naming anyone else
 - since Step 1.17 a user links once per organization, on its internal communications number, so
@@ -86,6 +86,7 @@ def problem(response):
     return error["extensions"]
 
 
+@pytest.mark.story("WA.D1.OM.J1.A2")
 class TestTheLinks:
     def test_a_linked_user_sees_their_masked_number_and_mode_per_organization(self, graphene_client, acme, linked):
         response = graphene_client.query(LINKS)
@@ -97,7 +98,7 @@ class TestTheLinks:
         assert shown["internalNumber"] == "+27 00 000 0000"
         assert shown["linked"] is True
         assert shown["maskedNumber"] == "*******4567"
-        # No mode saved: the default applies (user story 3).
+        # No mode saved: the default applies (user story WA.D2.OM.J1.A1).
         assert shown["conversationMode"] is None
         assert shown["linkedAt"] is not None
         assert NUMBER not in str(response)
@@ -136,6 +137,7 @@ class TestTheLinks:
         assert "errors" in response
 
 
+@pytest.mark.story("WA.D1.OM.J1.A2")
 class TestStartingALink:
     def test_the_code_and_the_link_come_back_with_the_number_masked(self, graphene_client, acme, internal):
         response = graphene_client.mutate(
@@ -166,6 +168,7 @@ class TestStartingALink:
         assert problem(response)["non_field_errors"][0]["code"] == "not_found"
 
 
+@pytest.mark.story("WA.D2.OM.J1.A1")
 class TestTheMode:
     def test_a_linked_user_chooses_the_ai_assistant_for_one_organization(self, graphene_client, acme, linked):
         response = graphene_client.mutate(
@@ -187,6 +190,7 @@ class TestTheMode:
         assert problem(response)["non_field_errors"][0]["code"] == "not_linked"
 
 
+@pytest.mark.story("WA.D1.OM.J1.A2")
 class TestDisconnecting:
     def test_disconnecting_removes_only_the_users_own_link_on_that_number(
         self, graphene_client, acme, internal, linked

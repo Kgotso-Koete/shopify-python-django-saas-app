@@ -1,6 +1,6 @@
 """
 Tests for apps/whatsapp/services/number_tools.py: the number troubleshooting tools (plan D18,
-Step 1.5b, user story 23). They wrap Meta's repair calls in checked, logged operations:
+Step 1.5b, user story WA.D3.OM.J2.A1). They wrap Meta's repair calls in checked, logged operations:
 
 - the input is checked before Meta is asked (SMS or VOICE, a numeric code, a 6-digit PIN)
 - every repair call writes an action-log entry, whatever Meta answered, without the code or the PIN
@@ -27,7 +27,7 @@ from ..services.number_tools import NumberToolError
 from .factories import ExternalAccountFactory
 from .fakes import meta_error, meta_response
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D3.OM.J2.A1")]
 
 PIN = "654321"
 CODE = "123456"

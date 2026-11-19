@@ -216,7 +216,63 @@ class TestErrors:
 
         assert ACCESS_TOKEN not in str(raised.value)
 
+    # Found in the WhatsApp plan's Step 4.7 human checks: Meta's error 190 can quote the token it was sent
+    # ("Malformed access token EAA…"), and the error's text reaches logs, the command's output and the operator's
+    # email (apps/whatsapp/emails.py). The token is removed, and the rest of Meta's words kept for Meta's support.
+    def test_a_token_meta_quotes_in_its_message_is_removed(self, account, contact, post):
+        post.return_value = echoing_error(message=f"Malformed access token {ACCESS_TOKEN}")
 
+        with pytest.raises(TokenRejectedError) as raised:
+            WhatsAppClient(account).send(contact, TEXT_MESSAGE)
+
+        assert ACCESS_TOKEN not in str(raised.value)
+        assert "Malformed access token [access token removed]" in str(raised.value)
+        assert raised.value.code == 190
+
+    def test_a_token_meta_quotes_in_its_details_is_removed(self, account, mocker):
+        # Any request to Meta, here checking the number before it's saved.
+        mocker.patch(
+            "apps.whatsapp.client.requests.get",
+            return_value=echoing_error(details=f"The token {ACCESS_TOKEN} is invalid"),
+        )
+
+        with pytest.raises(TokenRejectedError) as raised:
+            WhatsAppClient(account).get_phone_number()
+
+        assert ACCESS_TOKEN not in str(raised.value)
+        assert "The token [access token removed] is invalid" in str(raised.value)
+
+    def test_anything_shaped_like_a_meta_access_token_is_removed_too(self, account, contact, post):
+        # Meta could quote a token shortened, or one it was sent before; Meta's user and page access tokens all
+        # start "EAA", followed by letters and digits.
+        # https://developers.facebook.com/docs/facebook-login/guides/access-tokens
+        other = "EAAB" + "x7Yq2" * 8
+        post.return_value = echoing_error(message=f"Malformed access token {other}")
+
+        with pytest.raises(TokenRejectedError) as raised:
+            WhatsAppClient(account).send(contact, TEXT_MESSAGE)
+
+        assert other not in str(raised.value)
+        assert "Malformed access token [access token removed]" in str(raised.value)
+
+
+def echoing_error(*, message="Invalid OAuth access token", details=""):
+    """Meta's error 190, with the message and details given, as Meta answers a token it can't use."""
+    return fake_response(
+        401,
+        {
+            "error": {
+                "message": message,
+                "type": "OAuthException",
+                "code": 190,
+                "error_data": {"details": details},
+                "fbtrace_id": "AbCdEf123",
+            }
+        },
+    )
+
+
+@pytest.mark.story("WA.D7.OP.J1.A1")
 class TestSendBackends:
     def test_the_log_backend_is_chosen_by_default_and_makes_no_http_call(self, settings, contact, post):
         settings.WHATSAPP_SEND_BACKEND = "LOG"
@@ -245,9 +301,10 @@ class TestSendBackends:
         post.assert_called_once()
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestPhoneNumberDetails:
     """
-    Checking an account's id and token with Meta before they're saved (plan Step 1.5, user story 11):
+    Checking an account's id and token with Meta before they're saved (plan Step 1.5, user story WA.D3.OM.J1.A1):
     https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/phone-numbers.md
     """
 
@@ -294,9 +351,10 @@ class TestPhoneNumberDetails:
             WhatsAppClient(account).get_phone_number()
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestTemplateMessages:
     """
-    The "Send test message" button (user story 11) sends Meta's sample `hello_world` template to a
+    The "Send test message" button (user story WA.D3.OM.J1.A1) sends Meta's sample `hello_world` template to a
     number the admin types. A template, because a free-form message needs the recipient to have
     written first, within 24 hours. Template messages:
     https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview.md
@@ -323,9 +381,10 @@ class TestTemplateMessages:
             WhatsAppClient(account).send_template("27831234567", "hello_world", language="en_US")
 
 
+@pytest.mark.story("WA.D3.OM.J2.A1")
 class TestNumberTroubleshooting:
     """
-    The repair calls behind the number troubleshooting tools (plan D18, Step 1.5b, user story 23).
+    The repair calls behind the number troubleshooting tools (plan D18, Step 1.5b, user story WA.D3.OM.J2.A1).
     Each request's method, path and body are as Meta documents them:
     - status and verification: https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/phone-numbers.md
     - registration: https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/registration.md
@@ -417,6 +476,7 @@ class TestNumberTroubleshooting:
         assert "654321" not in str(raised.value)
 
 
+@pytest.mark.story("WA.D2.OM.J1.A3")
 class TestPublishingFlows:
     """
     Creating and publishing a WhatsApp Flow in one call (plan Step 1.11a): POST /<WABA_ID>/flows with

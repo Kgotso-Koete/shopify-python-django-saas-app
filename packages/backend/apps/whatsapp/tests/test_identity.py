@@ -1,6 +1,6 @@
 """
 Tests for apps/whatsapp/services/identity.py: linking a user's phone on an organization's internal
-communications number (plan Step 1.7b, decision D3, user stories 1 and 2, Step 1.17).
+communications number (plan Step 1.7b, decision D3, user stories WA.D1.OM.J1.A2 and WA.D1.OM.J1.A1, Step 1.17).
 
 Linking needs two proofs at once: the logged-in web session names the account (start_link issues
 a code for the number typed on the profile), and Meta's signed webhook proves the phone (the code
@@ -114,6 +114,7 @@ def bodies(messages):
     return texts
 
 
+@pytest.mark.story("WA.D1.OM.J1.A2")
 class TestStartingALink:
     def test_the_typed_number_is_normalized_and_a_code_issued_for_it(self, acme, internal, user):
         started = identity.start_link(user, acme, "083 123 4567")
@@ -174,6 +175,7 @@ class TestStartingALink:
         assert raised.value.code == "not_found"
 
 
+@pytest.mark.story("WA.D1.OM.J1.A2")
 class TestTheLinkMessage:
     def test_the_code_sent_from_that_phone_links_it_on_that_number(self, acme, internal, user, sender):
         started = identity.start_link(user, acme, NUMBER)
@@ -250,6 +252,7 @@ class TestTheLinkMessage:
         assert WhatsAppIdentity.objects.filter(pk=on_beta.pk).exists()
 
 
+@pytest.mark.story("WA.D1.OM.J1.A1")
 class TestStrangers:
     @pytest.mark.parametrize("text", ["hi", "menu", "show me my organizations", "link", "link abc"])
     def test_an_unlinked_sender_gets_no_reply(self, internal, sender, text):
@@ -258,6 +261,7 @@ class TestStrangers:
         assert not WhatsAppIdentity.objects.exists()
 
 
+@pytest.mark.story("WA.D1.OM.J1.A2")
 class TestFindingTheLinkedMember:
     def test_the_linked_member_of_the_numbers_organization_is_found(self, internal, user, sender):
         link(user, sender)
@@ -274,6 +278,7 @@ class TestFindingTheLinkedMember:
         assert identity.identity_for(sender) is None
 
 
+@pytest.mark.story("WA.D1.OM.J1.A2")
 class TestUnlinking:
     def test_unlinking_removes_the_link_on_that_number_and_keeps_the_contact(self, internal, user, sender):
         link(user, sender)

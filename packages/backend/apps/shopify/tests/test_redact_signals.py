@@ -16,7 +16,7 @@ import pytest
 from apps.shopify.models import ShopifyShop
 from apps.shopify.services import handle_customers_redact, handle_shop_redact
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D4.SC.J2.A1")]
 
 CUSTOMER = {"id": 191167, "email": "john@example.com", "phone": "+27000001001"}
 

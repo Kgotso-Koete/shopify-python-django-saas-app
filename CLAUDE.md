@@ -1,6 +1,8 @@
 ### Working agreement
 
-Read `docs/superpowers/agents.md` before starting any work: it holds the standing rules for AI agents in this repo, and it wins over an agent's own defaults.
+Read `agents.md`, at the repository root, before starting any work: it holds the standing rules for AI agents in this repo, and it wins over an agent's own defaults.
+
+Read `humans.md` at the repository root too, at the start of every session and whenever the human maintainer asks for a conversation to be resumed: the human maintainer's own account of how they learn.
 
 ### Dev flow bindings
 

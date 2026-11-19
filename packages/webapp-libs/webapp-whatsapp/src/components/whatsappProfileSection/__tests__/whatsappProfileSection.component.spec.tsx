@@ -1,5 +1,5 @@
-// Tests for the WhatsApp section of the profile page (WhatsApp plan Steps 1.14 and 1.17, user stories 1
-// and 3): one link per organization of the user's with an internal communications number, each with
+// Tests for the WhatsApp section of the profile page (WhatsApp plan Steps 1.14 and 1.17, user stories WA.D1.OM.J1.A2
+// and WA.D2.OM.J1.A1): one link per organization of the user's with an internal communications number, each with
 // its own code, mode and Unlink.
 //
 // Kind of test: integration (agents.md section 2.5). Why: the section renders with the real Apollo hooks;
@@ -15,6 +15,7 @@ import userEvent from '@testing-library/user-event';
 import { GraphQLError } from 'graphql';
 
 import {
+  confirmWhatsAppLinkMutation,
   disconnectWhatsAppMutation,
   startWhatsAppLinkMutation,
   updateWhatsAppConversationModeMutation,
@@ -27,6 +28,7 @@ type Link = {
   organizationName: string;
   internalNumber: string;
   linked: boolean;
+  waiting: boolean;
   maskedNumber?: string | null;
   conversationMode?: ConversationMode | null;
   linkedAt?: string | null;
@@ -37,6 +39,8 @@ const link = (overrides: Partial<Link> = {}) => ({
   organizationName: 'Acme',
   internalNumber: '+27 00 000 0805',
   linked: false,
+  // Phase 7 (user story WA.D1.OM.J1.A3): a phone proved with a typed code, linked once it first writes.
+  waiting: false,
   maskedNumber: null,
   conversationMode: null,
   linkedAt: null,
@@ -56,8 +60,24 @@ const STARTED = {
   link: 'https://wa.me/27000000805?text=link%20123456',
   maskedNumber: '*******4567',
   expiresAt: '2026-10-20T09:10:00+00:00',
+  channel: 'WHATSAPP_INBOUND',
   __typename: 'StartWhatsAppLink',
 };
+
+// Phase 7 (user story WA.D1.OM.J1.A3): the code was sent to the phone from the team number, so none is shown.
+const SENT = { ...STARTED, code: '', link: '', channel: 'WHATSAPP_TEMPLATE' };
+
+const startedMock = (started: typeof STARTED) =>
+  composeMockedQueryResult(startWhatsAppLinkMutation, {
+    variables: { input: { tenantId: 'acme-id', phoneNumber: '083 123 4567' } },
+    data: { startWhatsAppLink: started },
+  });
+
+const confirmMock = (waiting: boolean, linkAfter: ReturnType<typeof link>) =>
+  composeMockedQueryResult(confirmWhatsAppLinkMutation, {
+    variables: { input: { tenantId: 'acme-id', phoneNumber: '083 123 4567', code: '654321' } },
+    data: { confirmWhatsAppLink: { waiting, link: linkAfter, __typename: 'ConfirmWhatsAppLink' } },
+  });
 
 const linksMock = (links: ReturnType<typeof link>[]) =>
   composeMockedQueryResult(whatsAppLinksQuery, { data: { whatsAppLinks: links } });
@@ -70,7 +90,7 @@ const organization = (tenantId = 'acme-id') => screen.findByTestId(`whatsapp-lin
 describe('WhatsAppProfileSection: Component', () => {
   // Step 1.21. First in the file on purpose: React warns about a missing key only once per component,
   // so a test that rendered these messages earlier would hide the warning from this one.
-  it('renders an organization, a link code and a linked number without a React key warning', async () => {
+  it('WA.D1.OM.J1.A2 renders an organization, a link code and a linked number without a React key warning', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const user = userEvent.setup();
     renderSection([
@@ -92,14 +112,14 @@ describe('WhatsAppProfileSection: Component', () => {
     expect(keyWarnings).toEqual([]);
   });
 
-  it('says who connects a number when none of the user’s organizations has one', async () => {
+  it('WA.D1.OM.J1.A2 says who connects a number when none of the user’s organizations has one', async () => {
     renderSection([linksMock([])]);
 
     // The organization's WhatsApp page, in the sidebar since Step 1.19.
     expect(await screen.findByText(/an admin connects it on the organization's whatsapp page/i)).toBeInTheDocument();
   });
 
-  it('shows each organization, with the number its team texts', async () => {
+  it('WA.D1.OM.J1.A2 shows each organization, with the number its team texts', async () => {
     renderSection([
       linksMock([LINKED, link({ tenantId: 'beta-id', organizationName: 'Beta', internalNumber: '+27 00 000 0806' })]),
     ]);
@@ -114,7 +134,7 @@ describe('WhatsAppProfileSection: Component', () => {
   });
 
   describe('not linked', () => {
-    it('shows the code and a link that opens WhatsApp with it typed, for that organization', async () => {
+    it('WA.D1.OM.J1.A2 shows the code and a link that opens WhatsApp with it typed, for that organization', async () => {
       const user = userEvent.setup();
       renderSection([
         linksMock([link()]),
@@ -133,7 +153,7 @@ describe('WhatsAppProfileSection: Component', () => {
       expect(acme.getByRole('link', { name: /open whatsapp/i })).toHaveAttribute('href', STARTED.link);
     });
 
-    it("shows the backend's reason under the number", async () => {
+    it("WA.D1.OM.J1.A2 shows the backend's reason under the number", async () => {
       const user = userEvent.setup();
       const reason = "That doesn't look like a phone number.";
       renderSection([
@@ -156,7 +176,7 @@ describe('WhatsAppProfileSection: Component', () => {
       expect(await acme.findByText(reason)).toBeInTheDocument();
     });
 
-    it('checks again for the link once the message is sent', async () => {
+    it('WA.D1.OM.J1.A2 checks again for the link once the message is sent', async () => {
       const user = userEvent.setup();
       renderSection([
         linksMock([link()]),
@@ -176,8 +196,85 @@ describe('WhatsAppProfileSection: Component', () => {
     });
   });
 
+  describe('a code received on WhatsApp', () => {
+    const askForCode = async (user: ReturnType<typeof userEvent.setup>) => {
+      const acme = within(await organization());
+      await user.type(acme.getByLabelText(/your whatsapp number/i), '083 123 4567');
+      await user.click(acme.getByRole('button', { name: /get a link code/i }));
+      return acme;
+    };
+
+    it('WA.D1.OM.J1.A3 asks for the code it sent, and shows none', async () => {
+      const user = userEvent.setup();
+      renderSection([linksMock([link()]), startedMock(SENT)]);
+
+      const acme = await askForCode(user);
+
+      // The masked number is in its own <strong>, so the sentence is checked on its paragraph.
+      expect(await acme.findByText(/we sent a code to/i)).toHaveTextContent(/we sent a code to \*{7}4567 on whatsapp/i);
+      expect(acme.getByLabelText(/^code$/i)).toBeInTheDocument();
+      expect(acme.queryByRole('link', { name: /open whatsapp/i })).not.toBeInTheDocument();
+    });
+
+    it('WA.D1.OM.J1.A3 typing the code links a phone that has written before', async () => {
+      const user = userEvent.setup();
+      renderSection([linksMock([link()]), startedMock(SENT), confirmMock(false, LINKED)]);
+
+      const acme = await askForCode(user);
+      await user.type(await acme.findByLabelText(/^code$/i), '654321');
+      await user.click(acme.getByRole('button', { name: /^link$/i }));
+
+      expect(await screen.findByTestId('whatsapp-linked')).toHaveTextContent('*******4567');
+    });
+
+    it('WA.D1.OM.J1.A3 typing the code for a phone that never wrote says to send it a message', async () => {
+      const user = userEvent.setup();
+      renderSection([
+        linksMock([link()]),
+        startedMock(SENT),
+        confirmMock(true, link({ waiting: true, maskedNumber: '*******4567' })),
+      ]);
+
+      const acme = await askForCode(user);
+      await user.type(await acme.findByLabelText(/^code$/i), '654321');
+      await user.click(acme.getByRole('button', { name: /^link$/i }));
+
+      expect(await screen.findByTestId('whatsapp-waiting')).toHaveTextContent(
+        /send any message from \*{7}4567 to \+27 00 000 0805/i
+      );
+    });
+
+    it('WA.D1.OM.J1.A3 a waiting link shows when the page opens', async () => {
+      renderSection([linksMock([link({ waiting: true, maskedNumber: '*******4567' })])]);
+
+      expect(await screen.findByTestId('whatsapp-waiting')).toHaveTextContent('*******4567');
+    });
+
+    it("WA.D1.OM.J1.A3 a wrong code shows the backend's reason", async () => {
+      const user = userEvent.setup();
+      const reason = "That code isn't right. Check it, or ask for a new one.";
+      renderSection([
+        linksMock([link()]),
+        startedMock(SENT),
+        composeMockedQueryResult(confirmWhatsAppLinkMutation, {
+          variables: { input: { tenantId: 'acme-id', phoneNumber: '083 123 4567', code: '654321' } },
+          data: null,
+          errors: [
+            new GraphQLError('GraphQlValidationError', { extensions: { code: [{ message: reason, code: 'wrong_code' }] } }),
+          ],
+        }),
+      ]);
+
+      const acme = await askForCode(user);
+      await user.type(await acme.findByLabelText(/^code$/i), '654321');
+      await user.click(acme.getByRole('button', { name: /^link$/i }));
+
+      expect(await acme.findByText(reason)).toBeInTheDocument();
+    });
+  });
+
   describe('linked', () => {
-    it('shows the masked number, when it was linked and the chosen mode', async () => {
+    it('WA.D1.OM.J1.A2 shows the masked number, when it was linked and the chosen mode', async () => {
       renderSection([linksMock([LINKED])]);
 
       const linked = await screen.findByTestId('whatsapp-linked');
@@ -187,7 +284,7 @@ describe('WhatsAppProfileSection: Component', () => {
       expect(screen.getByRole('radio', { name: /ai assistant/i })).not.toBeChecked();
     });
 
-    it('saves a change of mode for that organization', async () => {
+    it('WA.D2.OM.J1.A1 saves a change of mode for that organization', async () => {
       const user = userEvent.setup();
       const modeMock = composeMockedQueryResult(updateWhatsAppConversationModeMutation, {
         variables: { input: { tenantId: 'acme-id', mode: ConversationMode.AGENTIC } },
@@ -206,13 +303,13 @@ describe('WhatsAppProfileSection: Component', () => {
       expect(await screen.findByRole('radio', { name: /ai assistant/i })).toBeChecked();
     });
 
-    it('says when no mode is chosen, so the default applies', async () => {
+    it('WA.D2.OM.J1.A1 says when no mode is chosen, so the default applies', async () => {
       renderSection([linksMock([{ ...LINKED, conversationMode: null }])]);
 
       expect(await screen.findByText(/default applies/i)).toBeInTheDocument();
     });
 
-    it('unlinks only after the user confirms', async () => {
+    it('WA.D1.OM.J1.A2 unlinks only after the user confirms', async () => {
       const user = userEvent.setup();
       const unlinkMock = composeMockedQueryResult(disconnectWhatsAppMutation, {
         variables: { input: { tenantId: 'acme-id' } },
@@ -231,7 +328,7 @@ describe('WhatsAppProfileSection: Component', () => {
     });
   });
 
-  it("says the links couldn't be loaded, rather than offering to link", async () => {
+  it("WA.D1.OM.J1.A2 says the links couldn't be loaded, rather than offering to link", async () => {
     renderSection([
       composeMockedQueryResult(whatsAppLinksQuery, { data: null, errors: [new GraphQLError('Something went wrong')] }),
     ]);

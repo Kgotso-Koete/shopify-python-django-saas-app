@@ -1,3 +1,5 @@
+// Kind of test: integration (agents.md section 2.5). Why: the WhatsApp plan's tests here render the sidebar in an
+// organization with the router and permission check; the backend is Apollo's MockedProvider.
 import { TenantType } from '@sb/webapp-api-client/constants';
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
 import { composeMockedQueryResult } from '@sb/webapp-api-client/tests/utils';
@@ -142,7 +144,7 @@ describe('Sidebar: Component', () => {
 
   // WhatsApp plan Step 1.19: the WhatsApp page has its own item, just under Shopify products, for
   // members with whatsapp.view (the same permission its route needs).
-  describe('the WhatsApp item', () => {
+  describe('WA.D3.OM.J1.A1 the WhatsApp item', () => {
     const tenantId = 'tenant-sidebar-whatsapp-1';
 
     const renderWithPermissions = (permissions: string[]) =>

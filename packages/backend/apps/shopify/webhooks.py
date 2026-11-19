@@ -3,7 +3,9 @@ Shopify webhook endpoint.
 
 One URL for every topic. The view validates the HMAC, deduplicates by
 X-Shopify-Webhook-Id, and dispatches to the matching handler either inline
-(SHOPIFY_WEBHOOK_DISPATCH=sync) or via a Celery task (=celery).
+(SHOPIFY_WEBHOOK_DISPATCH=sync) or via a Celery task (=celery). A repeated id whose handler never
+succeeded is handled again (deliveries.py, WhatsApp plan Step 4.3e). For the order topics it stores and
+hands over only the fields the app uses (payloads.py, WhatsApp plan Step 4.3b).
 
 Shape inspired by the blog post's "one endpoint, topic → handler dict"
 (plan section 0.2).
@@ -20,33 +22,14 @@ from django.http import (
 )
 from django.views.decorators.csrf import csrf_exempt
 
-from apps.shopify.constants import (
-    TOPIC_APP_UNINSTALLED,
-    TOPIC_CUSTOMERS_DATA_REQUEST,
-    TOPIC_CUSTOMERS_REDACT,
-    TOPIC_SHOP_REDACT,
-)
+from apps.shopify import deliveries, payloads
 from apps.shopify.models import ShopifyWebhookDelivery
-from apps.shopify.services import (
-    handle_customers_data_request,
-    handle_customers_redact,
-    handle_shop_redact,
-    handle_uninstalled,
-)
 from apps.shopify.tasks import process_shopify_webhook
 from apps.shopify.verification import verify_webhook_hmac
 
 logger = logging.getLogger(__name__)
 
-# Topic → handler function mapping (plan section 3.5).
-# Each handler receives (shop_domain: str, payload: dict) and does quick DB work
-# that fits inside Shopify's 5-second webhook timeout.
-TOPIC_HANDLERS = {
-    TOPIC_APP_UNINSTALLED: handle_uninstalled,
-    TOPIC_SHOP_REDACT: handle_shop_redact,
-    TOPIC_CUSTOMERS_REDACT: handle_customers_redact,
-    TOPIC_CUSTOMERS_DATA_REQUEST: handle_customers_data_request,
-}
+# The topic → handler map lives in deliveries.py (WhatsApp plan Step 4.3e), shared with the Celery task.
 
 
 @csrf_exempt
@@ -77,8 +60,11 @@ def webhook_view(request):
     except (json.JSONDecodeError, ValueError):
         payload = {}
 
+    # Only what the app uses is stored, and handed to the handler (payloads.py, WhatsApp plan Step 4.3b).
+    payload = payloads.trim(topic, payload)
+
     # 3. Deduplicate by X-Shopify-Webhook-Id (plan section 1.5).
-    #    An IntegrityError on webhook_id means we've already processed this delivery.
+    #    An IntegrityError on webhook_id means we've already received this delivery.
     #    The savepoint (transaction.atomic) is needed because Postgres aborts the whole
     #    transaction on any error; without it the IntegrityError poisons subsequent queries.
     try:
@@ -90,25 +76,39 @@ def webhook_view(request):
                 payload=payload,
             )
     except IntegrityError:
-        # Duplicate delivery — return 200 so Shopify doesn't retry.
-        return HttpResponse(status=200)
+        delivery = ShopifyWebhookDelivery.objects.get(webhook_id=webhook_id)
+        if delivery.handled_at is not None:
+            # Already handled — return 200 so Shopify doesn't retry.
+            return HttpResponse(status=200)
+        # Received before, but its handler never succeeded (WhatsApp plan Step 4.3e): handle it now.
 
     # 4. Dispatch the handler
-    handler = TOPIC_HANDLERS.get(topic)
-
-    if handler is None:
-        # Unknown topic: log a warning but still answer 200 so Shopify
-        # doesn't retry something we'll never handle.
-        logger.warning("Received webhook for unknown topic '%s' from shop '%s'.", topic, shop_domain)
-        return HttpResponse(status=200)
-
     dispatch = getattr(settings, "SHOPIFY_WEBHOOK_DISPATCH", "sync")
 
-    if dispatch == "celery":
+    # Without a worker (CELERY_TASK_ALWAYS_EAGER), the task would run inside this request with its
+    # retries ignored, and a failure would still answer 200; handling inline instead answers with an
+    # error, so Shopify retries (WhatsApp plan Step 4.3e, agents.md section 4.1).
+    queue = dispatch == "celery" and not settings.CELERY_TASK_ALWAYS_EAGER
+    if queue and topic in deliveries.TOPIC_HANDLERS:
         # Enqueue the handler for async processing; return 200 immediately.
-        process_shopify_webhook.delay(delivery.id)
-    else:
-        # Default: run the handler inline in the web request.
-        handler(shop_domain, payload)
+        try:
+            process_shopify_webhook.delay(delivery.id)
+        except Exception:
+            # The queue is down. The delivery stays unhandled, and Shopify's retry queues it again.
+            logger.exception("Shopify webhook %s (%s) couldn't be queued; Shopify will retry it.", webhook_id, topic)
+            return HttpResponse("The webhook couldn't be queued; please retry.", status=500)
+        return HttpResponse(status=200)
+
+    # Default: run the handler inline in the web request. A topic with no handler is only marked
+    # handled, so Shopify doesn't retry something we'll never handle.
+    try:
+        deliveries.handle(delivery)
+    except Exception:
+        # Any answer but 2xx makes Shopify send the delivery again; it's still unhandled, so that try
+        # runs the handler again (WhatsApp plan Step 4.3e).
+        logger.exception(
+            "Shopify webhook %s (%s) from '%s' failed; Shopify will retry it.", webhook_id, topic, shop_domain
+        )
+        return HttpResponse("The webhook couldn't be handled; please retry.", status=500)
 
     return HttpResponse(status=200)

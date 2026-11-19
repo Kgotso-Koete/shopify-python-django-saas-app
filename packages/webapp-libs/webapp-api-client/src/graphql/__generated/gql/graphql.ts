@@ -211,6 +211,11 @@ export type ApiMutation = {
   chooseWhatsAppStore?: Maybe<ChooseWhatsAppStore>;
   confirm?: Maybe<ConfirmEmailMutationPayload>;
   /**
+   * Use the code the logged-in user received on WhatsApp (phase 7, user story WA.D1.OM.J1.A3): it links the
+   * phone at once if it has written to the organization's team number before, or once it first writes.
+   */
+  confirmWhatsAppLink?: Maybe<ConfirmWhatsAppLink>;
+  /**
    * Connect a number with the form. Meta checks the id and token, and the token's app is subscribed to
    * the number's WhatsApp Business account, before anything is saved (Steps 1.18 and 2.9).
    */
@@ -343,6 +348,8 @@ export type ApiMutation = {
    * The response is streamed via the AiChatSubscription.
    */
   sendAiMessage?: Maybe<SendAiMessageMutation>;
+  /** Send a failed order update again, built fresh from the order Shopify has now (user story WA.D3.OM.J2.A3). */
+  sendWhatsAppOrderUpdateAgain?: Maybe<SendWhatsAppOrderUpdateAgain>;
   /** Send Meta's hello_world template from the number, directly, so Meta's answer shows in the form. */
   sendWhatsAppTestMessage?: Maybe<SendWhatsAppTestMessage>;
   /** Change the Meta app a connected number is in, without reconnecting it (plan Step 2.9, decision 5). */
@@ -452,6 +459,11 @@ export type ApiMutationChooseWhatsAppStoreArgs = {
 
 export type ApiMutationConfirmArgs = {
   input: ConfirmEmailMutationInput;
+};
+
+
+export type ApiMutationConfirmWhatsAppLinkArgs = {
+  input: ConfirmWhatsAppLinkInput;
 };
 
 
@@ -730,6 +742,11 @@ export type ApiMutationSendAiMessageArgs = {
   history?: InputMaybe<Array<InputMaybe<Scalars['JSONString']['input']>>>;
   message: Scalars['String']['input'];
   tenantId: Scalars['String']['input'];
+};
+
+
+export type ApiMutationSendWhatsAppOrderUpdateAgainArgs = {
+  input: SendWhatsAppOrderUpdateAgainInput;
 };
 
 
@@ -1469,6 +1486,22 @@ export type ConfirmEmailMutationPayload = {
   __typename?: 'ConfirmEmailMutationPayload';
   clientMutationId?: Maybe<Scalars['String']['output']>;
   ok?: Maybe<Scalars['Boolean']['output']>;
+};
+
+/**
+ * Use the code the logged-in user received on WhatsApp (phase 7, user story WA.D1.OM.J1.A3): it links the
+ * phone at once if it has written to the organization's team number before, or once it first writes.
+ */
+export type ConfirmWhatsAppLink = {
+  __typename?: 'ConfirmWhatsAppLink';
+  link: WhatsAppLinkType;
+  waiting: Scalars['Boolean']['output'];
+};
+
+export type ConfirmWhatsAppLinkInput = {
+  code: Scalars['String']['input'];
+  phoneNumber: Scalars['String']['input'];
+  tenantId: Scalars['ID']['input'];
 };
 
 /** Enum for backup restore conflict strategies. */
@@ -2796,6 +2829,18 @@ export type ImageTransformOptions = {
   width?: InputMaybe<Scalars['Dimension']['input']>;
 };
 
+/** One of the organization's invoices whose PDF is ready to download. */
+export type InvoiceType = {
+  __typename?: 'InvoiceType';
+  amount: Scalars['String']['output'];
+  currency: Scalars['String']['output'];
+  description: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  issuedAt: Scalars['DateTime']['output'];
+  number: Scalars['String']['output'];
+  paymentId?: Maybe<Scalars['ID']['output']>;
+};
+
 /** Type for locale translation progress. */
 export type LocaleProgressType = {
   __typename?: 'LocaleProgressType';
@@ -3267,6 +3312,15 @@ export type PermissionType = Node & {
   sortOrder: Scalars['Int']['output'];
 };
 
+/**
+ * How a code proves the number (plan decision D20). Each value is its member's name (WhatsApp plan
+ * Step 1.16, agents.md section 5.3b).
+ */
+export enum PhoneVerificationChannel {
+  WHATSAPP_INBOUND = 'WHATSAPP_INBOUND',
+  WHATSAPP_TEMPLATE = 'WHATSAPP_TEMPLATE'
+}
+
 export type PublishTranslationsMutationInput = {
   clientMutationId?: InputMaybe<Scalars['String']['input']>;
   localeCode: Scalars['String']['input'];
@@ -3325,6 +3379,7 @@ export type Query = {
   demoItemCollection?: Maybe<DemoItemCollection>;
   entryCollection?: Maybe<EntryCollection>;
   hasUnreadNotifications?: Maybe<Scalars['Boolean']['output']>;
+  invoices: Array<InvoiceType>;
   /** Get translation progress for all locales */
   localeProgress?: Maybe<Array<Maybe<LocaleProgressType>>>;
   myDevices?: Maybe<UserDeviceConnection>;
@@ -3358,6 +3413,7 @@ export type Query = {
   unreadNotificationsCount?: Maybe<Scalars['Int']['output']>;
   whatsAppAccounts: Array<WhatsAppAccountType>;
   whatsAppEligibleStores: Array<Scalars['String']['output']>;
+  whatsAppFailedOrderUpdates: Array<WhatsAppFailedOrderUpdateType>;
   whatsAppLinks: Array<WhatsAppLinkType>;
   whatsAppMetaApps: Array<WhatsAppMetaAppType>;
   whatsAppNumberStatus: WhatsAppNumberStatusType;
@@ -3590,6 +3646,11 @@ export type QueryEntryCollectionArgs = {
 };
 
 
+export type QueryInvoicesArgs = {
+  tenantId: Scalars['ID']['input'];
+};
+
+
 export type QueryMyDevicesArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
   before?: InputMaybe<Scalars['String']['input']>;
@@ -3744,6 +3805,11 @@ export type QueryWhatsAppAccountsArgs = {
 
 
 export type QueryWhatsAppEligibleStoresArgs = {
+  tenantId: Scalars['ID']['input'];
+};
+
+
+export type QueryWhatsAppFailedOrderUpdatesArgs = {
   tenantId: Scalars['ID']['input'];
 };
 
@@ -4170,6 +4236,19 @@ export type SendAiMessageMutation = {
   ok?: Maybe<Scalars['Boolean']['output']>;
 };
 
+/** Send a failed order update again, built fresh from the order Shopify has now (user story WA.D3.OM.J2.A3). */
+export type SendWhatsAppOrderUpdateAgain = {
+  __typename?: 'SendWhatsAppOrderUpdateAgain';
+  checkoutId: Scalars['ID']['output'];
+  stage: WhatsAppOrderStage;
+};
+
+export type SendWhatsAppOrderUpdateAgainInput = {
+  checkoutId: Scalars['ID']['input'];
+  stage: WhatsAppOrderStage;
+  tenantId: Scalars['ID']['input'];
+};
+
 /** Send Meta's hello_world template from the number, directly, so Meta's answer shows in the form. */
 export type SendWhatsAppTestMessage = {
   __typename?: 'SendWhatsAppTestMessage';
@@ -4395,6 +4474,7 @@ export enum SsoTenantSsoConnectionStatusChoices {
 /** Issue a link code for the logged-in user's number; it works only when sent from that number. */
 export type StartWhatsAppLink = {
   __typename?: 'StartWhatsAppLink';
+  channel: PhoneVerificationChannel;
   code: Scalars['String']['output'];
   expiresAt: Scalars['DateTime']['output'];
   link: Scalars['String']['output'];
@@ -5117,6 +5197,19 @@ export enum SystemRoleType {
   OWNER = 'OWNER'
 }
 
+/**
+ * Where a message template is in Meta's review (plan Step 4.7, user story WA.D3.OM.J2.A2), in this app's
+ * own names; services/templates.py translates Meta's statuses as they come in.
+ * https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates
+ */
+export enum TemplateStatus {
+  APPROVED = 'APPROVED',
+  DISABLED = 'DISABLED',
+  IN_REVIEW = 'IN_REVIEW',
+  PAUSED = 'PAUSED',
+  REJECTED = 'REJECTED'
+}
+
 export type TenantConnection = {
   __typename?: 'TenantConnection';
   /** Contains the nodes in this connection. */
@@ -5447,6 +5540,7 @@ export type UpdateTenantMutationInput = {
   clientMutationId?: InputMaybe<Scalars['String']['input']>;
   id: Scalars['ID']['input'];
   name: Scalars['String']['input'];
+  tenantId?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdateTenantMutationPayload = {
@@ -5589,7 +5683,7 @@ export type VerifyWhatsAppNumberInput = {
   tenantId: Scalars['ID']['input'];
 };
 
-/** One of the organization's WhatsApp numbers, with the form's three proofs (user story 11). */
+/** One of the organization's WhatsApp numbers, with the form's three proofs (user story WA.D3.OM.J1.A1). */
 export type WhatsAppAccountType = {
   __typename?: 'WhatsAppAccountType';
   connectionMethod: ConnectionMethod;
@@ -5602,8 +5696,25 @@ export type WhatsAppAccountType = {
   phoneNumberId: Scalars['String']['output'];
   purpose: AccountPurpose;
   subscribedAt?: Maybe<Scalars['DateTime']['output']>;
+  templates: Array<WhatsAppTemplateType>;
   verifiedName: Scalars['String']['output'];
   wabaId: Scalars['String']['output'];
+};
+
+/**
+ * An order update WhatsApp couldn't deliver (plan Step 4.7, user story WA.D3.OM.J2.A3): which order stage, on
+ * which number, to which customer, when it failed, and Meta's reason in plain words.
+ */
+export type WhatsAppFailedOrderUpdateType = {
+  __typename?: 'WhatsAppFailedOrderUpdateType';
+  accountId: Scalars['ID']['output'];
+  checkoutId: Scalars['ID']['output'];
+  customer: Scalars['String']['output'];
+  errorCode?: Maybe<Scalars['Int']['output']>;
+  failedAt: Scalars['DateTime']['output'];
+  number: Scalars['String']['output'];
+  reason: Scalars['String']['output'];
+  stage: WhatsAppOrderStage;
 };
 
 /**
@@ -5619,6 +5730,7 @@ export type WhatsAppLinkType = {
   maskedNumber?: Maybe<Scalars['String']['output']>;
   organizationName: Scalars['String']['output'];
   tenantId: Scalars['ID']['output'];
+  waiting: Scalars['Boolean']['output'];
 };
 
 /** One of the organization's own Meta apps, with what to paste into its webhook settings; never its App secret. */
@@ -5642,6 +5754,12 @@ export type WhatsAppNumberStatusType = {
   verifiedName?: Maybe<Scalars['String']['output']>;
 };
 
+/** Which of an order's updates (decision 3); each value is its member's name (agents.md section 5.3b). */
+export enum WhatsAppOrderStage {
+  PAID = 'PAID',
+  RECEIVED = 'RECEIVED'
+}
+
 /**
  * One external number, the store it sells from and its customers' mode; shopDomain and
  * conversationMode are null while no store is chosen.
@@ -5651,6 +5769,18 @@ export type WhatsAppStorefrontType = {
   accountId: Scalars['ID']['output'];
   conversationMode?: Maybe<ConversationMode>;
   shopDomain?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * One message template on the number's WhatsApp Business account, such as an order update, and where it is
+ * in Meta's review (plan Step 4.7, user story WA.D3.OM.J2.A2).
+ */
+export type WhatsAppTemplateType = {
+  __typename?: 'WhatsAppTemplateType';
+  name: Scalars['String']['output'];
+  rejectedReason: Scalars['String']['output'];
+  status: TemplateStatus;
+  statusCheckedAt?: Maybe<Scalars['DateTime']['output']>;
 };
 
 export type _Node = {
@@ -6121,6 +6251,27 @@ export type PayfastCreateDonationCheckoutMutationMutationVariables = Exact<{
 
 
 export type PayfastCreateDonationCheckoutMutationMutation = { __typename?: 'ApiMutation', payfastCreateDonationCheckout?: { __typename?: 'PayFastCreateDonationCheckoutMutationPayload', checkout?: { __typename?: 'PayFastCheckoutType', actionUrl: string, fields: any, mPaymentId: string } | null } | null };
+
+export type PayfastInvoicesQueryQueryVariables = Exact<{
+  tenantId: Scalars['ID']['input'];
+}>;
+
+
+export type PayfastInvoicesQueryQuery = { __typename?: 'Query', invoices: Array<{ __typename?: 'InvoiceType', id: string, number: string, paymentId?: string | null }> };
+
+export type PayfastTenantBillingEmailQueryQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type PayfastTenantBillingEmailQueryQuery = { __typename?: 'Query', tenant?: { __typename?: 'TenantType', id: string, billingEmail?: string | null } | null };
+
+export type PayfastUpdateBillingEmailMutationMutationVariables = Exact<{
+  input: UpdateTenantMutationInput;
+}>;
+
+
+export type PayfastUpdateBillingEmailMutationMutation = { __typename?: 'ApiMutation', updateTenant?: { __typename?: 'UpdateTenantMutationPayload', tenant?: { __typename?: 'TenantType', id: string, name?: string | null, billingEmail?: string | null } | null } | null };
 
 export type PayfastCancelSubscriptionMutationMutationVariables = Exact<{
   input: PayFastCancelSubscriptionMutationInput;
@@ -6730,6 +6881,20 @@ export type RemoveRoleFromMemberMutationMutationVariables = Exact<{
 
 export type RemoveRoleFromMemberMutationMutation = { __typename?: 'ApiMutation', removeRoleFromMember?: { __typename?: 'RemoveRoleFromMemberMutation', ok?: boolean | null, membership?: { __typename?: 'TenantMembershipType', id: string, organizationRoles?: Array<{ __typename?: 'OrganizationRoleType', id: string, name: string, color?: RoleColor | null } | null> | null } | null } | null };
 
+export type WhatsAppFailedOrderUpdatesQueryQueryVariables = Exact<{
+  tenantId: Scalars['ID']['input'];
+}>;
+
+
+export type WhatsAppFailedOrderUpdatesQueryQuery = { __typename?: 'Query', whatsAppFailedOrderUpdates: Array<{ __typename?: 'WhatsAppFailedOrderUpdateType', checkoutId: string, stage: WhatsAppOrderStage, accountId: string, number: string, customer: string, failedAt: any, errorCode?: number | null, reason: string }> };
+
+export type SendWhatsAppOrderUpdateAgainMutationMutationVariables = Exact<{
+  input: SendWhatsAppOrderUpdateAgainInput;
+}>;
+
+
+export type SendWhatsAppOrderUpdateAgainMutationMutation = { __typename?: 'ApiMutation', sendWhatsAppOrderUpdateAgain?: { __typename?: 'SendWhatsAppOrderUpdateAgain', checkoutId: string, stage: WhatsAppOrderStage } | null };
+
 export type WhatsAppNumberStatusQueryQueryVariables = Exact<{
   tenantId: Scalars['ID']['input'];
   accountId: Scalars['ID']['input'];
@@ -6771,7 +6936,7 @@ export type WhatsAppAccountsQueryQueryVariables = Exact<{
 }>;
 
 
-export type WhatsAppAccountsQueryQuery = { __typename?: 'Query', whatsAppAccounts: Array<{ __typename?: 'WhatsAppAccountType', id: string, purpose: AccountPurpose, phoneNumberId: string, wabaId: string, displayPhoneNumber: string, verifiedName: string, connectionMethod: ConnectionMethod, isActive: boolean, credentialsVerifiedAt?: any | null, subscribedAt?: any | null, lastMessageReceivedAt?: any | null, metaAppId?: string | null }> };
+export type WhatsAppAccountsQueryQuery = { __typename?: 'Query', whatsAppAccounts: Array<{ __typename?: 'WhatsAppAccountType', id: string, purpose: AccountPurpose, phoneNumberId: string, wabaId: string, displayPhoneNumber: string, verifiedName: string, connectionMethod: ConnectionMethod, isActive: boolean, credentialsVerifiedAt?: any | null, subscribedAt?: any | null, lastMessageReceivedAt?: any | null, metaAppId?: string | null, templates: Array<{ __typename?: 'WhatsAppTemplateType', name: string, status: TemplateStatus, rejectedReason: string, statusCheckedAt?: any | null }> }> };
 
 export type ConnectWhatsAppAccountMutationMutationVariables = Exact<{
   input: ConnectWhatsAppAccountInput;
@@ -6804,28 +6969,35 @@ export type ChangeWhatsAppNumberPurposeMutationMutation = { __typename?: 'ApiMut
 export type WhatsAppLinksQueryQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type WhatsAppLinksQueryQuery = { __typename?: 'Query', whatsAppLinks: Array<{ __typename?: 'WhatsAppLinkType', tenantId: string, organizationName: string, internalNumber: string, linked: boolean, maskedNumber?: string | null, conversationMode?: ConversationMode | null, linkedAt?: any | null }> };
+export type WhatsAppLinksQueryQuery = { __typename?: 'Query', whatsAppLinks: Array<{ __typename?: 'WhatsAppLinkType', tenantId: string, organizationName: string, internalNumber: string, linked: boolean, waiting: boolean, maskedNumber?: string | null, conversationMode?: ConversationMode | null, linkedAt?: any | null }> };
 
 export type StartWhatsAppLinkMutationMutationVariables = Exact<{
   input: StartWhatsAppLinkInput;
 }>;
 
 
-export type StartWhatsAppLinkMutationMutation = { __typename?: 'ApiMutation', startWhatsAppLink?: { __typename?: 'StartWhatsAppLink', code: string, link: string, maskedNumber: string, expiresAt: any } | null };
+export type StartWhatsAppLinkMutationMutation = { __typename?: 'ApiMutation', startWhatsAppLink?: { __typename?: 'StartWhatsAppLink', code: string, link: string, maskedNumber: string, expiresAt: any, channel: PhoneVerificationChannel } | null };
+
+export type ConfirmWhatsAppLinkMutationMutationVariables = Exact<{
+  input: ConfirmWhatsAppLinkInput;
+}>;
+
+
+export type ConfirmWhatsAppLinkMutationMutation = { __typename?: 'ApiMutation', confirmWhatsAppLink?: { __typename?: 'ConfirmWhatsAppLink', waiting: boolean, link: { __typename?: 'WhatsAppLinkType', tenantId: string, organizationName: string, internalNumber: string, linked: boolean, waiting: boolean, maskedNumber?: string | null, conversationMode?: ConversationMode | null, linkedAt?: any | null } } | null };
 
 export type UpdateWhatsAppConversationModeMutationMutationVariables = Exact<{
   input: UpdateWhatsAppConversationModeInput;
 }>;
 
 
-export type UpdateWhatsAppConversationModeMutationMutation = { __typename?: 'ApiMutation', updateWhatsAppConversationMode?: { __typename?: 'UpdateWhatsAppConversationMode', link: { __typename?: 'WhatsAppLinkType', tenantId: string, organizationName: string, internalNumber: string, linked: boolean, maskedNumber?: string | null, conversationMode?: ConversationMode | null, linkedAt?: any | null } } | null };
+export type UpdateWhatsAppConversationModeMutationMutation = { __typename?: 'ApiMutation', updateWhatsAppConversationMode?: { __typename?: 'UpdateWhatsAppConversationMode', link: { __typename?: 'WhatsAppLinkType', tenantId: string, organizationName: string, internalNumber: string, linked: boolean, waiting: boolean, maskedNumber?: string | null, conversationMode?: ConversationMode | null, linkedAt?: any | null } } | null };
 
 export type DisconnectWhatsAppMutationMutationVariables = Exact<{
   input: DisconnectWhatsAppInput;
 }>;
 
 
-export type DisconnectWhatsAppMutationMutation = { __typename?: 'ApiMutation', disconnectWhatsApp?: { __typename?: 'DisconnectWhatsApp', link: { __typename?: 'WhatsAppLinkType', tenantId: string, organizationName: string, internalNumber: string, linked: boolean, maskedNumber?: string | null, conversationMode?: ConversationMode | null, linkedAt?: any | null } } | null };
+export type DisconnectWhatsAppMutationMutation = { __typename?: 'ApiMutation', disconnectWhatsApp?: { __typename?: 'DisconnectWhatsApp', link: { __typename?: 'WhatsAppLinkType', tenantId: string, organizationName: string, internalNumber: string, linked: boolean, waiting: boolean, maskedNumber?: string | null, conversationMode?: ConversationMode | null, linkedAt?: any | null } } | null };
 
 export type WhatsAppMetaAppsQueryQueryVariables = Exact<{
   tenantId: Scalars['ID']['input'];
@@ -7072,6 +7244,9 @@ export const PayfastPaymentsQueryDocument = {"kind":"Document","definitions":[{"
 export const PayfastCheckoutStatusQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"payfastCheckoutStatusQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"mPaymentId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastCheckoutStatus"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}},{"kind":"Argument","name":{"kind":"Name","value":"mPaymentId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"mPaymentId"}}}]}]}}]} as unknown as DocumentNode<PayfastCheckoutStatusQueryQuery, PayfastCheckoutStatusQueryQueryVariables>;
 export const PayfastCreateCheckoutMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"payfastCreateCheckoutMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"PayFastCreateCheckoutMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastCreateCheckout"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkout"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"actionUrl"}},{"kind":"Field","name":{"kind":"Name","value":"fields"}},{"kind":"Field","name":{"kind":"Name","value":"mPaymentId"}}]}}]}}]}}]} as unknown as DocumentNode<PayfastCreateCheckoutMutationMutation, PayfastCreateCheckoutMutationMutationVariables>;
 export const PayfastCreateDonationCheckoutMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"payfastCreateDonationCheckoutMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"PayFastCreateDonationCheckoutMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastCreateDonationCheckout"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkout"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"actionUrl"}},{"kind":"Field","name":{"kind":"Name","value":"fields"}},{"kind":"Field","name":{"kind":"Name","value":"mPaymentId"}}]}}]}}]}}]} as unknown as DocumentNode<PayfastCreateDonationCheckoutMutationMutation, PayfastCreateDonationCheckoutMutationMutationVariables>;
+export const PayfastInvoicesQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"payfastInvoicesQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"invoices"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"number"}},{"kind":"Field","name":{"kind":"Name","value":"paymentId"}}]}}]}}]} as unknown as DocumentNode<PayfastInvoicesQueryQuery, PayfastInvoicesQueryQueryVariables>;
+export const PayfastTenantBillingEmailQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"payfastTenantBillingEmailQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenant"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"billingEmail"}}]}}]}}]} as unknown as DocumentNode<PayfastTenantBillingEmailQueryQuery, PayfastTenantBillingEmailQueryQueryVariables>;
+export const PayfastUpdateBillingEmailMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"payfastUpdateBillingEmailMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateTenantMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateTenant"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenant"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"billingEmail"}}]}}]}}]}}]} as unknown as DocumentNode<PayfastUpdateBillingEmailMutationMutation, PayfastUpdateBillingEmailMutationMutationVariables>;
 export const PayfastCancelSubscriptionMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"payfastCancelSubscriptionMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"PayFastCancelSubscriptionMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"payfastCancelSubscription"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"activeSubscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"plan"}},{"kind":"Field","name":{"kind":"Name","value":"effectivePlan"}},{"kind":"Field","name":{"kind":"Name","value":"pendingPlan"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"currentPeriodEnd"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"cancelAtPeriodEnd"}},{"kind":"Field","name":{"kind":"Name","value":"canActivateTrial"}},{"kind":"Field","name":{"kind":"Name","value":"hasCard"}}]}}]}}]}}]} as unknown as DocumentNode<PayfastCancelSubscriptionMutationMutation, PayfastCancelSubscriptionMutationMutationVariables>;
 export const SubscriptionCancelActiveSubscriptionMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"subscriptionCancelActiveSubscriptionMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CancelActiveSubscriptionMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"cancelActiveSubscription"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"subscriptionSchedule"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"subscriptionActiveSubscriptionFragment"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"stripePaymentMethodFragment_"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"StripePaymentMethodType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"card"}},{"kind":"Field","name":{"kind":"Name","value":"billingDetails"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"subscriptionActiveSubscriptionFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubscriptionScheduleType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"phases"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startDate"}},{"kind":"Field","name":{"kind":"Name","value":"endDate"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"item"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"price"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"pk"}},{"kind":"Field","name":{"kind":"Name","value":"product"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"unitAmount"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"quantity"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"subscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startDate"}},{"kind":"Field","name":{"kind":"Name","value":"trialEnd"}},{"kind":"Field","name":{"kind":"Name","value":"trialStart"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"canActivateTrial"}},{"kind":"Field","name":{"kind":"Name","value":"defaultPaymentMethod"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"stripePaymentMethodFragment_"}},{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]} as unknown as DocumentNode<SubscriptionCancelActiveSubscriptionMutationMutation, SubscriptionCancelActiveSubscriptionMutationMutationVariables>;
 export const StripeCreateSetupIntentMutation_Document = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"stripeCreateSetupIntentMutation_"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CreateSetupIntentMutationInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createSetupIntent"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"setupIntent"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"stripeSetupIntentFragment"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"stripeSetupIntentFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"StripeSetupIntentType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"clientSecret"}}]}}]} as unknown as DocumentNode<StripeCreateSetupIntentMutation_Mutation, StripeCreateSetupIntentMutation_MutationVariables>;
@@ -7146,20 +7321,23 @@ export const UpdateOrganizationRoleMutationDocument = {"kind":"Document","defini
 export const DeleteOrganizationRoleMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"deleteOrganizationRoleMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"replacementRoleId"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteOrganizationRole"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}},{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}},{"kind":"Argument","name":{"kind":"Name","value":"replacementRoleId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"replacementRoleId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}},{"kind":"Field","name":{"kind":"Name","value":"affectedMemberCount"}}]}}]}}]} as unknown as DocumentNode<DeleteOrganizationRoleMutationMutation, DeleteOrganizationRoleMutationMutationVariables>;
 export const AssignRolesToMemberMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"assignRolesToMemberMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"membershipId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"roleIds"}},"type":{"kind":"NonNullType","type":{"kind":"ListType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"assignRolesToMember"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"membershipId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"membershipId"}}},{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}},{"kind":"Argument","name":{"kind":"Name","value":"roleIds"},"value":{"kind":"Variable","name":{"kind":"Name","value":"roleIds"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"membership"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"organizationRoles"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"color"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<AssignRolesToMemberMutationMutation, AssignRolesToMemberMutationMutationVariables>;
 export const RemoveRoleFromMemberMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"removeRoleFromMemberMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"membershipId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"roleId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"removeRoleFromMember"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"membershipId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"membershipId"}}},{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}},{"kind":"Argument","name":{"kind":"Name","value":"roleId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"roleId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"membership"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"organizationRoles"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"color"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<RemoveRoleFromMemberMutationMutation, RemoveRoleFromMemberMutationMutationVariables>;
+export const WhatsAppFailedOrderUpdatesQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppFailedOrderUpdatesQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppFailedOrderUpdates"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkoutId"}},{"kind":"Field","name":{"kind":"Name","value":"stage"}},{"kind":"Field","name":{"kind":"Name","value":"accountId"}},{"kind":"Field","name":{"kind":"Name","value":"number"}},{"kind":"Field","name":{"kind":"Name","value":"customer"}},{"kind":"Field","name":{"kind":"Name","value":"failedAt"}},{"kind":"Field","name":{"kind":"Name","value":"errorCode"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}}]}}]}}]} as unknown as DocumentNode<WhatsAppFailedOrderUpdatesQueryQuery, WhatsAppFailedOrderUpdatesQueryQueryVariables>;
+export const SendWhatsAppOrderUpdateAgainMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"sendWhatsAppOrderUpdateAgainMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SendWhatsAppOrderUpdateAgainInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sendWhatsAppOrderUpdateAgain"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkoutId"}},{"kind":"Field","name":{"kind":"Name","value":"stage"}}]}}]}}]} as unknown as DocumentNode<SendWhatsAppOrderUpdateAgainMutationMutation, SendWhatsAppOrderUpdateAgainMutationMutationVariables>;
 export const WhatsAppNumberStatusQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppNumberStatusQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"accountId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppNumberStatus"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}},{"kind":"Argument","name":{"kind":"Name","value":"accountId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"accountId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"codeVerificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"qualityRating"}},{"kind":"Field","name":{"kind":"Name","value":"nameStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verifiedName"}},{"kind":"Field","name":{"kind":"Name","value":"displayPhoneNumber"}}]}}]}}]} as unknown as DocumentNode<WhatsAppNumberStatusQueryQuery, WhatsAppNumberStatusQueryQueryVariables>;
 export const RequestWhatsAppVerificationCodeMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"requestWhatsAppVerificationCodeMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"RequestWhatsAppVerificationCodeInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"requestWhatsAppVerificationCode"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<RequestWhatsAppVerificationCodeMutationMutation, RequestWhatsAppVerificationCodeMutationMutationVariables>;
 export const VerifyWhatsAppNumberMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"verifyWhatsAppNumberMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"VerifyWhatsAppNumberInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"verifyWhatsAppNumber"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<VerifyWhatsAppNumberMutationMutation, VerifyWhatsAppNumberMutationMutationVariables>;
 export const RegisterWhatsAppNumberMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"registerWhatsAppNumberMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"RegisterWhatsAppNumberInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"registerWhatsAppNumber"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<RegisterWhatsAppNumberMutationMutation, RegisterWhatsAppNumberMutationMutationVariables>;
 export const SubscribeWhatsAppAppMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"subscribeWhatsAppAppMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SubscribeWhatsAppAppInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"subscribeWhatsAppApp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ok"}}]}}]}}]} as unknown as DocumentNode<SubscribeWhatsAppAppMutationMutation, SubscribeWhatsAppAppMutationMutationVariables>;
-export const WhatsAppAccountsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppAccountsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppAccounts"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"purpose"}},{"kind":"Field","name":{"kind":"Name","value":"phoneNumberId"}},{"kind":"Field","name":{"kind":"Name","value":"wabaId"}},{"kind":"Field","name":{"kind":"Name","value":"displayPhoneNumber"}},{"kind":"Field","name":{"kind":"Name","value":"verifiedName"}},{"kind":"Field","name":{"kind":"Name","value":"connectionMethod"}},{"kind":"Field","name":{"kind":"Name","value":"isActive"}},{"kind":"Field","name":{"kind":"Name","value":"credentialsVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"subscribedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastMessageReceivedAt"}},{"kind":"Field","name":{"kind":"Name","value":"metaAppId"}}]}}]}}]} as unknown as DocumentNode<WhatsAppAccountsQueryQuery, WhatsAppAccountsQueryQueryVariables>;
+export const WhatsAppAccountsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppAccountsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppAccounts"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"purpose"}},{"kind":"Field","name":{"kind":"Name","value":"phoneNumberId"}},{"kind":"Field","name":{"kind":"Name","value":"wabaId"}},{"kind":"Field","name":{"kind":"Name","value":"displayPhoneNumber"}},{"kind":"Field","name":{"kind":"Name","value":"verifiedName"}},{"kind":"Field","name":{"kind":"Name","value":"connectionMethod"}},{"kind":"Field","name":{"kind":"Name","value":"isActive"}},{"kind":"Field","name":{"kind":"Name","value":"credentialsVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"subscribedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastMessageReceivedAt"}},{"kind":"Field","name":{"kind":"Name","value":"metaAppId"}},{"kind":"Field","name":{"kind":"Name","value":"templates"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"rejectedReason"}},{"kind":"Field","name":{"kind":"Name","value":"statusCheckedAt"}}]}}]}}]}}]} as unknown as DocumentNode<WhatsAppAccountsQueryQuery, WhatsAppAccountsQueryQueryVariables>;
 export const ConnectWhatsAppAccountMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"connectWhatsAppAccountMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ConnectWhatsAppAccountInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"connectWhatsAppAccount"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"account"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"purpose"}},{"kind":"Field","name":{"kind":"Name","value":"displayPhoneNumber"}},{"kind":"Field","name":{"kind":"Name","value":"verifiedName"}},{"kind":"Field","name":{"kind":"Name","value":"subscribedAt"}}]}}]}}]}}]} as unknown as DocumentNode<ConnectWhatsAppAccountMutationMutation, ConnectWhatsAppAccountMutationMutationVariables>;
 export const SendWhatsAppTestMessageMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"sendWhatsAppTestMessageMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SendWhatsAppTestMessageInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sendWhatsAppTestMessage"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"messageId"}}]}}]}}]} as unknown as DocumentNode<SendWhatsAppTestMessageMutationMutation, SendWhatsAppTestMessageMutationMutationVariables>;
 export const DisconnectWhatsAppAccountMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"disconnectWhatsAppAccountMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DisconnectWhatsAppAccountInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"disconnectWhatsAppAccount"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"account"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"isActive"}}]}}]}}]}}]} as unknown as DocumentNode<DisconnectWhatsAppAccountMutationMutation, DisconnectWhatsAppAccountMutationMutationVariables>;
 export const ChangeWhatsAppNumberPurposeMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"changeWhatsAppNumberPurposeMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ChangeWhatsAppNumberPurposeInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"changeWhatsAppNumberPurpose"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"account"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"purpose"}}]}}]}}]}}]} as unknown as DocumentNode<ChangeWhatsAppNumberPurposeMutationMutation, ChangeWhatsAppNumberPurposeMutationMutationVariables>;
-export const WhatsAppLinksQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppLinksQuery"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppLinks"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"organizationName"}},{"kind":"Field","name":{"kind":"Name","value":"internalNumber"}},{"kind":"Field","name":{"kind":"Name","value":"linked"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"conversationMode"}},{"kind":"Field","name":{"kind":"Name","value":"linkedAt"}}]}}]}}]} as unknown as DocumentNode<WhatsAppLinksQueryQuery, WhatsAppLinksQueryQueryVariables>;
-export const StartWhatsAppLinkMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"startWhatsAppLinkMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"StartWhatsAppLinkInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startWhatsAppLink"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"link"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"expiresAt"}}]}}]}}]} as unknown as DocumentNode<StartWhatsAppLinkMutationMutation, StartWhatsAppLinkMutationMutationVariables>;
-export const UpdateWhatsAppConversationModeMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"updateWhatsAppConversationModeMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateWhatsAppConversationModeInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateWhatsAppConversationMode"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"link"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"organizationName"}},{"kind":"Field","name":{"kind":"Name","value":"internalNumber"}},{"kind":"Field","name":{"kind":"Name","value":"linked"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"conversationMode"}},{"kind":"Field","name":{"kind":"Name","value":"linkedAt"}}]}}]}}]}}]} as unknown as DocumentNode<UpdateWhatsAppConversationModeMutationMutation, UpdateWhatsAppConversationModeMutationMutationVariables>;
-export const DisconnectWhatsAppMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"disconnectWhatsAppMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DisconnectWhatsAppInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"disconnectWhatsApp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"link"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"organizationName"}},{"kind":"Field","name":{"kind":"Name","value":"internalNumber"}},{"kind":"Field","name":{"kind":"Name","value":"linked"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"conversationMode"}},{"kind":"Field","name":{"kind":"Name","value":"linkedAt"}}]}}]}}]}}]} as unknown as DocumentNode<DisconnectWhatsAppMutationMutation, DisconnectWhatsAppMutationMutationVariables>;
+export const WhatsAppLinksQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppLinksQuery"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppLinks"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"organizationName"}},{"kind":"Field","name":{"kind":"Name","value":"internalNumber"}},{"kind":"Field","name":{"kind":"Name","value":"linked"}},{"kind":"Field","name":{"kind":"Name","value":"waiting"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"conversationMode"}},{"kind":"Field","name":{"kind":"Name","value":"linkedAt"}}]}}]}}]} as unknown as DocumentNode<WhatsAppLinksQueryQuery, WhatsAppLinksQueryQueryVariables>;
+export const StartWhatsAppLinkMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"startWhatsAppLinkMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"StartWhatsAppLinkInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"startWhatsAppLink"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"link"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"expiresAt"}},{"kind":"Field","name":{"kind":"Name","value":"channel"}}]}}]}}]} as unknown as DocumentNode<StartWhatsAppLinkMutationMutation, StartWhatsAppLinkMutationMutationVariables>;
+export const ConfirmWhatsAppLinkMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"confirmWhatsAppLinkMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ConfirmWhatsAppLinkInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"confirmWhatsAppLink"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"waiting"}},{"kind":"Field","name":{"kind":"Name","value":"link"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"organizationName"}},{"kind":"Field","name":{"kind":"Name","value":"internalNumber"}},{"kind":"Field","name":{"kind":"Name","value":"linked"}},{"kind":"Field","name":{"kind":"Name","value":"waiting"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"conversationMode"}},{"kind":"Field","name":{"kind":"Name","value":"linkedAt"}}]}}]}}]}}]} as unknown as DocumentNode<ConfirmWhatsAppLinkMutationMutation, ConfirmWhatsAppLinkMutationMutationVariables>;
+export const UpdateWhatsAppConversationModeMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"updateWhatsAppConversationModeMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateWhatsAppConversationModeInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateWhatsAppConversationMode"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"link"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"organizationName"}},{"kind":"Field","name":{"kind":"Name","value":"internalNumber"}},{"kind":"Field","name":{"kind":"Name","value":"linked"}},{"kind":"Field","name":{"kind":"Name","value":"waiting"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"conversationMode"}},{"kind":"Field","name":{"kind":"Name","value":"linkedAt"}}]}}]}}]}}]} as unknown as DocumentNode<UpdateWhatsAppConversationModeMutationMutation, UpdateWhatsAppConversationModeMutationMutationVariables>;
+export const DisconnectWhatsAppMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"disconnectWhatsAppMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DisconnectWhatsAppInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"disconnectWhatsApp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"link"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"organizationName"}},{"kind":"Field","name":{"kind":"Name","value":"internalNumber"}},{"kind":"Field","name":{"kind":"Name","value":"linked"}},{"kind":"Field","name":{"kind":"Name","value":"waiting"}},{"kind":"Field","name":{"kind":"Name","value":"maskedNumber"}},{"kind":"Field","name":{"kind":"Name","value":"conversationMode"}},{"kind":"Field","name":{"kind":"Name","value":"linkedAt"}}]}}]}}]}}]} as unknown as DocumentNode<DisconnectWhatsAppMutationMutation, DisconnectWhatsAppMutationMutationVariables>;
 export const WhatsAppMetaAppsQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"whatsAppMetaAppsQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"whatsAppMetaApps"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"tenantId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"tenantId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"appId"}},{"kind":"Field","name":{"kind":"Name","value":"webhookUrl"}},{"kind":"Field","name":{"kind":"Name","value":"verifyToken"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]} as unknown as DocumentNode<WhatsAppMetaAppsQueryQuery, WhatsAppMetaAppsQueryQueryVariables>;
 export const RegisterWhatsAppMetaAppMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"registerWhatsAppMetaAppMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"RegisterWhatsAppMetaAppInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"registerWhatsAppMetaApp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"metaApp"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"appId"}},{"kind":"Field","name":{"kind":"Name","value":"webhookUrl"}},{"kind":"Field","name":{"kind":"Name","value":"verifyToken"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]}}]} as unknown as DocumentNode<RegisterWhatsAppMetaAppMutationMutation, RegisterWhatsAppMetaAppMutationMutationVariables>;
 export const UpdateWhatsAppMetaAppSecretMutationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"updateWhatsAppMetaAppSecretMutation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateWhatsAppMetaAppSecretInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateWhatsAppMetaAppSecret"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"metaApp"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]}}]} as unknown as DocumentNode<UpdateWhatsAppMetaAppSecretMutationMutation, UpdateWhatsAppMetaAppSecretMutationMutationVariables>;

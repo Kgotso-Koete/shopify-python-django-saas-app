@@ -44,6 +44,7 @@ urlpatterns = [
                 path("sso/", include("apps.sso.urls")),
                 path("translations/", include("apps.translations.urls")),
                 path("whatsapp/", include("apps.whatsapp.urls")),
+                path("invoicing/", include("apps.invoicing.urls")),
                 path("ai-assistant/", include("apps.integrations.ai_assistant.urls")),
                 path("", include("apps.users.urls")),
             ]

@@ -11,6 +11,7 @@ import { RoutesConfig } from '../../config/routes';
 import { useSubscriptionPlanDisplayName } from '../../hooks/useSubscriptionPlanDetails/useSubscriptionPlanDetails.hook';
 import { useFormatZar } from '../useFormatZar.hook';
 import { usePayfastSubscription } from '../usePayfastSubscription.hook';
+import { PayfastBillingEmailCard } from './billingEmailCard.component';
 
 const DetailRow = ({ icon, label, children }: { icon: ReactNode; label: ReactNode; children: ReactNode }) => (
   <div className="flex items-center gap-3 rounded-md p-3 bg-muted/50">
@@ -203,6 +204,8 @@ export const PayfastCurrentSubscriptionContent = () => {
           )}
         </CardContent>
       </Card>
+      {/* WhatsApp plan, user story WA.D6.OM.J1.A1: the email PayFast bills, with the plan it pays for. */}
+      <PayfastBillingEmailCard />
     </div>
   );
 };

@@ -1,8 +1,9 @@
 """
 The operations an organization's team can run on WhatsApp (plan Steps 1.9 and 1.12b, decision D10,
-user stories 4 to 7 and 9). Menus, Flows and the assistant all call these, so there's one set of rules
-for all three. Since Step 1.17 they don't list, pick or create organizations; those use cases stay,
-with their tests, for the website-parity audit of Step 1.9.
+user stories WA.D2.OM.J1.A2, WA.D2.OM.J1.A3, WA.D2.OM.J2.A1, WA.D2.OM.J2.A2 and WA.D1.OM.J2.A1).
+Menus, Flows and the assistant all call these, so there's one set of rules for all three. Since Step
+1.17 they don't list, pick or create organizations; those use cases stay, with their tests, for the
+website-parity audit of Step 1.9.
 
 Each operation checks exactly what its GraphQL field checks (the audit in plan Step 1.9), and saves
 through the website's own serializer, given a server-built context with the linked user, so
@@ -21,13 +22,17 @@ import copy
 from dataclasses import dataclass
 from types import SimpleNamespace
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
+from graphql_relay import to_global_id
 
 from apps.demo.models import CrudDemoItem
 from apps.demo.serializers import CrudDemoItemSerializer
+from apps.invoicing.models import Invoice
 from apps.multitenancy.models import Tenant, TenantMembership, user_has_permission
 from apps.multitenancy.serializers import TenantSerializer
+from apps.payfast.models import PayFastSubscription
 from apps.shopify.models import ShopifyShop
 from apps.shopify.products import ShopifyReconnectRequired, ShopifyTryAgainLater, fetch_products
 from common.acl.policies import IsTenantAdminAccess
@@ -71,7 +76,7 @@ class ProductPage:
     end_cursor: str | None
 
 
-# Organizations (user stories 4 and 5)
+# Organizations (user stories WA.D2.OM.J1.A2 and WA.D2.OM.J1.A3)
 
 
 def list_organizations(user) -> list[Tenant]:
@@ -150,7 +155,7 @@ def _require_rename(user, tenant) -> None:
         raise _denied("rename this organization")
 
 
-# CRUD items (user story 6)
+# CRUD items (user story WA.D2.OM.J2.A1)
 
 
 def list_items(user, tenant, page: int) -> Page:
@@ -213,7 +218,7 @@ def can_manage_items(user, tenant) -> bool:
     )
 
 
-# Shopify products (user story 7)
+# Shopify products (user story WA.D2.OM.J2.A2)
 
 
 def list_stores(user, tenant) -> list[ShopifyShop]:
@@ -263,6 +268,87 @@ def can_view_products(user, tenant) -> bool:
         and TenantMembership.objects.filter(user=user, tenant=tenant).exists()
         and user_has_permission(user, tenant, "shopify.view")
     )
+
+
+# Plans and billing (plan phase 4, Step 4.1)
+
+# The website's words for anyone who can't pay (phase 3's plan notice).
+ASK_THE_OWNER_TO_CHOOSE_A_PLAN = "Ask the organization's owner to choose a plan."
+
+
+def subscriptions_link(user, tenant) -> str:
+    """
+    The organization's Subscriptions page on the website, for billing.manage: the permission every
+    payment, plan change and cancellation needs (phase 4, decision 9). The page checks login and
+    billing.manage itself, so the link carries nothing secret. The website's organization routes are
+    keyed by its GraphQL id, as apps/shopify/views.py's redirect is.
+    """
+    _membership(user, tenant)
+    if not user_has_permission(user, tenant, "billing.manage"):
+        raise UseCaseError(ASK_THE_OWNER_TO_CHOOSE_A_PLAN, "permission_denied")
+    return f"{settings.WEB_APP_URL.rstrip('/')}/{to_global_id('TenantType', tenant.id)}/subscriptions"
+
+
+def can_choose_plan(user, tenant) -> bool:
+    """Whether to offer Plans and billing; a courtesy only, since subscriptions_link checks again."""
+    return bool(
+        tenant is not None
+        and TenantMembership.objects.filter(user=user, tenant=tenant).exists()
+        and user_has_permission(user, tenant, "billing.manage")
+    )
+
+
+# Invoices (plan phase 4, Step 4.5b)
+
+# Anyone without billing.view is told to ask the owner, as for plans (decision 14).
+ASK_THE_OWNER_FOR_INVOICES = "Ask the organization's owner for its invoices."
+
+
+def recent_invoices(user, tenant) -> list[Invoice]:
+    """
+    The organization's newest invoices whose PDF exists, 7 at most so a list holds them with Main menu
+    (D17). Mirrors invoices (billing.view, decision 12).
+    """
+    _require_invoices(user, tenant)
+    return list(Invoice.objects.filter(tenant=tenant).exclude(pdf="").order_by("-sequence")[:PAGE_SIZE])
+
+
+def first_invoice_date(user, tenant):
+    """
+    When a trialing organization's first invoice comes, the trial's end, when its first payment is charged;
+    None when it isn't trialing (user story WA.D6.OM.J2.A1: a free trial isn't a payment, so it has no
+    invoice). Read without creating the subscription row, unlike apps.payfast's get_subscription.
+    """
+    _require_invoices(user, tenant)
+    subscription = PayFastSubscription.objects.filter(tenant=tenant).first()
+    if subscription is None or not subscription.is_trialing:
+        return None
+    return subscription.trial_end
+
+
+def invoice_pdf(user, tenant, invoice_id) -> tuple[Invoice, bytes]:
+    """One of the organization's invoices and its PDF's bytes; another organization's is "not found"."""
+    _require_invoices(user, tenant)
+    invoice = _first(Invoice.objects.exclude(pdf=""), tenant=tenant, pk=invoice_id)
+    if invoice is None:
+        raise _not_found("Invoice")
+    with invoice.pdf.open("rb") as stored:
+        return invoice, stored.read()
+
+
+def can_view_invoices(user, tenant) -> bool:
+    """Whether to offer My invoices; a courtesy only, since the reads check again."""
+    return bool(
+        tenant is not None
+        and TenantMembership.objects.filter(user=user, tenant=tenant).exists()
+        and user_has_permission(user, tenant, "billing.view")
+    )
+
+
+def _require_invoices(user, tenant) -> None:
+    _membership(user, tenant)
+    if not user_has_permission(user, tenant, "billing.view"):
+        raise UseCaseError(ASK_THE_OWNER_FOR_INVOICES, "permission_denied")
 
 
 def _new_item(user, tenant, name: str) -> CrudDemoItemSerializer:

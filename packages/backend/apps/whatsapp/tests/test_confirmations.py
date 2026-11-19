@@ -1,6 +1,6 @@
 """
 Tests for apps/whatsapp/services/confirmations.py: every write in chat is confirmed by the user, on
-the server (plan Step 1.8b, decision D11, user story 8).
+the server (plan Step 1.8b, decision D11, user story WA.D2.OM.J2.A3).
 
 A write first becomes a WhatsAppPendingAction holding the exact action, arguments, user and
 organization, with an expiry. The user gets a summary with Confirm and Cancel. Only pressing Confirm
@@ -25,7 +25,7 @@ from ..services import confirmations, router
 from ..services.confirmations import ActionRefused
 from .factories import ContactFactory, InternalAccountFactory, MessageFactory, link_member
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D2.OM.J2.A3")]
 
 ran = []
 

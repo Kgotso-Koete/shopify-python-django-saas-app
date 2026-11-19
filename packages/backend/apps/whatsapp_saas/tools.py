@@ -1,6 +1,6 @@
 """
 The assistant's tools for an organization's team on its internal communications number (plan Step
-1.13, decisions D10 to D12, user story 8, Step 1.17).
+1.13, decisions D10 to D12, user story WA.D2.OM.J2.A3, Step 1.17).
 
 A fixed list, each running one Step 1.9 or Step 1.12 operation, so the assistant can do what the
 menus can and nothing more, with the same permission checks:
@@ -16,7 +16,7 @@ import functools
 
 from apps.whatsapp.agent.tools import Tool, ToolResult, Toolset
 
-from . import display, use_cases, writes
+from . import billing, display, use_cases, writes
 from .use_cases import UseCaseError
 
 AWAITING_CONFIRMATION = {
@@ -113,7 +113,9 @@ def list_products(turn, store_id, search, after, before):
         if not stores:
             return {
                 "success": False,
-                "error": f"No Shopify store is connected to {tenant.name}. It's connected on the website's Shopify page.",
+                "error": (
+                    f"No Shopify store is connected to {tenant.name}. It's connected on the website's Shopify page."
+                ),
                 "code": "no_store",
             }
         if len(stores) > 1:
@@ -134,6 +136,36 @@ def list_products(turn, store_id, search, after, before):
         "next_page_after": page.end_cursor if page.has_next else None,
         "previous_page_before": page.start_cursor if page.has_previous else None,
     }
+
+
+# The organization's plan (plan phase 4, Step 4.1)
+
+
+@_tool
+def send_plans_link(turn):
+    # The link ends the turn: the page shows plans and prices, so the model never describes them.
+    messages = billing.plans_link(turn.user, _organization(turn))
+    return ToolResult(
+        {
+            "success": True,
+            "status": "link_sent",
+            "message": "The user has been sent a Choose a plan link to the organization's Subscriptions page.",
+        },
+        messages=messages,
+    )
+
+
+@_tool
+def show_invoices(turn):
+    # The list ends the turn: the user taps the invoice they want, and its PDF follows (Step 4.5b).
+    return ToolResult(
+        {
+            "success": True,
+            "status": "list_shown",
+            "message": "The user has been shown the organization's invoices to tap; the tapped one's PDF is sent.",
+        },
+        messages=billing.invoices_screen(turn),
+    )
 
 
 TOOLS = Toolset(
@@ -190,6 +222,20 @@ TOOLS = Toolset(
                 "before": {**NULLABLE_STRING, "description": "A previous_page_before value, for the previous page."},
             },
             list_products,
+        ),
+        Tool(
+            "send_plans_link",
+            "Send the user a link to the organization's Subscriptions page, where its plan is chosen, changed "
+            "and paid for. Only the organization's owner can use it; anyone else is told to ask the owner.",
+            {},
+            send_plans_link,
+        ),
+        Tool(
+            "show_invoices",
+            "Show the user the organization's newest invoices to tap; the one they tap is sent as a PDF. Only "
+            "members who can see billing can use it; anyone else is told to ask the owner.",
+            {},
+            show_invoices,
         ),
     ]
 )

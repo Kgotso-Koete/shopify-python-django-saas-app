@@ -1,5 +1,5 @@
 """
-The number troubleshooting tools (plan decision D18, Step 1.5b, user story 23): Meta's repair calls
+The number troubleshooting tools (plan decision D18, Step 1.5b, user story WA.D3.OM.J2.A1): Meta's repair calls
 for a number that's stuck in registration or verification, as checked and logged operations. They
 replace the reference app's unauthenticated GET routes, which anyone could call.
 

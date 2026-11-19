@@ -51,11 +51,13 @@ def _post_webhook(
     secret: str | None = None,
     hmac_override: str | None = None,
     omit_hmac: bool = False,
+    url: str = WEBHOOK_URL,
 ):
     """
     POST a webhook to the endpoint with the correct headers.
     If hmac_override is given, it replaces the computed HMAC.
     If omit_hmac is True, the X-Shopify-Hmac-Sha256 header is omitted entirely.
+    `url` is the address posted to; the endpoint's own by default.
     """
     body = json.dumps(payload).encode("utf-8")
     if secret is None:
@@ -73,7 +75,7 @@ def _post_webhook(
         headers["HTTP_X_SHOPIFY_HMAC_SHA256"] = hmac_override or computed
 
     return client.post(
-        WEBHOOK_URL,
+        url,
         data=body,
         content_type="application/json",
         **headers,
@@ -134,6 +136,7 @@ class TestWebhookMethodNotAllowed:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.story("WA.D7.SY.J1.A1")
 class TestWebhookDeduplication:
     """Duplicate X-Shopify-Webhook-Id → 200, no second handler effect."""
 
@@ -217,6 +220,7 @@ class TestAppUninstalled:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.story("WA.D4.SC.J2.A1")
 class TestShopRedact:
     """
     shop/redact anonymizes the ShopifyShop row and redacts all delivery payloads
@@ -272,6 +276,7 @@ class TestShopRedact:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.story("WA.D4.SC.J2.A1")
 class TestCustomerComplianceWebhooks:
     """Both customers/* topics answer 200 and record the delivery."""
 
@@ -313,15 +318,17 @@ class TestCustomerComplianceWebhooks:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.story("WA.D7.SY.J1.A1")
 class TestUnknownTopic:
     """An unknown topic is logged as a warning but still answered 200."""
 
     def test_unknown_topic_returns_200_and_logs_warning(self, client, caplog):
+        # A topic the app doesn't handle (orders/create was one until WhatsApp plan Step 4.3b).
         payload = {"shop_domain": "unknown-shop.myshopify.com"}
         with caplog.at_level(logging.WARNING):
             response = _post_webhook(
                 client,
-                topic="orders/create",
+                topic="products/update",
                 payload=payload,
                 shop_domain="unknown-shop.myshopify.com",
                 webhook_id="unknown-topic-1",
@@ -330,4 +337,45 @@ class TestUnknownTopic:
         # The delivery is still recorded (for audit)
         assert ShopifyWebhookDelivery.objects.filter(webhook_id="unknown-topic-1").exists()
         # A warning was logged
-        assert any("orders/create" in record.message for record in caplog.records)
+        assert any("products/update" in record.message for record in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# The address without its trailing slash
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.story("WA.D7.SY.J1.A1")
+class TestWithoutTheTrailingSlash:
+    """
+    Shopify drops the trailing slash from a subscription's address: the app's configuration says
+    `/api/shopify/webhooks/`, and Shopify posts to `/api/shopify/webhooks` (found 2026-11-10, in the WhatsApp
+    plan's Step 4.7 human checks). Django can't redirect a POST to add the slash, so it answered 500 and every
+    webhook failed; the endpoint must take both forms.
+    """
+
+    def test_a_webhook_posted_without_the_slash_is_handled(self, client):
+        response = _post_webhook(
+            client,
+            topic="customers/data_request",
+            payload={"shop_domain": "slash-shop.myshopify.com", "customer": {"id": 1}, "data_request": {"id": 1}},
+            shop_domain="slash-shop.myshopify.com",
+            webhook_id="no-slash-1",
+            url="/api/shopify/webhooks",
+        )
+
+        assert response.status_code == 200
+        assert ShopifyWebhookDelivery.objects.filter(webhook_id="no-slash-1").exists()
+
+    def test_its_signature_is_still_checked(self, client):
+        response = _post_webhook(
+            client,
+            topic="customers/data_request",
+            payload={"shop_domain": "slash-shop.myshopify.com"},
+            webhook_id="no-slash-2",
+            hmac_override="definitely-not-valid",
+            url="/api/shopify/webhooks",
+        )
+
+        assert response.status_code == 401
+        assert not ShopifyWebhookDelivery.objects.filter(webhook_id="no-slash-2").exists()

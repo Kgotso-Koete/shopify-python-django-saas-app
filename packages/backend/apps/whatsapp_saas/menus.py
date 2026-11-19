@@ -1,7 +1,7 @@
 """
 The internal communications numbers' handler: menus for an organization's team in WHATSAPP_FORM
-mode (plan Step 1.10, decision D1, user stories 4, 6, 9 and 21). Registered with apps.whatsapp's
-registry in apps.py.
+mode (plan Step 1.10, decision D1, user stories WA.D2.OM.J1.A2, WA.D2.OM.J2.A1, WA.D1.OM.J2.A1 and
+WA.D2.OM.J3.A1). Registered with apps.whatsapp's registry in apps.py.
 
 Everything happens in the number's organization, which the router puts in turn.conversation.tenant
 (Step 1.17): there's no organization to pick or create, and the only organization action is Rename
@@ -19,7 +19,7 @@ answers are checked by the use cases first, so a mistake gets the reason and the
 what was typed, and then go through Confirm (D11): nothing is saved before it. The forms are
 published to a number when it's connected (on_connected, tasks.publish_forms).
 
-Products (Step 1.12b, user story 7): read live from Shopify, never stored. A store's screen offers
+Products (Step 1.12b, user story WA.D2.OM.J2.A2): read live from Shopify, never stored. A store's screen offers
 Browse and Search, since a full page (7 products, Previous, Next, Main menu) leaves no row for
 Search. Search asks for typed words (turn.expect_text). Shopify pages by cursor, so each Previous,
 Next and Back carries the cursor and the search words of the page it leads to.
@@ -36,7 +36,7 @@ from apps.whatsapp.builders import MAIN_MENU, Choice, Row, list_message, reply_b
 from apps.whatsapp.services import flows
 from apps.whatsapp.services.flows import FormExpired, FormNotAvailable
 
-from . import display, prompts, tasks, use_cases, writes
+from . import billing, display, prompts, tasks, use_cases, writes
 from .flows import SCREEN_NAMES
 from .tools import TOOLS
 from .use_cases import UseCaseError
@@ -52,6 +52,8 @@ STORE = "store"
 PRODUCT_PAGE = "products.page"
 PRODUCT = "product.view"
 PRODUCT_SEARCH = "products.search"
+PLANS = "plans"
+INVOICES = "invoices"
 
 # What an open form is for; flows.open_form keeps it on the server with the form's context.
 ITEM_FORM = "item.form"
@@ -86,6 +88,12 @@ class InternalNumberHandler:
             rows.append(Row(turn.choice(PRODUCTS), "Products", "Browse and search your Shopify store"))
         if use_cases.can_rename_organization(turn.user, tenant):
             rows.append(Row(turn.choice(ORGANIZATION_RENAME), "Rename organization", f"Rename {tenant.name}"))
+        # Only for those who can pay (phase 4, decision 9).
+        if use_cases.can_choose_plan(turn.user, tenant):
+            rows.append(Row(turn.choice(PLANS), "Plans and billing", "Choose or change your plan"))
+        # For billing.view, as on the website (phase 4, decisions 12 and 14).
+        if use_cases.can_view_invoices(turn.user, tenant):
+            rows.append(Row(turn.choice(INVOICES), "My invoices", "Get an invoice's PDF"))
         # "Organization:" says what the name is: a personal organization is named after an email (Step 1.20).
         body = f"You're working in Organization: {tenant.name}. What would you like to do?"
         return [list_message(body, button_label="Menu", section_title="Main menu", rows=rows)]
@@ -103,6 +111,9 @@ class InternalNumberHandler:
             PRODUCT_PAGE: self._product_page,
             PRODUCT: self._product,
             PRODUCT_SEARCH: self._search,
+            PLANS: self._plans,
+            INVOICES: self._invoices,
+            billing.INVOICE: self._invoice,
         }
         screen = screens.get(kind)
         if screen is None:
@@ -146,7 +157,21 @@ class InternalNumberHandler:
         except UseCaseError as error:
             return text_reply(str(error)) + self.main_menu(turn)
 
-    # The organization (user story 5): renaming is the only action on it here.
+    # The organization's plan (phase 4, Step 4.1): a link to the website's Subscriptions page.
+
+    def _plans(self, turn, data) -> list[dict]:
+        return billing.plans_link(turn.user, turn.conversation.tenant)
+
+    # The organization's invoices (phase 4, Step 4.5b): a list to tap, then the PDF.
+
+    def _invoices(self, turn, data) -> list[dict]:
+        return billing.invoices_screen(turn)
+
+    def _invoice(self, turn, data) -> list[dict]:
+        # A document has no buttons, so the main menu follows as its way back (D17).
+        return billing.send_invoice(turn, data["invoice_id"]) + self.main_menu(turn)
+
+    # The organization (user story WA.D2.OM.J1.A3): renaming is the only action on it here.
 
     def _rename_organization(self, turn, data) -> list[dict]:
         tenant = turn.conversation.tenant
@@ -175,7 +200,7 @@ class InternalNumberHandler:
         except UseCaseError as error:
             return _try_again(error, lambda: self._organization_form(turn, tenant, name=name))
 
-    # Items (user story 6)
+    # Items (user story WA.D2.OM.J2.A1)
 
     def _items(self, turn, data) -> list[dict]:
         tenant = turn.conversation.tenant
@@ -272,7 +297,7 @@ class InternalNumberHandler:
             return text_reply(NO_ITEMS_PERMISSION_TEXT)
         return writes.ask_to_delete_item(turn, tenant, data["item_id"])
 
-    # Shopify products (user story 7)
+    # Shopify products (user story WA.D2.OM.J2.A2)
 
     def _products(self, turn, data) -> list[dict]:
         tenant = turn.conversation.tenant

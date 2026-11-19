@@ -4,8 +4,8 @@ the one format this app stores, international digits with no "+" (plan decision 
 "27831234567", the format Meta's wa_id uses.
 
 The result must be 8 to 15 digits, E.164's limit: https://www.itu.int/rec/T-REC-E.164
-A well-shaped but wrong number can't be told apart here; the link code (user story 1) and the test
-message (user story 11) prove a number is real.
+A well-shaped but wrong number can't be told apart here; the link code (user story WA.D1.OM.J1.A2) and the test
+message (user story WA.D3.OM.J1.A1) prove a number is real.
 
 Kind of test: unit (agents.md section 2.5). Why: one plain function, with no database or network;
 the only setting it reads is overridden per test; nothing is faked.
@@ -16,7 +16,7 @@ import pytest
 from ..phone_numbers import InvalidPhoneNumber, normalize_phone_number
 
 # The root conftest.py registers fixtures whose autouse parts need the database.
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D1.OM.J1.A2")]
 
 
 @pytest.fixture(autouse=True)

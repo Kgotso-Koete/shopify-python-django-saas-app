@@ -683,3 +683,70 @@ Frontend:
 | Choosing the organization (plan 2.3) | Merchant picks from organizations where they have `shopify.manage`                                                                  | Links to the current organization; the page says to switch first                                                                                                   |
 | Webhook deliveries (plan 2.7)        | Relation from `ShopifyShop`                                                                                                         | No foreign key; matched by `shop_domain`                                                                                                                           |
 | `.env.shared` (plan section 7)       | Gets a commented `SHOPIFY_*` block                                                                                                  | [`.env.shared`](../../../packages/backend/.env.shared) has no Shopify lines                                                                                        |
+
+## 13. Configuring the Shopify app with the Shopify CLI
+
+Added 2026-11-10, during the WhatsApp plan's Step 4.7 human checks, when order updates needed a scope and two
+webhook topics the released app didn't have. The repository never said how to run the CLI before.
+
+**Why the CLI, not the Dev Dashboard.** The app's scopes, webhook subscriptions and URLs are set in a config file
+that `shopify app deploy` uploads and releases as a new app version. Kept as a file, they're readable, reviewable in a
+diff and repeatable: documentation and automation at once. Shopify grants a store only the scopes the released version
+lists, whatever the install link asks for (operator guide `packages/internal/docs/docs/features/whatsapp/index.mdx`,
+sections 3b and 3d).
+
+**The file.** `app config link` writes the app's live configuration to
+`packages/backend/apps/shopify/shopify.app.<app name>.toml` and makes it the CLI's default. It holds the app's client
+id and the tunnel address, so `.gitignore` ignores `shopify.app*.toml` there; the committed template,
+[`shopify.app.toml.example`](../../../packages/backend/apps/shopify/shopify.app.toml.example), ends in `.example` and
+stays tracked.
+
+**Running the CLI.** `@shopify/cli` is a dev dependency of the repository, pinned exactly in the root `package.json`
+(3.93.1, added 2026-11-10), so `pnpm install` brings it and a fork has everything it needs (agents.md section 5.3c).
+Run it with `pnpm exec shopify` from the repository root, on Node 20, pointing it at the app's folder with `--path`;
+it's never installed globally or run with `pnpm dlx`. Newer versions exist (5.x): read their release notes before
+moving the pin.
+
+1. **Log in first** at https://accounts.shopify.com with the account that owns the app in the Dev Dashboard. The CLI
+   prints a code and opens https://accounts.shopify.com/activate-with-code; enter the code from the run that is still
+   waiting (a run stopped with Ctrl+C leaves a code that no longer works). An account picker showing "The page you're
+   looking for could not be found" means the browser wasn't logged in: log in, then open
+   https://accounts.shopify.com/activate and enter the code there.
+2. **Pull the live configuration:**
+
+   ```shell
+   nvm use 20
+   pnpm exec shopify app config link --path packages/backend/apps/shopify
+   ```
+
+   Choose the organization that owns the app, **No, connect it to an existing app**, the app, and keep the file name
+   it offers.
+
+3. **Edit the file.** Scopes are one comma-separated string under `[access_scopes]`; each `[[webhooks.subscriptions]]`
+   lists `topics` (or `compliance_topics`) and a `uri`. Every `uri` must end in `/api/shopify/webhooks/`, with the
+   trailing slash: the route is `webhooks/` ([`urls.py`](../../../packages/backend/apps/shopify/urls.py)), and Django
+   can't redirect a POST to add a missing slash, so Shopify's deliveries would fail. For order updates (WhatsApp plan
+   phase 4), add `read_orders` to the scopes and subscribe `orders/create` and `orders/paid`.
+4. **Deploy:**
+
+   ```shell
+   pnpm exec shopify app deploy --path packages/backend/apps/shopify
+   ```
+
+   It shows what changes, asks to confirm, then creates and releases the new app version.
+
+5. **Match the backend:** list the same scopes in `SHOPIFY_SCOPES` in `packages/backend/.env`, restart the stack
+   (`pnpm saas down`, then `pnpm saas up`), and reconnect each store on the web app's **Shopify** page so it grants
+   the new scopes. Check what a store granted:
+
+   ```shell
+   docker compose run --rm -T backend python manage.py shell -c "from apps.shopify.models import ShopifyShop; [print(s.shop_domain, '|', s.scopes) for s in ShopifyShop.objects.filter(uninstalled_at__isnull=True)]"
+   ```
+
+**The one setting left in the Dev Dashboard.** The app's **protected customer data** level has no setting in the
+config file. Order webhooks need Level 1, selected under the app's **API access** in
+https://dev.shopify.com/dashboard; a development store needs no approval, a public app does
+(https://shopify.dev/docs/apps/launch/protected-customer-data).
+
+References: https://shopify.dev/docs/api/shopify-cli/app/app-config-link,
+https://shopify.dev/docs/apps/tools/cli/configuration

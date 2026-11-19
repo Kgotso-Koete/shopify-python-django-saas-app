@@ -33,7 +33,8 @@ def test_every_member_is_stored_as_its_name(enum):
 
 
 def test_every_enum_is_checked():
-    # A guard on the test itself: the module's seven enums, so none is missed.
+    # A guard on the test itself: the module's eight enums, so none is missed. TemplateStatus since
+    # Step 4.7 (user story WA.D3.OM.J2.A2).
     assert sorted(enum.__name__ for enum in enums_in(constants)) == [
         "AccountPurpose",
         "ConnectionMethod",
@@ -42,6 +43,7 @@ def test_every_enum_is_checked():
         "MessageKind",
         "MessageStatus",
         "SendBackend",
+        "TemplateStatus",
     ]
 
 

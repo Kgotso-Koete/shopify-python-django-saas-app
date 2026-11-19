@@ -1,14 +1,15 @@
 import type { ApolloCache } from '@apollo/client';
 import { useMutation, useQuery } from '@apollo/client/react';
-import { ConversationMode } from '@sb/webapp-api-client/graphql';
+import { ConversationMode, PhoneVerificationChannel } from '@sb/webapp-api-client/graphql';
 import { Button, ButtonVariant } from '@sb/webapp-core/components/buttons';
 import { ConfirmDialog } from '@sb/webapp-core/components/confirmDialog';
 import { Input } from '@sb/webapp-core/components/forms';
-import { AlertTriangle, CheckCircle2, ExternalLink } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, ExternalLink } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { FormattedDate, FormattedMessage, FormattedTime, useIntl } from 'react-intl';
 
 import {
+  confirmWhatsAppLinkMutation,
   disconnectWhatsAppMutation,
   startWhatsAppLinkMutation,
   updateWhatsAppConversationModeMutation,
@@ -16,26 +17,40 @@ import {
 } from '../../graphql/whatsappIdentity.graphql';
 import { serverReason } from '../../utils/serverReason';
 
-type StartedLink = { code: string; link: string; maskedNumber: string; expiresAt: unknown };
+type StartedLink = {
+  code: string;
+  link: string;
+  maskedNumber: string;
+  expiresAt: unknown;
+  // WHATSAPP_TEMPLATE: the code was sent to the phone, to be typed here (phase 7, user story WA.D1.OM.J1.A3).
+  channel: PhoneVerificationChannel;
+};
 
 type Link = {
   tenantId: string;
   organizationName: string;
   internalNumber: string;
   linked: boolean;
+  // A phone proved with a typed code, linked once it first writes to the team number (phase 7).
+  waiting: boolean;
   maskedNumber?: string | null;
   conversationMode?: ConversationMode | null;
   linkedAt?: unknown;
 };
 
 /**
- * The WhatsApp section of the profile page (WhatsApp plan Steps 1.14 and 1.17, user stories 1 and 3):
- * one block per organization of the user's whose team texts an internal communications number.
+ * The WhatsApp section of the profile page (WhatsApp plan Steps 1.14 and 1.17, user stories WA.D1.OM.J1.A2
+ * and WA.D2.OM.J1.A1): one block per organization of the user's whose team texts an internal communications
+ * number.
  *
  * Linking takes two proofs at once: this logged-in page asks for a code for the number typed, and the
  * code must then be sent from that number, as "link 123456", to the organization's internal number.
  * Once linked, the user picks menus and forms or the AI assistant there, and can unlink, which also
  * forgets the conversation on that number.
+ *
+ * Since phase 7 (user story WA.D1.OM.J1.A3), when the service sends codes on WhatsApp, the code arrives from the
+ * team number and is typed here instead. A phone that hasn't written to the team number yet waits: it's linked
+ * as soon as it sends any message there.
  */
 export const WhatsAppProfileSection = () => {
   const { data, loading, error, refetch } = useQuery(whatsAppLinksQuery);
@@ -83,7 +98,7 @@ export const WhatsAppProfileSection = () => {
               }}
             />
           </p>
-          {link.linked ? <LinkedNumber link={link} /> : <LinkANumber tenantId={link.tenantId} onCheckAgain={() => void refetch()} />}
+          {link.linked ? <LinkedNumber link={link} /> : <LinkANumber link={link} onCheckAgain={() => void refetch()} />}
         </section>
       ))}
     </div>
@@ -102,7 +117,8 @@ const replaceLink = (cache: ApolloCache, updated: Link | undefined) => {
   );
 };
 
-const LinkANumber = ({ tenantId, onCheckAgain }: { tenantId: string; onCheckAgain: () => void }) => {
+const LinkANumber = ({ link, onCheckAgain }: { link: Link; onCheckAgain: () => void }) => {
+  const { tenantId } = link;
   const intl = useIntl();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [problem, setProblem] = useState<string>();
@@ -128,6 +144,19 @@ const LinkANumber = ({ tenantId, onCheckAgain }: { tenantId: string; onCheckAgai
 
   return (
     <div className="space-y-4">
+      {link.waiting && (
+        <p className="flex items-center gap-2 text-sm" data-testid="whatsapp-waiting">
+          <Clock className="h-4 w-4 text-amber-500" />
+          <FormattedMessage
+            defaultMessage="Code accepted. Send any message from {number} to {internalNumber} to finish linking."
+            id="WhatsAppProfile / Link / Waiting"
+            values={{
+              number: <strong key="number">{link.maskedNumber ?? ''}</strong>,
+              internalNumber: <strong key="internalNumber">{link.internalNumber}</strong>,
+            }}
+          />
+        </p>
+      )}
       <p className="text-sm text-muted-foreground">
         <FormattedMessage
           defaultMessage="Use this organization from WhatsApp: its items and products, with menus or the AI assistant."
@@ -150,7 +179,11 @@ const LinkANumber = ({ tenantId, onCheckAgain }: { tenantId: string; onCheckAgai
         </Button>
       </form>
 
-      {started && (
+      {started && started.channel === PhoneVerificationChannel.WHATSAPP_TEMPLATE && (
+        <TypeTheCode tenantId={tenantId} phoneNumber={phoneNumber} started={started} onDone={() => setStarted(null)} />
+      )}
+
+      {started && started.channel !== PhoneVerificationChannel.WHATSAPP_TEMPLATE && (
         <div className="space-y-3 rounded-md border p-4">
           <p className="text-sm">
             <FormattedMessage
@@ -180,6 +213,73 @@ const LinkANumber = ({ tenantId, onCheckAgain }: { tenantId: string; onCheckAgai
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+type TypeTheCodeProps = {
+  tenantId: string;
+  phoneNumber: string;
+  started: StartedLink;
+  onDone: () => void;
+};
+
+/**
+ * The code the team number sent to the phone, typed here (phase 7, user story WA.D1.OM.J1.A3). The saved link
+ * replaces the cached one: linked at once, or waiting until the phone first writes to the team number.
+ */
+const TypeTheCode = ({ tenantId, phoneNumber, started, onDone }: TypeTheCodeProps) => {
+  const intl = useIntl();
+  const [code, setCode] = useState('');
+  const [problem, setProblem] = useState<string>();
+  const [confirm, { loading }] = useMutation(confirmWhatsAppLinkMutation, {
+    update: (cache, { data }) => replaceLink(cache, data?.confirmWhatsAppLink?.link),
+  });
+
+  const onSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setProblem(undefined);
+    try {
+      await confirm({ variables: { input: { tenantId, phoneNumber, code } } });
+      onDone();
+    } catch (error) {
+      setProblem(
+        serverReason(error) ??
+          intl.formatMessage({
+            defaultMessage: "Couldn't check the code. Please try again.",
+            id: 'WhatsAppProfile / Code / Generic error',
+          })
+      );
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-md border p-4">
+      <p className="text-sm">
+        <FormattedMessage
+          defaultMessage="We sent a code to {number} on WhatsApp, from the number above. Type it here; it works once, until {time}."
+          id="WhatsAppProfile / Code / Instructions"
+          values={{
+            number: <strong key="number">{started.maskedNumber}</strong>,
+            time: <FormattedTime key="time" value={String(started.expiresAt)} />,
+          }}
+        />
+      </p>
+      <form className="flex flex-wrap items-end gap-2" onSubmit={onSubmit}>
+        <div className="min-w-[10rem]">
+          <Input
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            label={intl.formatMessage({ defaultMessage: 'Code', id: 'WhatsAppProfile / Code / Label' })}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            error={problem}
+          />
+        </div>
+        <Button type="submit" disabled={loading || !code}>
+          <FormattedMessage defaultMessage="Link" id="WhatsAppProfile / Code / Submit" />
+        </Button>
+      </form>
     </div>
   );
 };

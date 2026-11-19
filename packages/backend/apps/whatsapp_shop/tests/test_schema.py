@@ -1,6 +1,6 @@
 """
 Tests for apps/whatsapp_shop/schema.py, the WhatsApp page's API for which store each external
-number sells from (plan Step 2.1b, decision 5, user story 25). The rules are in services.py
+number sells from (plan Step 2.1b, decision 5, user story WA.D3.OM.J1.A3). The rules are in services.py
 (test_store_channels.py); these tests cover who may ask, which organization's numbers and stores
 they reach, and what reaches the browser.
 
@@ -25,7 +25,7 @@ from apps.whatsapp.tests.factories import ExternalAccountFactory, InternalAccoun
 
 from .. import services
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D3.OM.J1.A3")]
 
 STOREFRONT_SCOPES = "read_products,unauthenticated_read_product_listings,unauthenticated_write_checkouts"
 

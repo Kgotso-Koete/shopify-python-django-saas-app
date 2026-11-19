@@ -29,6 +29,7 @@ from .factories import ContactFactory, ExternalAccountFactory, InternalAccountFa
 pytestmark = pytest.mark.django_db
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestEveryNumberBelongsToAnOrganization:
     """Step 1.17: every number is connected on an organization's WhatsApp tab, so it has one."""
 
@@ -60,6 +61,7 @@ class TestEveryNumberBelongsToAnOrganization:
         assert not WhatsAppAccount.objects.filter(pk=account.pk).exists()
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestOneInternalNumberPerOrganization:
     """Step 1.17: an organization's team texts one number, so it has at most one active internal number."""
 
@@ -97,6 +99,7 @@ class TestOneInternalNumberPerOrganization:
         assert internal.tenant.whatsapp_accounts.count() == 2
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestFindingAnOrganizationsInternalNumber:
     def test_it_is_the_organizations_active_internal_number(self):
         organization = TenantFactory(type=TenantType.ORGANIZATION)
@@ -117,6 +120,7 @@ class TestFindingAnOrganizationsInternalNumber:
         assert not hasattr(WhatsAppAccount.objects, "platform")
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestPhoneNumberId:
     def test_a_phone_number_id_belongs_to_one_account_only(self):
         # The webhook routes each event by its receiving phone_number_id (D6), so two accounts
@@ -127,6 +131,7 @@ class TestPhoneNumberId:
             ExternalAccountFactory(phone_number_id="100000000000777")
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestEncryptedCredentials:
     """D5: credentials are stored encrypted and read back as plain text."""
 
@@ -274,6 +279,7 @@ class TestMessages:
         assert not WhatsAppMessage.objects.filter(pk=message.pk).exists()
 
 
+@pytest.mark.story("WA.D1.OM.J1.A2")
 class TestIdentities:
     """Step 1.17: a user links their phone once per internal number, so once per organization."""
 

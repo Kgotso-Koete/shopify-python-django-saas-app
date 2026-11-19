@@ -1,3 +1,5 @@
+// Kind of test: integration (agents.md section 2.5). Why: the WhatsApp plan's tests here render the Shopify products
+// page with the real Apollo hooks and router; the backend is Apollo's MockedProvider.
 import type { MockedResponse } from '@apollo/client/testing';
 import { TenantType as TenantTypeField } from '@sb/webapp-api-client/constants';
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
@@ -125,7 +127,7 @@ const renderPage = (mocks: MockedResponse[], search = '', features = ['SHOPIFY',
 
 describe('ShopifyProducts: Component', () => {
   // WhatsApp plan phase 3, decision 5: browsing calls Shopify, so it waits for a plan that includes it.
-  it("says the plan doesn't include Shopify and asks Shopify for nothing", async () => {
+  it("WA.D6.OM.J3.A2 says the plan doesn't include Shopify and asks Shopify for nothing", async () => {
     // No products mock: asking Shopify would show the page's error instead.
     renderPage([shopsMock([STORE])], '', []);
 

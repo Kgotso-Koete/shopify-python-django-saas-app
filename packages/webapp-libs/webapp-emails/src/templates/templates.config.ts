@@ -13,6 +13,8 @@ import * as InvoiceCreated from './invoiceCreated';
 import * as InvoiceFileAdded from './invoiceFileAdded';
 import * as ProjectNoteMention from './projectNoteMention';
 import * as BackupReady from './backupReady';
+import * as ShopifyWebhooksUnhandled from './shopifyWebhooksUnhandled';
+import * as WhatsAppTemplatesRefused from './whatsAppTemplatesRefused';
 
 //<-- INJECT EMAIL TEMPLATE IMPORT -->
 
@@ -31,5 +33,7 @@ export const templates: Record<EmailTemplateType, EmailTemplateDefinition> = {
   [EmailTemplateType.INVOICE_FILE_ADDED]: InvoiceFileAdded,
   [EmailTemplateType.PROJECT_NOTE_MENTION]: ProjectNoteMention,
   [EmailTemplateType.BACKUP_READY]: BackupReady,
+  [EmailTemplateType.SHOPIFY_WEBHOOKS_UNHANDLED]: ShopifyWebhooksUnhandled,
+  [EmailTemplateType.WHATSAPP_TEMPLATES_REFUSED]: WhatsAppTemplatesRefused,
   //<-- INJECT EMAIL TEMPLATE -->
 };

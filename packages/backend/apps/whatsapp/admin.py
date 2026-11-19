@@ -3,10 +3,10 @@ Django admin for WhatsApp numbers, contacts and messages (plan Step 1.5b, decisi
 
 The operator's view of every number, with the same troubleshooting tools organization admins have on
 their WhatsApp tab, for when an organization asks the operator for help: Meta's status, a
-verification code by SMS or voice, and re-subscribing the app are admin actions; registering with the PIN and entering a code have a small
-form page each, like PayFast's refund page (apps/payfast/admin.py). Each repair is recorded in the
-admin's own history, without the PIN or the code. The account's secrets are never shown, nor an
-organization's Meta app's (plan Step 2.9).
+verification code by SMS or voice, and re-subscribing the app are admin actions; registering with
+the PIN and entering a code have a small form page each, like PayFast's refund page
+(apps/payfast/admin.py). Each repair is recorded in the admin's own history, without the PIN or
+the code. The account's secrets are never shown, nor an organization's Meta app's (plan Step 2.9).
 """
 
 from django import forms
@@ -16,7 +16,7 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from .models import MetaApp, WhatsAppAccount, WhatsAppContact, WhatsAppMessage
+from .models import MetaApp, WhatsAppAccount, WhatsAppContact, WhatsAppMessage, WhatsAppTemplate
 from .services import number_tools
 from .services.number_tools import NumberToolError
 
@@ -123,7 +123,7 @@ class WhatsAppAccountAdmin(admin.ModelAdmin):
             operation="register",
             title="Register the number with its PIN",
             submit_label="Register with Meta",
-            # Meta's limit, before the PIN is sent (D18, user story 23).
+            # Meta's limit, before the PIN is sent (D18, user story WA.D3.OM.J2.A1).
             warning="Meta allows 10 registration attempts per number in 72 hours; after that, registration "
             "is blocked for 72 hours.",
             call=lambda account, data: number_tools.register(account, pin=data["pin"], actor=request.user),
@@ -182,6 +182,31 @@ class MetaAppAdmin(admin.ModelAdmin):
     # Never shown, not even encrypted; the public id is part of the webhook address, so it's kept as made.
     exclude = ("app_secret_encrypted", "verify_token_encrypted")
     readonly_fields = ("public_id",)
+
+
+@admin.register(WhatsAppTemplate)
+class WhatsAppTemplateAdmin(admin.ModelAdmin):
+    """
+    Every message template this service submitted, with the numbers on its WhatsApp Business account and
+    Meta's review status, filterable by status (plan Step 4.7, user story WA.D7.OP.J2.A1). Read-only: the
+    status comes from Meta, and a template is changed by submitting it again
+    (whatsapp_publish_order_templates).
+    """
+
+    list_display = ("name", "numbers", "status", "rejected_reason", "status_checked_at", "submitted_at", "reported_at")
+    list_filter = ("status",)
+    search_fields = ("name", "waba_id", "template_id")
+
+    @admin.display(description="Numbers")
+    def numbers(self, template):
+        accounts = WhatsAppAccount.objects.filter(waba_id=template.waba_id).select_related("tenant")
+        return ", ".join(f"{account.display_phone_number} ({account.tenant.name})" for account in accounts) or "-"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(WhatsAppContact)

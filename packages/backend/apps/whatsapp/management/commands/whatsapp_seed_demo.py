@@ -1,6 +1,6 @@
 """
 Demo WhatsApp numbers for an organization, for the human checks (plan Steps 1.5 and 1.17, user story
-11). Modelled on apps/shopify/management/commands/shopify_seed_demo.py. Development data only: it
+WA.D3.OM.J1.A1). Modelled on apps/shopify/management/commands/shopify_seed_demo.py. Development data only: it
 refuses to run in production, and every id, token and secret is fake.
 
 - external communications numbers, one in each state the WhatsApp tab shows

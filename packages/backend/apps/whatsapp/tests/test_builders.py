@@ -201,6 +201,7 @@ class TestLinkButtons:
         assert message["interactive"]["action"]["parameters"]["display_text"] == "p" * 19 + "…"
 
 
+@pytest.mark.story("WA.D2.OM.J1.A3")
 class TestFlowMessages:
     def test_the_message_opens_the_flow_with_its_data_pre_filled(self):
         message = flow_message(

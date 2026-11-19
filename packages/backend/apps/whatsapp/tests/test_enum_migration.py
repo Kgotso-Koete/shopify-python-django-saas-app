@@ -71,7 +71,7 @@ def test_the_reverse_restores_the_old_values(old_rows):
 
 
 def test_an_empty_conversation_mode_stays_empty():
-    # Empty means "the default applies" (user story 3), not a mode to rename.
+    # Empty means "the default applies" (user story WA.D2.OM.J1.A1), not a mode to rename.
     identity = link(ContactFactory())
 
     migration.store_member_names(django_apps, None)

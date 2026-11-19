@@ -223,23 +223,8 @@ class TestFailures:
         # Only the send was repeated: the work that produced the reply wasn't, so no new rows.
         assert WhatsAppMessage.objects.filter(contact=contact).count() == 2
 
-    @pytest.mark.usefixtures("celery_keeps_the_test_connection")
-    def test_when_every_retry_fails_the_message_fails_and_the_rest_are_cancelled(self, contact, delay, mocker):
-        queued(contact, "one", "two", "three")
-        throttled = [RetryableSendError(131056, "Meta error 131056: pair rate limit")] * (outbox.MAX_SEND_RETRIES + 1)
-        backend = FakeBackend(failures=throttled)
-        mocker.patch("apps.whatsapp.services.outbox.send_backend", return_value=backend)
-
-        send_queued_messages.apply(args=[contact.pk])
-
-        # The first try, then every retry.
-        assert backend.attempts == outbox.MAX_SEND_RETRIES + 1
-        assert rows_of(contact) == [
-            ("one", MessageStatus.FAILED),
-            ("two", MessageStatus.CANCELLED),
-            ("three", MessageStatus.CANCELLED),
-        ]
-        assert WhatsAppMessage.objects.filter(contact=contact).order_by("pk").first().error_code == 131056
+    # When the task gives up (an hour after the message was queued, since Step 4.7) is tested in
+    # test_retries.py (user story WA.D5.SY.J1.A1).
 
     @pytest.mark.usefixtures("celery_keeps_the_test_connection")
     def test_without_a_worker_a_passing_failure_waits_for_the_send_queued_command(
@@ -247,7 +232,8 @@ class TestFailures:
     ):
         # With CELERY_TASK_ALWAYS_EAGER, Celery runs a retry at once and ignores its countdown, so a
         # rate limit would use up every retry in a second (plan section 10). Instead the message stays
-        # queued, and the whatsapp_send_queued command, run from cron, gives the wait (Step 1.4d).
+        # queued for the send sweep: the whatsapp_send_queued command from cron (Step 1.4d), or, since
+        # Step 4.7, the next webhook (test_retries.py).
         settings.CELERY_TASK_ALWAYS_EAGER = True
         queued(contact, "one", "two")
         backend = FakeBackend(failures=[RetryableSendError(130429, "Meta error 130429: throughput")])
@@ -403,6 +389,7 @@ class TestStatusesWithoutStrictMode:
         delay.assert_not_called()
 
 
+@pytest.mark.story("WA.D7.OP.J1.A1")
 class TestLogBackend:
     @pytest.mark.parametrize("strict", [False, True], ids=["normal", "strict"])
     def test_the_log_backend_marks_messages_sent_in_order_without_any_http_call(

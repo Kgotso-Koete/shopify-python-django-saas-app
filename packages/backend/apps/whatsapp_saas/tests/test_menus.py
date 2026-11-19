@@ -1,6 +1,7 @@
 """
 Tests for apps/whatsapp_saas/menus.py: the WHATSAPP_FORM mode's menus for an organization's team on
-its internal communications number (plan Step 1.10, user stories 4, 6, 9 and 21, Step 1.17).
+its internal communications number (plan Step 1.10, user stories WA.D2.OM.J1.A2, WA.D2.OM.J2.A1,
+WA.D1.OM.J2.A1 and WA.D2.OM.J3.A1, Step 1.17).
 
 Driven the way a team member drives them: messages through the router, with the real handler that
 apps.whatsapp_saas registers at startup, and the real operations of Step 1.9 (the plan said they'd
@@ -49,6 +50,7 @@ def contact(acme):
     return team_member(acme)
 
 
+@pytest.mark.story("WA.D2.OM.J3.A1")
 class TestTheMainMenu:
     def test_it_works_in_the_numbers_organization(self, contact, acme):
         menu = main_menu(contact)
@@ -72,6 +74,7 @@ class TestTheMainMenu:
         assert main_menu(contact).titles[-1] == "Main menu"
 
 
+@pytest.mark.story("WA.D2.OM.J2.A1")
 class TestItems:
     def test_items_come_seven_to_a_page_with_next_and_main_menu(self, contact, acme):
         for number in range(16):
@@ -138,6 +141,7 @@ class TestItems:
         assert again.titles[0] == "Item 07"
 
 
+@pytest.mark.story("WA.D2.OM.J2.A1")
 class TestDeleting:
     def test_delete_asks_to_confirm_and_confirm_deletes_it(self, contact, acme):
         item = CrudDemoItemFactory(tenant=acme, name="Monthly report")
@@ -166,6 +170,7 @@ class TestDeleting:
         assert CrudDemoItem.objects.filter(pk=item.pk).exists()
 
 
+@pytest.mark.story("WA.D1.OM.J2.A1")
 class TestPermissions:
     def test_a_member_without_manage_sees_no_edit_or_delete(self):
         beta = TenantFactory(type=TenantType.ORGANIZATION, name="Beta")

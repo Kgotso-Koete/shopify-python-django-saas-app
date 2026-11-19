@@ -1,6 +1,6 @@
 """
 Connecting an organization's WhatsApp number with a form, testing it, and disconnecting it (plan
-Step 1.5, user story 11). The GraphQL API calls these after its permission checks (Step 1.5f).
+Step 1.5, user story WA.D3.OM.J1.A1). The GraphQL API calls these after its permission checks (Step 1.5f).
 
 The maintainer's decisions (plan Step 1.5, 2026-10-17):
 - the test message is sent directly, so the admin sees Meta's answer in the form
@@ -32,8 +32,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+
+from apps.phone_verification.constants import Channel
 
 from .. import registry
 from ..client import PermanentSendError, RetryableSendError, TokenRejectedError, WhatsAppClient, send_backend
@@ -171,8 +174,9 @@ def _check_one_team_number(tenant, purpose: str, account: WhatsAppAccount | None
     """An organization's team texts one number (Step 1.17), internal or serving both (Step 2.7)."""
     team_number = WhatsAppAccount.objects.internal_for(tenant)
     if AccountPurpose.serves_team(purpose) and team_number is not None and team_number != account:
+        number = team_number.display_phone_number or team_number.phone_number_id
         raise AccountError(
-            f"Your organization's team already texts {team_number.display_phone_number or team_number.phone_number_id}. "
+            f"Your organization's team already texts {number}. "
             "An organization has one number for its team: change or disconnect that one first.",
             code="internal_number_exists",
         )
@@ -194,6 +198,13 @@ def _set_up(account: WhatsAppAccount, audiences: list[str]) -> None:
         on_connected = getattr(registry.handler_for(audience), "on_connected", None)
         if on_connected is not None:
             transaction.on_commit(partial(on_connected, account))
+    # A team number sends link codes when members get them on WhatsApp (phase 7, user story WA.D1.OM.J1.A3).
+    if AccountPurpose.INTERNAL_COMMUNICATIONS in audiences and (
+        settings.PHONE_VERIFICATION_CHANNEL == Channel.WHATSAPP_TEMPLATE
+    ):
+        from ..tasks import publish_link_template
+
+        transaction.on_commit(partial(publish_link_template.delay, str(account.pk)))
 
 
 @transaction.atomic
@@ -231,7 +242,7 @@ def send_test_message(*, tenant, account_id, to: str) -> str:
 
 
 def last_message_received_at(account: WhatsAppAccount) -> datetime | None:
-    """When the newest message reached this number: the form's last proof (user story 11)."""
+    """When the newest message reached this number: the form's last proof (user story WA.D3.OM.J1.A1)."""
     newest = (
         WhatsAppMessage.objects.filter(contact__account=account, direction=MessageDirection.INBOUND)
         .order_by("-created_at")

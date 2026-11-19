@@ -1,6 +1,6 @@
 """
 One message in agentic mode, from the user's words to a reply (plan Step 1.13, decisions D11 and
-D12, user story 8).
+D12, user story WA.D2.OM.J2.A3).
 
 The model is asked with the history and the handler's tools. Each function call it makes is run (or
 refused) and its output added, and the model is asked again, until it answers in words. Three

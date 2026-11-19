@@ -1,5 +1,5 @@
 """
-Tests for the WhatsApp tab's GraphQL API in apps/whatsapp/schema.py (plan Step 1.5f, user story 11):
+Tests for the WhatsApp tab's GraphQL API in apps/whatsapp/schema.py (plan Step 1.5f, user story WA.D3.OM.J1.A1):
 listing an organization's numbers with their status, connecting one with the form, sending a test
 message and disconnecting. The work is done by services/accounts.py (test_accounts.py); these tests
 cover who may ask, which organization's numbers they reach, and what reaches the browser.
@@ -27,7 +27,7 @@ from ..models import WhatsAppAccount
 from .factories import ContactFactory, ExternalAccountFactory, InternalAccountFactory, MessageFactory
 from .fakes import meta_error, meta_response
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D3.OM.J1.A1")]
 
 ACCESS_TOKEN = "EAAGacme-access-token"
 
@@ -149,7 +149,7 @@ class TestListingNumbers:
         assert listed["verifiedName"] == "Acme Store"
         assert listed["connectionMethod"] == "MANUAL"
         assert listed["isActive"] is True
-        # The form's three proofs (user story 11).
+        # The form's three proofs (user story WA.D3.OM.J1.A1).
         assert listed["credentialsVerifiedAt"] is None
         assert listed["subscribedAt"] is None
         assert listed["lastMessageReceivedAt"] is not None

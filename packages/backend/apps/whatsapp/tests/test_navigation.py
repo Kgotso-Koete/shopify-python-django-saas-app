@@ -1,5 +1,6 @@
 """
-Tests for the way back in every message (plan decision D17, user story 21): nobody is ever stuck.
+Tests for the way back in every message (plan decision D17, user stories WA.D2.OM.J3.A1 and WA.D4.SC.J1.A3):
+nobody is ever stuck.
 
 - Every interactive message's footer says "Send *menu* at any time" (*menu* is bold in WhatsApp).
 - Lists hold at most 7 items, so Previous, Next and Main menu always fit in Meta's 10 rows.
@@ -28,7 +29,7 @@ from ..builders import (
 )
 
 # The root conftest.py registers fixtures whose autouse parts need the database.
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D2.OM.J3.A1")]
 
 
 def rows_of(message):

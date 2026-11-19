@@ -1,6 +1,6 @@
 """
 Tests for the assistant's runtime in apps/whatsapp/agent/ (plan Step 1.13, decisions D11 and D12,
-user story 8): one inbound message in agentic mode, answered by the model with the tools it's given.
+user story WA.D2.OM.J2.A3): one inbound message in agentic mode, answered by the model with the tools it's given.
 
 - only the given tools run, and only with arguments that match their strict schema; anything else
   is refused back to the model, never run
@@ -28,7 +28,7 @@ from ..services.router import Turn
 from .agent_fakes import FakeProvider, calls, says
 from .factories import ContactFactory, MessageFactory, InternalAccountFactory
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D2.OM.J2.A3")]
 
 ran = []
 

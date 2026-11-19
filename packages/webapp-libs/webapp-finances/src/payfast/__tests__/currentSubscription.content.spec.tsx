@@ -1,9 +1,13 @@
+// Kind of test: integration (agents.md section 2.5). Why: the page renders with the real Apollo hooks, router and
+// translations; the backend is Apollo's MockedProvider, and every permission check is mocked as granted.
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
+import { composeMockedQueryResult } from '@sb/webapp-api-client/tests/utils';
 import { tenantFactory } from '@sb/webapp-tenants/tests/factories/tenant';
 import { screen } from '@testing-library/react';
 
 import { RoutesConfig } from '../../config/routes';
 import { createMockRouterProps, render } from '../../tests/utils/rendering';
+import { payfastTenantBillingEmailQuery } from '../payfast.graphql';
 import { PayfastCurrentSubscriptionContent } from '../routes/currentSubscription.content';
 import { fillPayfastSubscriptionQuery, monthlySubscription } from '../tests/fixtures';
 
@@ -98,6 +102,24 @@ describe('PayFast current subscription', () => {
     expect(screen.getByText(/Yearly, .*10\.00 \/ year/)).toBeInTheDocument();
     // The current, already paid period still shows its own price.
     expect(screen.getByText(/199\.00 \/ month/)).toBeInTheDocument();
+  });
+
+  // WhatsApp plan, user story WA.D6.OM.J1.A1: the billing email PayFast bills sits with the plan it pays for.
+  it('WA.D6.OM.J1.A1 shows the organization billing email card', async () => {
+    render(<PayfastCurrentSubscriptionContent />, {
+      routerProps: createMockRouterProps(RoutesConfig.subscriptions.index, { tenantId }),
+      apolloMocks: [
+        tenantMock(),
+        fillPayfastSubscriptionQuery(monthlySubscription, tenantId),
+        composeMockedQueryResult(payfastTenantBillingEmailQuery, {
+          variables: { id: tenantId },
+          data: { tenant: { id: tenantId, billingEmail: 'accounts@acme.example', __typename: 'TenantType' } },
+        }),
+      ],
+    });
+
+    expect(await screen.findByText('Billing email')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('accounts@acme.example')).toBeInTheDocument();
   });
 
   it('shows the expiry date instead of a renewal once cancelled', async () => {

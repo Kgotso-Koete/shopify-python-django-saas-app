@@ -1,7 +1,7 @@
 """
 Tests for the WhatsApp Flow forms in apps/whatsapp_saas/menus.py (plan Step 1.11b, decisions D9 and
-D11, user stories 5 and 6, Step 1.17): creating and renaming items, and renaming the organization,
-with pre-filled forms.
+D11, user stories WA.D2.OM.J1.A3 and WA.D2.OM.J2.A1, Step 1.17): creating and renaming items, and
+renaming the organization, with pre-filled forms.
 
 - a form opens pre-filled: the current name when renaming
 - everything happens in the number's organization, so the item form has no organization to choose,
@@ -64,6 +64,7 @@ def answer(contact, form, **answers):
     return send(contact, form_answers={"flow_token": form.flow["flow_token"], **answers})
 
 
+@pytest.mark.story("WA.D2.OM.J2.A1")
 class TestNewItem:
     def test_the_form_opens_for_the_numbers_organization(self, contact, published):
         menu = main_menu(contact)
@@ -109,6 +110,7 @@ class TestNewItem:
         assert "Confirm" not in screens[-1].titles
 
 
+@pytest.mark.story("WA.D2.OM.J2.A1")
 class TestEditingAnItem:
     def test_the_form_opens_with_the_current_name(self, contact, acme, published):
         item = CrudDemoItemFactory(tenant=acme, name="Monthly report")
@@ -124,6 +126,7 @@ class TestEditingAnItem:
         assert CrudDemoItem.objects.get(pk=item.pk).name == "Quarterly report"
 
 
+@pytest.mark.story("WA.D2.OM.J1.A3")
 class TestTheOrganization:
     def test_an_admin_renames_it_with_the_current_name_pre_filled(self, contact, acme, published):
         menu = main_menu(contact)
@@ -144,6 +147,7 @@ class TestTheOrganization:
         assert "Rename organization" not in menu.titles
 
 
+@pytest.mark.story("WA.D2.OM.J1.A3")
 class TestFormsThatCantBeUsed:
     def test_a_form_answered_twice_changes_nothing_the_second_time(self, contact, published):
         menu = main_menu(contact)

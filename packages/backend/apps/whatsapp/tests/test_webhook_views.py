@@ -93,6 +93,7 @@ class TestSwitchedOff:
         assert WhatsAppMessage.objects.count() == 0
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestSubscriptionCheck:
     def test_our_token_gets_the_challenge_back(self, client):
         response = subscription_check(client, VERIFY_TOKEN)
@@ -140,8 +141,9 @@ class TestStoringMessages:
         assert message.payload == {"text": "Hi", "action_id": "", "flow_response": {}}
 
         # Queued only once the transaction committed, so the worker can't look for a row that
-        # isn't there yet (D7).
-        assert len(callbacks) == 1
+        # isn't there yet (D7). The other callback is the send sweep without a worker (Step 4.7,
+        # user story WA.D5.SY.J1.A1, test_retries.py).
+        assert len(callbacks) == 2
         delay.assert_called_once_with(message.pk)
 
     def test_two_organizations_numbers_in_one_body_are_both_stored(
@@ -262,6 +264,7 @@ class TestRefusalsAreLogged:
         assert self.refusal_logs(caplog) == []
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestAnOrganizationsOwnApp:
     """
     Plan Step 2.9: a number in an organization's own Meta app has its webhooks at that app's address,
@@ -415,7 +418,7 @@ class TestBodiesWeCannotUse:
 
     def test_a_disconnected_numbers_events_are_acknowledged_but_never_stored(self, client, beta_account, delay):
         # Disconnecting (plan Step 1.5) marks the account inactive; from then on its number is
-        # treated as one we don't know (user story 11).
+        # treated as one we don't know (user story WA.D3.OM.J1.A1).
         beta_account.is_active = False
         beta_account.save()
         body = payloads.envelope(

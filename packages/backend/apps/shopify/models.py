@@ -31,6 +31,11 @@ class ShopifyShop(TimestampedMixin, models.Model):
     uninstalled_at = models.DateTimeField(null=True, blank=True)
     needs_reinstall = models.BooleanField(default=False)
 
+    class Meta:
+        # The Django admin's names for this app's models are written out, as apps/payfast's are: from the class
+        # name, Django makes "shopify shop" (WhatsApp plan Step 4.7).
+        verbose_name = "Shopify shop"
+
     def __str__(self):
         return self.shop_domain
 
@@ -77,6 +82,10 @@ class ShopifyOAuthState(TimestampedMixin, models.Model):
     tenant = models.ForeignKey("multitenancy.Tenant", null=True, blank=True, on_delete=models.CASCADE)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE)
 
+    class Meta:
+        # From the class name, Django makes "shopify o auth state".
+        verbose_name = "Shopify OAuth state"
+
     def __str__(self):
         return f"OAuth state for {self.shop_domain}"
 
@@ -90,6 +99,18 @@ class ShopifyWebhookDelivery(TimestampedMixin, models.Model):
     topic = models.CharField(max_length=128)
     shop_domain = models.CharField(max_length=255, db_index=True)
     payload = models.JSONField()
+    # When its handler succeeded, set in the same transaction as the handler's work (deliveries.py,
+    # WhatsApp plan Step 4.3e). Empty until then, so a repeat of the delivery runs it again.
+    handled_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # The last failure's exception, "Type: message", for the operator (WhatsApp plan, user story WA.D7.OP.J2.A2).
+    last_error = models.TextField(blank=True, default="")
+    # When the operator was emailed that the sweep gave up on it; each delivery is reported once.
+    reported_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Shopify webhook delivery"
+        # Django would add an "s": "deliverys".
+        verbose_name_plural = "Shopify webhook deliveries"
 
     def __str__(self):
         return f"Webhook {self.topic} for {self.shop_domain}"

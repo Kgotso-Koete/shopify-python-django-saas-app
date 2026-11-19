@@ -1,5 +1,5 @@
 """
-The WhatsApp tab's GraphQL API (plan Step 1.5f, user story 11), modelled on apps/shopify/schema.py.
+The WhatsApp tab's GraphQL API (plan Step 1.5f, user story WA.D3.OM.J1.A1), modelled on apps/shopify/schema.py.
 
 - whatsAppAccounts lists the organization's numbers and their status; it needs whatsapp.view.
 - connectWhatsAppAccount, sendWhatsAppTestMessage, disconnectWhatsAppAccount and
@@ -16,23 +16,42 @@ import graphene
 from graphql_relay import from_global_id, to_global_id
 
 from apps.multitenancy.models import Tenant, TenantMembership
+from apps.phone_verification.constants import Channel
 from common.acl.policies import IsAuthenticatedFullAccess, IsTenantMemberAccess
 from common.graphql import exceptions
 from common.graphql.acl import permission_classes, requires
 
-from .constants import TEAM_PURPOSES, AccountPurpose, ConnectionMethod, ConversationMode
-from .models import MetaApp, WhatsAppAccount, WhatsAppIdentity
-from .services import accounts, identity, meta_apps, number_tools
+from .constants import TEAM_PURPOSES, AccountPurpose, ConnectionMethod, ConversationMode, TemplateStatus
+from .models import MetaApp, WhatsAppAccount, WhatsAppIdentity, WhatsAppTemplate
+from .services import accounts, identity, meta_apps, number_tools, templates
 from .services.accounts import AccountError
 from .services.identity import IdentityError
 from .services.number_tools import NumberToolError
 
 ConnectionMethodEnum = graphene.Enum.from_enum(ConnectionMethod)
 AccountPurposeEnum = graphene.Enum.from_enum(AccountPurpose)
+TemplateStatusEnum = graphene.Enum.from_enum(TemplateStatus)
+
+
+class WhatsAppTemplateType(graphene.ObjectType):
+    """
+    One message template on the number's WhatsApp Business account, such as an order update, and where it is
+    in Meta's review (plan Step 4.7, user story WA.D3.OM.J2.A2).
+    """
+
+    name = graphene.String(required=True)
+    status = graphene.Field(TemplateStatusEnum, required=True)
+    # Meta's reason as Meta sends it, such as "INVALID_FORMAT"; empty unless it's rejected.
+    rejected_reason = graphene.String(required=True)
+    status_checked_at = graphene.DateTime()
+
+    @staticmethod
+    def resolve_status(template, info):
+        return TemplateStatus(template.status)
 
 
 class WhatsAppAccountType(graphene.ObjectType):
-    """One of the organization's WhatsApp numbers, with the form's three proofs (user story 11)."""
+    """One of the organization's WhatsApp numbers, with the form's three proofs (user story WA.D3.OM.J1.A1)."""
 
     id = graphene.ID(required=True)
     # Who texts it: the organization's team, or its store customers (plan Step 1.17).
@@ -50,10 +69,18 @@ class WhatsAppAccountType(graphene.ObjectType):
     last_message_received_at = graphene.DateTime()
     # The organization's own Meta app the number is in, or null for this service's app (plan Step 2.9).
     meta_app_id = graphene.ID()
+    # Its WhatsApp Business account's templates, by name, with Meta's review status (Step 4.7).
+    templates = graphene.List(graphene.NonNull(WhatsAppTemplateType), required=True)
 
     @staticmethod
     def resolve_id(account, info):
         return str(account.id)
+
+    @staticmethod
+    def resolve_templates(account, info):
+        # Asks Meta again when the last answer is old; a failure keeps the last statuses.
+        templates.check_if_stale(account)
+        return WhatsAppTemplate.objects.filter(waba_id=account.waba_id).order_by("name")
 
     @staticmethod
     def resolve_meta_app_id(account, info):
@@ -372,7 +399,7 @@ class SetWhatsAppNumberMetaApp(graphene.Mutation):
         return cls(account=account)
 
 
-# The number troubleshooting tools (plan D18, Step 1.5b, user story 23): every one, the status
+# The number troubleshooting tools (plan D18, Step 1.5b, user story WA.D3.OM.J2.A1): every one, the status
 # included, needs whatsapp.manage. The work is in services/number_tools.py.
 
 
@@ -499,11 +526,12 @@ class SubscribeWhatsAppApp(graphene.Mutation):
         return cls(ok=True)
 
 
-# The profile page's WhatsApp section (plan Step 1.7c, user stories 1 and 3, Step 1.17): only ever
-# the logged-in user's own links, one per organization with an internal communications number, so no
-# field takes an argument naming a user. The work is in services/identity.py.
+# The profile page's WhatsApp section (plan Step 1.7c, user stories WA.D1.OM.J1.A2 and WA.D2.OM.J1.A1,
+# Step 1.17): only ever the logged-in user's own links, one per organization with an internal communications
+# number, so no field takes an argument naming a user. The work is in services/identity.py.
 
 ConversationModeEnum = graphene.Enum.from_enum(ConversationMode)
+PhoneVerificationChannelEnum = graphene.Enum.from_enum(Channel, name="PhoneVerificationChannel")
 
 
 class WhatsAppLinkType(graphene.ObjectType):
@@ -517,8 +545,10 @@ class WhatsAppLinkType(graphene.ObjectType):
     # The number the user texts, as Meta shows it.
     internal_number = graphene.String(required=True)
     linked = graphene.Boolean(required=True)
+    # A phone proved with a code received on WhatsApp, linked once it first writes (phase 7, WA.D1.OM.J1.A3).
+    waiting = graphene.Boolean(required=True, default_value=False)
     masked_number = graphene.String()
-    # Empty means WHATSAPP_DEFAULT_CONVERSATION_MODE applies (user story 3).
+    # Empty means WHATSAPP_DEFAULT_CONVERSATION_MODE applies (user story WA.D2.OM.J1.A1).
     conversation_mode = graphene.Field(ConversationModeEnum)
     linked_at = graphene.DateTime()
 
@@ -537,9 +567,13 @@ def _link_of(user, internal: WhatsAppAccount) -> WhatsAppLinkType:
     }
     linked = WhatsAppIdentity.objects.filter(user=user, account=internal).select_related("contact").first()
     if linked is None:
-        return WhatsAppLinkType(linked=False, **shown)
+        waiting = identity.waiting_link_for(user, internal)
+        if waiting is not None:
+            return WhatsAppLinkType(linked=False, waiting=True, masked_number=_mask(waiting.phone_number), **shown)
+        return WhatsAppLinkType(linked=False, waiting=False, **shown)
     return WhatsAppLinkType(
         linked=True,
+        waiting=False,
         masked_number=_mask(linked.contact.wa_id),
         conversation_mode=ConversationMode(linked.conversation_mode) if linked.conversation_mode else None,
         linked_at=linked.linked_at,
@@ -605,11 +639,14 @@ class StartWhatsAppLink(graphene.Mutation):
     class Arguments:
         input = StartWhatsAppLinkInput(required=True)
 
+    # Both empty when the code was sent to the phone, to be typed on the page (channel WHATSAPP_TEMPLATE).
     code = graphene.String(required=True)
     # Opens WhatsApp with "link <code>" typed, addressed to the organization's internal number.
     link = graphene.String(required=True)
     masked_number = graphene.String(required=True)
     expires_at = graphene.DateTime(required=True)
+    # How the phone is proved (PHONE_VERIFICATION_CHANNEL, phase 7, user story WA.D1.OM.J1.A3).
+    channel = graphene.Field(PhoneVerificationChannelEnum, required=True)
 
     @classmethod
     def mutate(cls, root, info, input):
@@ -624,6 +661,41 @@ class StartWhatsAppLink(graphene.Mutation):
             link=started.link,
             masked_number=_mask(started.phone_number),
             expires_at=started.expires_at,
+            channel=Channel(started.channel),
+        )
+
+
+class ConfirmWhatsAppLinkInput(graphene.InputObjectType):
+    tenant_id = graphene.ID(required=True)
+    # The number the code was sent to, in any common format (plan D19).
+    phone_number = graphene.String(required=True)
+    code = graphene.String(required=True)
+
+
+class ConfirmWhatsAppLink(graphene.Mutation):
+    """
+    Use the code the logged-in user received on WhatsApp (phase 7, user story WA.D1.OM.J1.A3): it links the
+    phone at once if it has written to the organization's team number before, or once it first writes.
+    """
+
+    class Arguments:
+        input = ConfirmWhatsAppLinkInput(required=True)
+
+    # True while the phone has yet to write to the team number.
+    waiting = graphene.Boolean(required=True)
+    link = graphene.Field(graphene.NonNull(WhatsAppLinkType))
+
+    @classmethod
+    def mutate(cls, root, info, input):
+        user = info.context.user
+        tenant = _users_tenant(user, input.tenant_id)
+        try:
+            result = identity.confirm_link(user, tenant, input.phone_number, input.code)
+        except IdentityError as error:
+            field = {"invalid_phone_number": "phone_number", "wrong_code": "code", "no_code": "code"}.get(error.code)
+            raise _identity_error(error, field) from error
+        return cls(
+            waiting=result == identity.WAITING, link=_link_of(user, WhatsAppAccount.objects.internal_for(tenant))
         )
 
 
@@ -683,6 +755,7 @@ class IdentityMutation(graphene.ObjectType):
     """The logged-in user's own WhatsApp link; registered in config/schema.py beside Mutation."""
 
     start_whats_app_link = StartWhatsAppLink.Field()
+    confirm_whats_app_link = ConfirmWhatsAppLink.Field()
     update_whats_app_conversation_mode = UpdateWhatsAppConversationMode.Field()
     disconnect_whats_app = DisconnectWhatsApp.Field()
 

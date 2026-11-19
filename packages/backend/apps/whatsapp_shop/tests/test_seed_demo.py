@@ -16,7 +16,7 @@ from apps.whatsapp.models import WhatsAppAccount
 
 from .. import services
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D7.OP.J1.A1")]
 
 STOREFRONT_SCOPES = ["read_products", "unauthenticated_read_product_listings", "unauthenticated_write_checkouts"]
 

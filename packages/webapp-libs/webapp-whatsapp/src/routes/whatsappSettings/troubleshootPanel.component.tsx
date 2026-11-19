@@ -24,7 +24,7 @@ type Outcome = { ok: boolean; text: string } | null;
 type TroubleshootPanelProps = { tenantId: string; accountId: string };
 
 /**
- * The last-resort repairs for a number stuck with Meta (WhatsApp plan D18, user story 23): Meta's own
+ * The last-resort repairs for a number stuck with Meta (WhatsApp plan D18, user story WA.D3.OM.J2.A1): Meta's own
  * status for it, a verification code by SMS or voice call, registration with the two-step PIN, and
  * re-subscribing the app to the WhatsApp Business account. Each acts on Meta's side and is written to
  * the action log; the PIN is passed straight to Meta and never stored.

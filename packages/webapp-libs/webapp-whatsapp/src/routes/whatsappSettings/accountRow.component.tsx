@@ -17,6 +17,7 @@ import { setWhatsAppNumberMetaAppMutation } from '../../graphql/whatsappMetaApps
 import { chooseWhatsAppStoreMutation, setWhatsAppStorefrontModeMutation } from '../../graphql/whatsappStorefronts.graphql';
 import { serverReason } from '../../utils/serverReason';
 import { MetaApp } from './metaAppsCard.component';
+import { TemplateStatusPanel, WhatsAppTemplate } from './templateStatus.component';
 import { TroubleshootPanel } from './troubleshootPanel.component';
 
 export type WhatsAppAccount = {
@@ -31,6 +32,8 @@ export type WhatsAppAccount = {
   lastMessageReceivedAt?: unknown;
   // The organization's own Meta app it's in, or null for this service's app (Step 2.9).
   metaAppId?: string | null;
+  // Its WhatsApp Business account's templates, with Meta's review status (Step 4.7).
+  templates?: WhatsAppTemplate[];
 };
 
 type AccountRowProps = {
@@ -143,6 +146,9 @@ export const AccountRow = ({
         />
       )}
 
+      {/* Anyone with whatsapp.view sees whether late order updates can go out (Step 4.7). */}
+      {account.isActive && <TemplateStatusPanel accountId={account.id} templates={account.templates ?? []} />}
+
       {canManage && account.isActive && (
         <PurposeChanger tenantId={tenantId} account={account} onChanged={onChanged} />
       )}
@@ -217,7 +223,7 @@ type StoreLineProps = {
 };
 
 /**
- * The store an external number sells from, or that none is chosen yet (Step 2.1b, user story 25), and
+ * The store an external number sells from, or that none is chosen yet (Step 2.1b, user story WA.D3.OM.J1.A3), and
  * for whatsapp.manage, a picker to change it, which saves with the same mutation the connect form uses.
  */
 const StoreLine = ({ tenantId, accountId, store, stores, onChanged }: StoreLineProps) => {

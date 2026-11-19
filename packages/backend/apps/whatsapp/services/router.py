@@ -45,6 +45,9 @@ HELP_TEXT = (
     "disconnects your phone from your account on this number."
 )
 EXPIRED_TEXT = "That menu has expired, so here's the main menu."
+# What sets a template button's id (such as "order:<code>") apart from this conversation's own choice ids
+# ("c7", "menu"), which never hold it.
+TEMPLATE_BUTTON_MARK = ":"
 UNSUPPORTED_TEXT = "Sorry, I can only read text, button presses and forms."
 
 
@@ -125,7 +128,7 @@ def _replies_for(message) -> list[dict]:
         # E.g. an external number while apps.whatsapp_shop isn't installed.
         return []
     if hasattr(handler, "answers") and not handler.answers(contact):
-        # E.g. an external number with no store chosen (user story 25): no reply at all.
+        # E.g. an external number with no store chosen (user story WA.D3.OM.J1.A3): no reply at all.
         return []
 
     conversation = _conversation_for(contact)
@@ -161,6 +164,12 @@ def _answer(turn, handler, payload) -> list[dict]:
         choice = _take_choices(turn).get(action_id)
         if action_id == MAIN_MENU.id:
             return handler.main_menu(turn)
+        if TEMPLATE_BUTTON_MARK in action_id:
+            # A template's quick-reply button (Step 4.7, decision 30): its id was set when the template was sent,
+            # however long ago, so it's the handler's to read, never a choice of this conversation's.
+            if hasattr(handler, "on_template_button"):
+                return handler.on_template_button(turn, action_id)
+            return text_reply(EXPIRED_TEXT) + handler.main_menu(turn)
         if choice is None:
             return text_reply(EXPIRED_TEXT) + handler.main_menu(turn)
         if confirmations.handles(choice["kind"]):
@@ -224,7 +233,7 @@ def _discard(turn) -> None:
 
 
 def _switch_mode(turn, mode) -> list[dict]:
-    """Save the user's mode on this number (user story 3); switching discards what was half done."""
+    """Save the user's mode on this number (user story WA.D2.OM.J1.A1); switching discards what was half done."""
     identity = turn.identity
     identity.conversation_mode = mode
     identity.save(update_fields=["conversation_mode", "updated_at"])

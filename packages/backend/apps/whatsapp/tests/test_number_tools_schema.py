@@ -1,9 +1,9 @@
 """
 Tests for the number troubleshooting tools' GraphQL operations in apps/whatsapp/schema.py (plan D18,
-Step 1.5b, user story 23). The work is done by services/number_tools.py (test_number_tools.py); these
+Step 1.5b, user story WA.D3.OM.J2.A1). The work is done by services/number_tools.py (test_number_tools.py); these
 tests cover who may ask and which organization's numbers they reach.
 
-- every operation, the status query included, needs whatsapp.manage (user story 23)
+- every operation, the status query included, needs whatsapp.manage (user story WA.D3.OM.J2.A1)
 - another organization's number is "not found", the same answer as a missing one
 - Meta's errors reach the form with their explanation
 
@@ -21,7 +21,7 @@ from apps.users.tests.factories import UserFactory
 from .factories import ExternalAccountFactory
 from .fakes import meta_error, meta_response
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D3.OM.J2.A1")]
 
 STATUS = """
 query($tenantId: ID!, $accountId: ID!) {
@@ -114,7 +114,7 @@ class TestStatus:
         }
 
     def test_a_member_cant_ask(self, graphene_client, organization, account, mocker):
-        # user story 23: the tools, the status included, need whatsapp.manage.
+        # user story WA.D3.OM.J2.A1: the tools, the status included, need whatsapp.manage.
         get = mocker.patch("apps.whatsapp.client.requests.get")
         act_as(graphene_client, organization, TenantUserRole.MEMBER)
 

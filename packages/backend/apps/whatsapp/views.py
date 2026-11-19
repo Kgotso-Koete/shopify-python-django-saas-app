@@ -32,6 +32,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from .models import MetaApp, WhatsAppAccount
 from .normalize import MalformedWebhook, normalize_webhook, receiving_phone_number_ids
+from .services import outbox
 from .services.inbound import store_events
 from .tasks import process_inbound_message
 from .verification import signature_is_valid
@@ -144,6 +145,9 @@ def _receive_events(request, app: _App):
     # Queue each new message once its row is committed, so the worker always finds it (D7).
     for message_id in store_events(events, accounts_by_number):
         transaction.on_commit(partial(process_inbound_message.delay, message_id))
+    # Without a worker, a webhook is also what retries messages a passing failure left queued (Step 4.7,
+    # user story WA.D5.SY.J1.A1); with one, this does nothing.
+    transaction.on_commit(outbox.sweep_if_due)
     return HttpResponse(status=200)
 
 

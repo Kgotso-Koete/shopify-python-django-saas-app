@@ -160,7 +160,13 @@ class PayFastPayment(TimestampedMixin, models.Model):
         SUBSCRIPTION = "SUBSCRIPTION", "Subscription"
         DONATION = "DONATION", "Donation"
 
-    tenant = models.ForeignKey("multitenancy.Tenant", on_delete=models.CASCADE, related_name="payfast_payments")
+    # Empty once the organization is deleted: the payment stays as the operator's record, for disputes
+    # and SARS's five years (WhatsApp plan phase 4, decision 17), with the name below and no buyer details.
+    tenant = models.ForeignKey(
+        "multitenancy.Tenant", null=True, blank=True, on_delete=models.SET_NULL, related_name="payfast_payments"
+    )
+    # The organization's name, copied when the organization is deleted (receivers.py).
+    tenant_name = models.CharField(max_length=255, blank=True, default="")
     kind = models.CharField(max_length=16, choices=Kind.choices)
     subscription = models.ForeignKey(
         PayFastSubscription, null=True, blank=True, on_delete=models.SET_NULL, related_name="payments"

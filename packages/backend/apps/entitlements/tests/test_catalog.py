@@ -1,6 +1,6 @@
 """
 Tests for apps.entitlements' catalog of what each plan includes (WhatsApp plan Step 3.1, phase 3
-decisions 1 and 2, user story 26).
+decisions 1 and 2, user story WA.D6.OP.J1.A1).
 
 - a feature is an enum stored by its names (agents.md section 5.3b)
 - the data migration lists `free_plan` with nothing, and `monthly_plan` and `yearly_plan` with
@@ -20,7 +20,7 @@ from django.db import IntegrityError, transaction
 
 from apps.users.tests.factories import UserFactory
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D6.OP.J1.A1")]
 
 
 def models():

@@ -1,5 +1,6 @@
 """
-Tests for browsing and searching a store in chat (WhatsApp plan Step 2.3, user stories 12 and 21).
+Tests for browsing and searching a store in chat (WhatsApp plan Step 2.3, user stories WA.D4.SC.J1.A1
+and WA.D4.SC.J1.A3).
 
 - Browse products lists the products for sale, newest first, 7 to a page, each with its price, with
   Previous, Next and Main menu (D17); Shopify's cursors ride on the buttons' stored data
@@ -22,7 +23,7 @@ from apps.whatsapp.constants import ConversationMode
 
 from .chat import customer_of, selling_number, send, store
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D4.SC.J1.A1")]
 
 
 def product(number=1, *, price_min="19.99", price_max="19.99"):

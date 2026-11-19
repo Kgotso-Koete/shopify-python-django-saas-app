@@ -11,9 +11,20 @@ them, wherever they run: in the webhook request, or in the Celery task, which re
   phone (each may be missing).
 - shop_redacted(shop): shop/redact, sent before the store's row is anonymized, so a receiver still
   finds what belonged to it.
+
+The order webhooks work the same way (WhatsApp plan phase 4, Step 4.3b, decision 5): apps.whatsapp_shop
+listens, so this app never messages a customer itself. `order` is the short order payloads.py keeps:
+Shopify's id, name, total_price, currency, financial_status, order_status_url and the note_attributes
+an app asked to keep; a field the delivery lacked is missing. Shopify may send an order's webhooks more
+than once and in any order, so a receiver makes each stage happen once.
+
+- order_created(shop, order): orders/create.
+- order_paid(shop, order): orders/paid.
 """
 
 from django.dispatch import Signal
 
 customer_redacted = Signal()
 shop_redacted = Signal()
+order_created = Signal()
+order_paid = Signal()

@@ -1,5 +1,5 @@
 // Tests for the number troubleshooting panel on the WhatsApp page (WhatsApp plan D18, Steps 1.6b and 1.19,
-// user story 23).
+// user story WA.D3.OM.J2.A1).
 //
 // Kind of test: integration (agents.md section 2.5). Why: the panel renders inside the real page, with the
 // real Apollo hooks, router and permission check; the backend is Apollo's MockedProvider, answering with
@@ -16,6 +16,7 @@ import userEvent from '@testing-library/user-event';
 import { GraphQLError } from 'graphql';
 
 import { RoutesConfig } from '../../../config/routes';
+import { whatsAppFailedOrderUpdatesQuery } from '../../../graphql/failedOrderUpdates.graphql';
 import {
   registerWhatsAppNumberMutation,
   requestWhatsAppVerificationCodeMutation,
@@ -48,6 +49,8 @@ const accountsMock = () =>
           credentialsVerifiedAt: '2026-10-18T09:00:00+00:00',
           subscribedAt: null,
           lastMessageReceivedAt: null,
+          // No template submitted yet (Step 4.7, user story WA.D3.OM.J2.A2).
+          templates: [],
           __typename: 'WhatsAppAccountType',
         },
       ],
@@ -101,6 +104,14 @@ const renderTab = (permissions: string[], mocks: MockedResponse[]) =>
         }),
         maxUsageCount: Number.POSITIVE_INFINITY,
       },
+      // And which order updates failed (Step 4.7, user story WA.D3.OM.J2.A3); none here.
+      {
+        ...composeMockedQueryResult(whatsAppFailedOrderUpdatesQuery, {
+          variables: { tenantId },
+          data: { whatsAppFailedOrderUpdates: [] },
+        }),
+        maxUsageCount: Number.POSITIVE_INFINITY,
+      },
     ],
     routerProps: createMockRouterProps(RoutesConfig.whatsapp, { tenantId }),
   });
@@ -113,7 +124,7 @@ const openPanel = async (user: ReturnType<typeof userEvent.setup>) => {
   return within(await screen.findByTestId(`whatsapp-troubleshoot-${accountId}`));
 };
 
-describe('TroubleshootPanel: Component', () => {
+describe('WA.D3.OM.J2.A1 TroubleshootPanel: Component', () => {
   it("shows Meta's own status for the number", async () => {
     const user = userEvent.setup();
     renderTab(MANAGE, [statusMock()]);

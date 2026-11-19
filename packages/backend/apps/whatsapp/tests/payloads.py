@@ -102,6 +102,15 @@ def list_reply(wamid="wamid.LIST1", row_id="c2", title="Acme", bsuid=SENDER_BSUI
     )
 
 
+def template_button_reply(
+    wamid="wamid.TEMPLATE1", payload="order:abc", text="Order details", bsuid=SENDER_BSUID, wa_id=SENDER_WA_ID
+):
+    """A tap on a template's quick-reply button: messages[].button.{payload,text}, type "button".
+    https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/button.md
+    """
+    return _message(wamid, "button", bsuid, wa_id, button={"payload": payload, "text": text})
+
+
 def flow_reply(wamid="wamid.FLOW1", response=None, bsuid=SENDER_BSUID, wa_id=SENDER_WA_ID):
     """A completed WhatsApp Flow: messages[].interactive.nfm_reply, whose response_json is a JSON string.
     https://developers.facebook.com/documentation/business-messaging/whatsapp/flows/guides/flowswebhooks.md

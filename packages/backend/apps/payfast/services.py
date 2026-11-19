@@ -26,7 +26,7 @@ from django.utils import timezone
 
 from apps.finances import constants as finance_constants
 from apps.finances import notifications
-from . import constants, signature
+from . import constants, signals, signature
 from .client import PayFastApiClient, PayFastApiError
 from .itn import ItnRejected
 from .models import PayFastCheckout, PayFastPayment, PayFastSubscription
@@ -46,6 +46,8 @@ TRIAL_REMINDER_LEAD_TIME = datetime.timedelta(days=3)
 RENEWAL_ITN_GRACE = datetime.timedelta(days=1)
 # pf_payment_id of a charge recorded from GET /fetch, until its real ITN arrives (PayFastPayment.caught_up).
 CAUGHT_UP_ID_PREFIX = "caught-up-"
+# A payment_status PayFast sends for a charge that went through (docs#step_4_confirm_payment).
+COMPLETE = "COMPLETE"
 
 # Display names used as PayFast's item_name (shown to the buyer on PayFast's payment page).
 ITEM_NAMES = {
@@ -121,7 +123,7 @@ def create_subscription_checkout(*, tenant, user, plan_name: str, return_url: st
         is_trial=is_trial,
     )
     fields = {
-        **_base_fields(checkout, user, return_url, cancel_url),
+        **_base_fields(checkout, return_url, cancel_url),
         "item_name": ITEM_NAMES[plan.name],
         # Pass-through for support; the ITN handler never trusts it (it reads the checkout instead).
         "custom_str1": plan.name,
@@ -169,7 +171,7 @@ def _create_plan_change_checkout(subscription, plan, user, return_url: str, canc
         replaces_token=subscription.token,
     )
     fields = {
-        **_base_fields(checkout, user, return_url, cancel_url),
+        **_base_fields(checkout, return_url, cancel_url),
         "item_name": ITEM_NAMES[plan.name],
         "custom_str1": plan.name,
         "subscription_type": "1",
@@ -194,11 +196,11 @@ def create_donation_checkout(*, tenant, user, amount, return_url: str, cancel_ur
     checkout = PayFastCheckout.objects.create(
         kind=PayFastCheckout.Kind.DONATION, tenant=tenant, created_by=user, amount=amount
     )
-    fields = {**_base_fields(checkout, user, return_url, cancel_url), "item_name": DONATION_ITEM_NAME}
+    fields = {**_base_fields(checkout, return_url, cancel_url), "item_name": DONATION_ITEM_NAME}
     return _signed_form(checkout, fields)
 
 
-def _base_fields(checkout: PayFastCheckout, user, return_url: str, cancel_url: str) -> dict:
+def _base_fields(checkout: PayFastCheckout, return_url: str, cancel_url: str) -> dict:
     separator = "&" if "?" in return_url else "?"
     return {
         "merchant_id": settings.PAYFAST_MERCHANT_ID,
@@ -207,7 +209,9 @@ def _base_fields(checkout: PayFastCheckout, user, return_url: str, cancel_url: s
         "return_url": f"{return_url}{separator}m={checkout.m_payment_id}",
         "cancel_url": cancel_url,
         "notify_url": settings.PAYFAST_NOTIFY_URL,
-        "email_address": getattr(user, "email", "") or "",
+        # The organization pays, so PayFast bills its email, never whoever pressed Pay (WhatsApp plan, user story
+        # WA.D6.OM.J1.A2): its billing email, or its creator's, as Tenant.email gives Stripe's customer.
+        "email_address": checkout.tenant.email,
         "m_payment_id": str(checkout.m_payment_id),
         "amount": f"{checkout.amount:.2f}",
     }
@@ -325,7 +329,7 @@ def _record_payment(*, tenant, kind, data, subscription=None, plan="") -> None:
         except InvalidOperation:
             return Decimal("0")
 
-    PayFastPayment.objects.create(
+    payment = PayFastPayment.objects.create(
         tenant=tenant,
         kind=kind,
         subscription=subscription,
@@ -339,6 +343,9 @@ def _record_payment(*, tenant, kind, data, subscription=None, plan="") -> None:
         item_name=(data.get("item_name") or "")[:100],
         raw=dict(data),
     )
+    if payment.payment_status == COMPLETE:
+        # WhatsApp plan phase 4, decision 15: apps.invoicing invoices it, unknown to this app.
+        signals.payment_completed.send(sender=PayFastPayment, payment=payment)
 
 
 def _complete_donation(checkout: PayFastCheckout, data: dict):
@@ -561,6 +568,8 @@ def _complete_caught_up_payment(payment: PayFastPayment, data: dict):
     payment.item_name = (data.get("item_name") or payment.item_name)[:100]
     payment.raw = dict(data)
     payment.save()
+    # Sent again, now with PayFast's real id (WhatsApp plan phase 4, decision 18).
+    signals.payment_completed.send(sender=PayFastPayment, payment=payment)
 
 
 # --- Cancellation --------------------------------------------------------------------------------
@@ -770,7 +779,7 @@ def _check_overdue_renewal(subscription: PayFastSubscription):
         _start_next_period(subscription, period_end=datetime.datetime.combine(run_date, period_end.timetz()))
         # The charge happened, so it belongs in the history. Its ITN may still arrive; then
         # _complete_caught_up_payment fills in PayFast's id, fee and net amount.
-        PayFastPayment.objects.create(
+        payment = PayFastPayment.objects.create(
             tenant=subscription.tenant,
             kind=PayFastPayment.Kind.SUBSCRIPTION,
             subscription=subscription,
@@ -781,6 +790,8 @@ def _check_overdue_renewal(subscription: PayFastSubscription):
             item_name=ITEM_NAMES.get(subscription.plan, ""),
             caught_up=True,
         )
+        # Invoiced at once, with its placeholder id (WhatsApp plan phase 4, decision 18).
+        signals.payment_completed.send(sender=PayFastPayment, payment=payment)
         return
 
     if subscription.payment_failed_notified_at is None:

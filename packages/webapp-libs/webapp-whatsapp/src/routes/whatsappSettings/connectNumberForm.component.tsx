@@ -47,7 +47,7 @@ const EMPTY: ConnectNumberFields = {
 
 /**
  * The form that connects one of the organization's own WhatsApp numbers for one purpose (WhatsApp plan
- * Steps 1.5, 1.17 and 1.18, user story 11). It takes no App secret: a number is in this service's Meta
+ * Steps 1.5, 1.17 and 1.18, user story WA.D3.OM.J1.A1). It takes no App secret: a number is in this service's Meta
  * app, or in one of the organization's own, whose App secret is registered once on the "Your Meta apps"
  * card (Step 2.9, decision 3) and chosen here. The backend asks Meta about the number and subscribes the
  * token's app to its WhatsApp Business account before saving anything; a refusal comes back under the
@@ -55,7 +55,7 @@ const EMPTY: ConnectNumberFields = {
  * number for the team.
  *
  * It first asks who texts the number (Step 2.7, decision 4): the team, the customers, or both. A number
- * serving customers also needs the store it sells from (Step 2.1b, user story 25), chosen here and
+ * serving customers also needs the store it sells from (Step 2.1b, user story WA.D3.OM.J1.A3), chosen here and
  * saved by a second call once the number is connected (decision 5): apps.whatsapp, which connects
  * numbers, knows nothing about Shopify. If that second call fails, the number stays connected, and its
  * row offers the store picker.

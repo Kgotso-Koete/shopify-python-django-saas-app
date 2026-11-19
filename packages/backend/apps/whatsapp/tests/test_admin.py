@@ -1,7 +1,7 @@
 """
 Tests for the WhatsApp Django admin (apps/whatsapp/admin.py, plan Step 1.5b, D18): the operator's
 view of every number, with the same troubleshooting tools organization admins get in the WhatsApp
-tab (user story 23), for when an organization asks the operator for help.
+tab (user story WA.D3.OM.J2.A1), for when an organization asks the operator for help.
 
 - the account's secrets are never shown, nor an organization's Meta app's (plan Step 2.9)
 - Meta's status, a verification code by SMS or voice, and re-subscribing the app are admin actions
@@ -89,6 +89,7 @@ class TestPages:
         assert "access_token_encrypted" not in page
 
 
+@pytest.mark.story("WA.D3.OM.J2.A1")
 class TestActions:
     def test_meta_s_status_is_shown_as_a_message(self, operator_client, number, mocker):
         mocker.patch(
@@ -121,6 +122,7 @@ class TestActions:
         assert "already verified" in response.content.decode()
 
 
+@pytest.mark.story("WA.D3.OM.J2.A1")
 class TestRegisterAndVerifyPages:
     def test_the_account_page_links_to_both_forms(self, operator_client, number):
         page = operator_client.get(reverse("admin:whatsapp_whatsappaccount_change", args=[number.pk])).content.decode()

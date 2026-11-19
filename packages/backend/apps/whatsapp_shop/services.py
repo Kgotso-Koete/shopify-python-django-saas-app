@@ -1,5 +1,5 @@
 """
-Which Shopify store each external communications number sells from (plan Step 2.1b, user story 25).
+Which Shopify store each external communications number sells from (plan Step 2.1b, user story WA.D3.OM.J1.A3).
 
 - One number, one store (Step 2.1, decision 1); choosing again changes it.
 - Only the organization's own stores, and only those that can sell on WhatsApp: still installed,

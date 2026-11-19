@@ -333,6 +333,12 @@ class CreateTenantMutation(mutations.CreateModelMutation):
 
 @action_logged(entity_type="tenant", action_type=ActionType.UPDATE)
 class UpdateTenantMutation(mutations.UpdateModelMutation):
+    class Input:
+        # The organization, for the tenant middleware, which finds it only from an explicit tenantId, never a plain
+        # id (apps/multitenancy/middleware.py). Without it a real request finds no organization (WhatsApp plan
+        # Step 4.7, user story WA.D6.OM.J1.A1); as UpdateTenantMembershipMutation's Input declares.
+        tenant_id = graphene.String()
+
     class Meta:
         serializer_class = serializers.TenantSerializer
         edge_class = TenantConnection.Edge
