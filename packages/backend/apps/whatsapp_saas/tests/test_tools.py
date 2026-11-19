@@ -1,6 +1,6 @@
 """
 Tests for the assistant's tools for an organization's team in apps/whatsapp_saas/tools.py (plan Step
-1.13, decisions D10 and D11, user story 8, Step 1.17).
+1.13, decisions D10 and D11, user story WA.D2.OM.J2.A3, Step 1.17).
 
 - the list is fixed, and each tool runs one Step 1.9 or Step 1.12 operation, so the assistant can do
   exactly what the menus can, with the same permission checks
@@ -30,7 +30,7 @@ from apps.whatsapp.tests.factories import ContactFactory, InternalAccountFactory
 
 from ..tools import TOOLS
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D2.OM.J2.A3")]
 
 
 @pytest.fixture
@@ -78,6 +78,9 @@ class TestTheList:
             "delete_item",
             "list_stores",
             "list_products",
+            # Plan phase 4, Steps 4.1 and 4.5b.
+            "send_plans_link",
+            "show_invoices",
         ]
 
     def test_a_name_is_the_users_own_never_made_up(self):

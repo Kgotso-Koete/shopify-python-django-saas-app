@@ -98,6 +98,7 @@ LOCAL_APPS = [
     "apps.whatsapp_saas",
     "apps.whatsapp_shop",
     "apps.entitlements",
+    "apps.invoicing",
 ]
 
 INSTALLED_APPS = (
@@ -608,6 +609,14 @@ PAYFAST_MONTHLY_PRICE = env("PAYFAST_MONTHLY_PRICE", default="199.00")
 PAYFAST_YEARLY_PRICE = env("PAYFAST_YEARLY_PRICE", default="1990.00")
 PAYFAST_DONATION_AMOUNTS = env.list("PAYFAST_DONATION_AMOUNTS", default=["50", "100", "150"])
 
+# Invoices for PayFast payments (apps.invoicing; WhatsApp plan phase 4, decision 13): the supplier the
+# operator issues them as, copied onto each invoice when it's issued. Empty by default, which
+# apps.invoicing's system check warns about when PayFast is the payment backend. An address's lines are
+# separated by \n in the variable. Spaces at either end are dropped (user story WA.D6.OP.J1.A2): a stray one
+# would be copied onto every invoice for good.
+INVOICE_SUPPLIER_NAME = env("INVOICE_SUPPLIER_NAME", default="").strip()
+INVOICE_SUPPLIER_ADDRESS = env("INVOICE_SUPPLIER_ADDRESS", default="").replace("\\n", "\n").strip()
+
 if PAYMENT_BACKEND == PAYMENT_BACKEND_PAYFAST:
     # dj-stripe stays installed (its tables and admin remain), but its API-key checks are
     # irrelevant when PayFast takes the payments.
@@ -777,6 +786,10 @@ if TASK_BACKEND == "celery" and CONTENTFUL_SPACE_ID:
 EMAIL_BACKEND = env("EMAIL_BACKEND", default="django_ses.SESBackend")
 EMAIL_FROM_ADDRESS = env("EMAIL_FROM_ADDRESS", default=None)
 EMAIL_REPLY_ADDRESS = env.list("EMAIL_REPLY_ADDRESS", default=(EMAIL_FROM_ADDRESS,))
+# Fork addition (WhatsApp plan, user stories WA.D7.OP.J2.A1 and WA.D7.OP.J2.A2): where the operator's notices go,
+# comma-separated: Shopify webhooks the sweep gave up on, and order templates Meta refused. Empty sends none.
+# Deliberately not Django's ADMINS, which would also switch on Django's error emails.
+OPERATOR_EMAILS = env.list("OPERATOR_EMAILS", default=[])
 
 # AWS SES settings (used when EMAIL_BACKEND=django_ses.SESBackend)
 AWS_SES_REGION_NAME = env("AWS_SES_REGION_NAME", default=AWS_REGION)
@@ -817,6 +830,14 @@ SHOPIFY_AUTH_TIMEOUT = env.int("SHOPIFY_AUTH_TIMEOUT", default=600)  # 10 minute
 SHOPIFY_WEBHOOK_DISPATCH = env("SHOPIFY_WEBHOOK_DISPATCH", default="sync")
 SHOPIFY_ENABLED = bool(SHOPIFY_API_KEY and SHOPIFY_API_SECRET)
 
+# Fork addition (WhatsApp plan Step 4.3e): the sweep for webhook deliveries left unhandled. Without a
+# worker, run `python manage.py shopify_handle_pending_deliveries` from cron instead.
+if SHOPIFY_ENABLED:
+    CELERY_BEAT_SCHEDULE["shopify-handle-pending-deliveries"] = {
+        "task": "apps.shopify.tasks.handle_pending_deliveries",
+        "schedule": 60 * 15,  # Every 15 minutes (in seconds)
+    }
+
 # ==============================================================================
 # PLAN ENTITLEMENTS
 # ==============================================================================
@@ -856,10 +877,24 @@ WHATSAPP_DEFAULT_CONVERSATION_MODE = env("WHATSAPP_DEFAULT_CONVERSATION_MODE", d
 WHATSAPP_DEFAULT_COUNTRY_CODE = env("WHATSAPP_DEFAULT_COUNTRY_CODE", default="27")
 # How long a WhatsApp linking code works, and how long an idle conversation keeps its menu state.
 WHATSAPP_LINK_CODE_TTL_SECONDS = env.int("WHATSAPP_LINK_CODE_TTL_SECONDS", default=600)  # 10 minutes
+# How a member proves the phone they link (plan D20, phase 7, user story WA.D1.OM.J1.A3), as
+# apps.phone_verification.constants.Channel's member names: "WHATSAPP_INBOUND" (the default) shows a code to send
+# from the phone; "WHATSAPP_TEMPLATE" sends the code from the organization's team number, to be typed on the
+# website, and needs each team number's authentication template approved. There's no SMS (2026-11-09).
+PHONE_VERIFICATION_CHANNEL = env("PHONE_VERIFICATION_CHANNEL", default="WHATSAPP_INBOUND")
 WHATSAPP_CONVERSATION_TTL_SECONDS = env.int("WHATSAPP_CONVERSATION_TTL_SECONDS", default=1800)  # 30 minutes
 # AI assistant model (empty means OPENAI_MODEL) and its cap on tool calls per inbound message.
 WHATSAPP_AI_MODEL = env("WHATSAPP_AI_MODEL", default="")
 WHATSAPP_AI_MAX_TOOL_CALLS = env.int("WHATSAPP_AI_MAX_TOOL_CALLS", default=5)
+
+# Fork addition (WhatsApp plan Step 4.7, user story WA.D3.OM.J2.A2): ask Meta once a day whether each
+# number's message templates are approved. Without a worker, run
+# `python manage.py whatsapp_check_template_statuses` from a daily cron job instead.
+if WHATSAPP_ENABLED:
+    CELERY_BEAT_SCHEDULE["whatsapp-check-template-statuses"] = {
+        "task": "apps.whatsapp.tasks.check_template_statuses",
+        "schedule": 60 * 60 * 24,  # Every 24 hours (in seconds)
+    }
 
 # Translations settings
 # Translations use the same storage backend as the rest of the app (STORAGE_BACKEND)

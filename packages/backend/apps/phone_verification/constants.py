@@ -10,7 +10,7 @@ class Channel(models.TextChoices):
     # The website shows the code and the person sends it from the number; Meta's signed webhook
     # proves the number. Needs no template and no provider (Step 1.7).
     WHATSAPP_INBOUND = "WHATSAPP_INBOUND", "Sent from WhatsApp"
-    # We send the code in a WhatsApp authentication template and it's typed on the website (phase 6).
+    # We send the code in a WhatsApp authentication template from the organization's team number, and it's
+    # typed on the website (phase 7, user story WA.D1.OM.J1.A3). There's no SMS channel (maintainer's decision,
+    # 2026-11-09): a member proves their number on WhatsApp, which they use to talk to the app anyway.
     WHATSAPP_TEMPLATE = "WHATSAPP_TEMPLATE", "Received on WhatsApp"
-    # We send the code by SMS through an optional provider (phase 6).
-    SMS = "SMS", "Received by SMS"

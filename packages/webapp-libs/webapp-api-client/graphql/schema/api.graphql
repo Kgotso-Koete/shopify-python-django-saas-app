@@ -36,7 +36,9 @@ that will be handled by the multipart request spec
 """
 scalar Upload
 type Query {
+  invoices(tenantId: ID!): [InvoiceType!]!
   organizationFeatures(tenantId: ID!): [String!]!
+  whatsAppFailedOrderUpdates(tenantId: ID!): [WhatsAppFailedOrderUpdateType!]!
   whatsAppStorefronts(tenantId: ID!): [WhatsAppStorefrontType!]!
   whatsAppEligibleStores(tenantId: ID!): [String!]!
   whatsAppLinks: [WhatsAppLinkType!]!
@@ -125,6 +127,30 @@ type Query {
     id: ID!
   ): Node
 }
+"One of the organization's invoices whose PDF is ready to download."
+type InvoiceType {
+  id: ID!
+  number: String!
+  issuedAt: DateTime!
+  description: String!
+  amount: String!
+  currency: String!
+  paymentId: ID
+}
+"""
+An order update WhatsApp couldn't deliver (plan Step 4.7, user story WA.D3.OM.J2.A3): which order stage, on
+which number, to which customer, when it failed, and Meta's reason in plain words.
+"""
+type WhatsAppFailedOrderUpdateType {
+  checkoutId: ID!
+  stage: WhatsAppOrderStage!
+  accountId: ID!
+  number: String!
+  customer: String!
+  failedAt: DateTime!
+  errorCode: Int
+  reason: String!
+}
 """
 One external number, the store it sells from and its customers' mode; shopDomain and
 conversationMode are null while no store is chosen.
@@ -143,6 +169,7 @@ type WhatsAppLinkType {
   organizationName: String!
   internalNumber: String!
   linked: Boolean!
+  waiting: Boolean!
   maskedNumber: String
   conversationMode: ConversationMode
   linkedAt: DateTime
@@ -164,7 +191,7 @@ type WhatsAppMetaAppType {
   verifyToken: String!
   createdAt: DateTime!
 }
-"One of the organization's WhatsApp numbers, with the form's three proofs (user story 11)."
+"One of the organization's WhatsApp numbers, with the form's three proofs (user story WA.D3.OM.J1.A1)."
 type WhatsAppAccountType {
   id: ID!
   purpose: AccountPurpose!
@@ -178,6 +205,17 @@ type WhatsAppAccountType {
   subscribedAt: DateTime
   lastMessageReceivedAt: DateTime
   metaAppId: ID
+  templates: [WhatsAppTemplateType!]!
+}
+"""
+One message template on the number's WhatsApp Business account, such as an order update, and where it is
+in Meta's review (plan Step 4.7, user story WA.D3.OM.J2.A2).
+"""
+type WhatsAppTemplateType {
+  name: String!
+  status: TemplateStatus!
+  rejectedReason: String!
+  statusCheckedAt: DateTime
 }
 type ShopifyConfigType {
   enabled: Boolean!
@@ -1477,8 +1515,15 @@ type ApiMutation {
   chooseWhatsAppStore(input: ChooseWhatsAppStoreInput!): ChooseWhatsAppStore
   "Menus or the assistant for every customer of one of the organization's external numbers."
   setWhatsAppStorefrontMode(input: SetWhatsAppStorefrontModeInput!): SetWhatsAppStorefrontMode
+  "Send a failed order update again, built fresh from the order Shopify has now (user story WA.D3.OM.J2.A3)."
+  sendWhatsAppOrderUpdateAgain(input: SendWhatsAppOrderUpdateAgainInput!): SendWhatsAppOrderUpdateAgain
   "Issue a link code for the logged-in user's number; it works only when sent from that number."
   startWhatsAppLink(input: StartWhatsAppLinkInput!): StartWhatsAppLink
+  """
+  Use the code the logged-in user received on WhatsApp (phase 7, user story WA.D1.OM.J1.A3): it links the
+  phone at once if it has written to the organization's team number before, or once it first writes.
+  """
+  confirmWhatsAppLink(input: ConfirmWhatsAppLinkInput!): ConfirmWhatsAppLink
   """
   Save how the logged-in user wants to talk to one organization's number: menus and forms, or the
   AI assistant.
@@ -1704,12 +1749,26 @@ type ChooseWhatsAppStore {
 type SetWhatsAppStorefrontMode {
   storefront: WhatsAppStorefrontType!
 }
+"Send a failed order update again, built fresh from the order Shopify has now (user story WA.D3.OM.J2.A3)."
+type SendWhatsAppOrderUpdateAgain {
+  checkoutId: ID!
+  stage: WhatsAppOrderStage!
+}
 "Issue a link code for the logged-in user's number; it works only when sent from that number."
 type StartWhatsAppLink {
   code: String!
   link: String!
   maskedNumber: String!
   expiresAt: DateTime!
+  channel: PhoneVerificationChannel!
+}
+"""
+Use the code the logged-in user received on WhatsApp (phase 7, user story WA.D1.OM.J1.A3): it links the
+phone at once if it has written to the organization's team number before, or once it first writes.
+"""
+type ConfirmWhatsAppLink {
+  waiting: Boolean!
+  link: WhatsAppLinkType!
 }
 """
 Save how the logged-in user wants to talk to one organization's number: menus and forms, or the
@@ -2429,6 +2488,11 @@ interface Node {
   "The ID of the object"
   id: ID!
 }
+"Which of an order's updates (decision 3); each value is its member's name (agents.md section 5.3b)."
+enum WhatsAppOrderStage {
+  RECEIVED
+  PAID
+}
 "How a conversation is driven (plan section 8.5)."
 enum ConversationMode {
   WHATSAPP_FORM
@@ -2445,6 +2509,20 @@ enum ConnectionMethod {
   SEED
   MANUAL
   EMBEDDED_SIGNUP
+}
+"""
+
+    Where a message template is in Meta's review (plan Step 4.7, user story WA.D3.OM.J2.A2), in this app's
+    own names; services/templates.py translates Meta's statuses as they come in.
+    https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates
+    
+"""
+enum TemplateStatus {
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  PAUSED
+  DISABLED
 }
 """
 
@@ -3054,6 +3132,16 @@ enum DjstripeChargeStatusChoices {
   "Succeeded"
   SUCCEEDED
 }
+"""
+
+    How a code proves the number (plan decision D20). Each value is its member's name (WhatsApp plan
+    Step 1.16, agents.md section 5.3b).
+    
+"""
+enum PhoneVerificationChannel {
+  WHATSAPP_INBOUND
+  WHATSAPP_TEMPLATE
+}
 "Enum for backup restore conflict strategies."
 enum ConflictStrategyEnum {
   SKIP
@@ -3154,9 +3242,19 @@ input SetWhatsAppStorefrontModeInput {
   accountId: ID!
   mode: ConversationMode!
 }
+input SendWhatsAppOrderUpdateAgainInput {
+  tenantId: ID!
+  checkoutId: ID!
+  stage: WhatsAppOrderStage!
+}
 input StartWhatsAppLinkInput {
   tenantId: ID!
   phoneNumber: String!
+}
+input ConfirmWhatsAppLinkInput {
+  tenantId: ID!
+  phoneNumber: String!
+  code: String!
 }
 input UpdateWhatsAppConversationModeInput {
   tenantId: ID!
@@ -3369,6 +3467,7 @@ input DeletePasskeyMutationInput {
   clientMutationId: String
 }
 input UpdateTenantMutationInput {
+  tenantId: String
   name: String!
   billingEmail: String
   id: ID!

@@ -6,6 +6,8 @@ for its WhatsApp customers (WhatsApp plan Step 2.2, phase 2 decisions 1 and 3).
 - browsing lists products for sale only, newest first; searching hides those not for sale
 - a product's variants are those for sale
 - carts: created with the customer's phone when known, lines added, read back, or gone
+- a cart's attributes, such as the WhatsApp checkout code (phase 4, decisions 2 and 21): set when it's
+  created, and on its cart page's link
 - a sold-out line (Step 2.8, findings 7 and 8): an add is judged by its own line, lines Shopify set to
   0 are taken out and named once, and a cart read back leaves them out
 - a store that must be reconnected, Shopify being busy, and Shopify refusing a cart change each raise
@@ -183,6 +185,7 @@ class TestTheRequest:
             storefront().list_products(shop, first=7)
 
 
+@pytest.mark.story("WA.D4.SC.J1.A1")
 class TestBrowsing:
     def test_products_for_sale_newest_first_as_plain_dicts(self, shop, shopify):
         shopify.reply({"products": {"nodes": [product_node()], "pageInfo": page_info(has_next_page=True)}})
@@ -227,6 +230,7 @@ class TestBrowsing:
         assert product["image_url"] is None
 
 
+@pytest.mark.story("WA.D4.SC.J1.A1")
 class TestSearching:
     def test_the_words_search_products_for_sale_only(self, shop, shopify):
         shopify.reply(
@@ -250,6 +254,7 @@ class TestSearching:
         assert "unavailableProducts: HIDE" in query
 
 
+@pytest.mark.story("WA.D4.SC.J1.A2")
 class TestAProduct:
     def test_its_variants_for_sale(self, shop, shopify):
         variants = [
@@ -275,6 +280,7 @@ class TestAProduct:
         assert storefront().get_product(shop, "gid://shopify/Product/1") is None
 
 
+@pytest.mark.story("WA.D4.SC.J1.A2")
 class TestCarts:
     def test_a_new_cart_carries_the_customers_phone(self, shop, shopify):
         shopify.reply({"cartCreate": {"cart": cart_node([cart_line(quantity=1)]), "userErrors": [], "warnings": []}})
@@ -299,6 +305,19 @@ class TestCarts:
 
         _, _, variables = sent(shopify)
         assert "buyerIdentity" not in variables["input"]
+
+    @pytest.mark.story("WA.D5.SC.J1.A1")
+    def test_a_new_cart_carries_the_attributes_given(self, shop, shopify):
+        # "Attributes set on a cart carry over to the resulting order after checkout" (phase 4,
+        # decision 2): https://shopify.dev/docs/api/storefront/latest/objects/Attribute
+        shopify.reply({"cartCreate": {"cart": cart_node([cart_line(quantity=1)]), "userErrors": [], "warnings": []}})
+
+        storefront().create_cart(
+            shop, "gid://shopify/ProductVariant/11", phone=None, attributes={"_whatsapp_checkout": "wachk_abc"}
+        )
+
+        _, _, variables = sent(shopify)
+        assert variables["input"]["attributes"] == [{"key": "_whatsapp_checkout", "value": "wachk_abc"}]
 
     def test_a_line_is_added_to_a_cart(self, shop, shopify):
         shopify.reply({"cartLinesAdd": {"cart": cart_node([cart_line()]), "userErrors": [], "warnings": []}})
@@ -364,6 +383,7 @@ def brand(square=None, logo=None):
     }
 
 
+@pytest.mark.story("WA.D4.SC.J1.A1")
 class TestTheStore:
     """The store's own name, for the WhatsApp welcome (WhatsApp plan Step 2.8, findings 4 and 12)."""
 
@@ -403,6 +423,7 @@ class TestTheStore:
         assert shopify.call_count == 1
 
 
+@pytest.mark.story("WA.D5.SC.J1.A1")
 class TestTheCartPage:
     """
     The shop's own cart page holding the chat cart's items (WhatsApp plan Step 2.8, finding 10): a
@@ -423,7 +444,24 @@ class TestTheCartPage:
 
         assert url == "https://demo.myshopify.com/cart/11:2,22:1?storefront=true"
 
+    def test_attributes_go_on_the_link_as_shopify_documents(self, shop):
+        # `attributes[key]=value`, which reached the order with storefront=true on a dev store
+        # (WhatsApp plan section 13, Experiment 4.3; phase 4, decision 21).
+        cart = {"lines": [{"variant_id": "gid://shopify/ProductVariant/11", "quantity": 2}]}
 
+        url = storefront().cart_page_url(shop, cart, attributes={"_whatsapp_checkout": "wachk_abc"})
+
+        assert url == "https://demo.myshopify.com/cart/11:2?storefront=true&attributes[_whatsapp_checkout]=wachk_abc"
+
+    def test_an_attributes_value_is_escaped(self, shop):
+        cart = {"lines": [{"variant_id": "gid://shopify/ProductVariant/11", "quantity": 1}]}
+
+        url = storefront().cart_page_url(shop, cart, attributes={"note": "a b&c"})
+
+        assert url == "https://demo.myshopify.com/cart/11:1?storefront=true&attributes[note]=a%20b%26c"
+
+
+@pytest.mark.story("WA.D4.SC.J1.A2")
 class TestASoldOutLine:
     """
     Finding 7 of Step 2.8: Shopify keeps a sold-out line in the cart at quantity 0 and repeats its

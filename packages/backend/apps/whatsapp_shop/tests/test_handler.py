@@ -1,7 +1,7 @@
 """
 Tests for apps/whatsapp_shop/menus.py's handler, before any product is shown: who an external
 number answers, the store customer it keeps, the mode and the main menu (WhatsApp plan Step 2.2,
-phase 2 decision 2, user stories 14, 21 and 25).
+phase 2 decision 2, user stories WA.D4.SC.J2.A1, WA.D4.SC.J1.A3 and WA.D3.OM.J1.A3).
 
 - a number with no store chosen, or whose store can't sell on WhatsApp any more, sends no reply; nor
   does one whose store is no longer its organization's (Step 2.8, finding 22)
@@ -57,9 +57,10 @@ def number(acme, shop):
     return selling_number(acme, shop)
 
 
+@pytest.mark.story("WA.D4.SC.J2.A1")
 class TestWhoIsAnswered:
     def test_a_number_with_no_store_chosen_sends_no_reply(self, acme):
-        # User story 25: its customers get no reply until a store is chosen.
+        # User story WA.D3.OM.J1.A3: its customers get no reply until a store is chosen.
         customer = customer_of(ExternalAccountFactory(tenant=acme))
 
         assert send(customer, "hi") == []
@@ -110,6 +111,7 @@ def welcome(name):
     )
 
 
+@pytest.mark.story("WA.D4.SC.J1.A3")
 class TestTheMainMenu:
     def test_it_welcomes_to_the_stores_own_name_and_offers_the_store(self, number, shop, the_stores_details):
         # Step 2.8, finding 12: the store's name in Shopify, not the number's WhatsApp business name.
@@ -201,6 +203,7 @@ class TestTheMainMenu:
         assert menu.titles[0] == "Browse products"
 
 
+@pytest.mark.story("WA.D4.SC.J1.A3")
 class TestHelp:
     def test_it_speaks_to_a_customer(self, number):
         [help_screen] = send(customer_of(number), "help")
@@ -210,6 +213,7 @@ class TestHelp:
         assert "unlink" not in help_screen.body
 
 
+@pytest.mark.story("WA.D3.OM.J1.A4")
 class TestTheMode:
     def test_menus_by_default(self, number):
         assert number.storefront_channel.conversation_mode == ConversationMode.WHATSAPP_FORM
@@ -225,6 +229,7 @@ class TestTheMode:
         assert assistant.call_args.args[-1] == "anything blue?"
 
 
+@pytest.mark.story("WA.D4.SC.J2.A1")
 class TestANumberServingBoth:
     """One number for the team and the customers (plan Step 2.7): anyone not linked on it is a customer."""
 

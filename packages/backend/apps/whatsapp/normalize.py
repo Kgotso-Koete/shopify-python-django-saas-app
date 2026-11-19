@@ -189,6 +189,13 @@ def _content(message: dict):
                 raise MalformedWebhook("A Flow reply's response_json is not valid JSON.") from None
             return MessageKind.FLOW_REPLY, "", "", response
 
+    if message_type == "button":
+        # A tap on a template's quick-reply button (WhatsApp plan Step 4.7, decision 30): its payload is the one
+        # set when the template was sent, and its text is the button's label.
+        # https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/button.md
+        button = message.get("button", {})
+        return MessageKind.BUTTON_REPLY, button.get("text", ""), button.get("payload", ""), {}
+
     return None, "", "", {}
 
 

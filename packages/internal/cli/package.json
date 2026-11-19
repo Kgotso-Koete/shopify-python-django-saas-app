@@ -1,6 +1,6 @@
 {
   "name": "@sb/cli",
-  "version": "7.3.0",
+  "version": "8.0.0",
   "description": "SaaS Boilerplate CLI",
   "author": "Patryk Ziemkowski pziemkowski@apptension.com",
   "bin": {
@@ -97,6 +97,7 @@
     "lint": "eslint .",
     "postpack": "shx rm -f oclif.manifest.json",
     "prepack": "npm run build && oclif manifest && oclif readme",
+    "test": "pnpm run build && node --test test/",
     "version": "oclif readme && git add README.md"
   },
   "engines": {

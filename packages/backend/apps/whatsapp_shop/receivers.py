@@ -1,5 +1,5 @@
 """
-Deleting store customers' data when Shopify asks (plan Step 2.6, phase 2 decision 4, user story 14):
+Deleting store customers' data when Shopify asks (plan Step 2.6, phase 2 decision 4, user story WA.D4.SC.J2.A1):
 receivers of apps.shopify's customer_redacted and shop_redacted, connected in apps.py.
 
 Deleting a contact deletes everything it holds: its messages, conversation, assistant history and

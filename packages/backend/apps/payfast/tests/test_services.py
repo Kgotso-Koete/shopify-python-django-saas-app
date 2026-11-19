@@ -146,12 +146,48 @@ class TestSubscriptionCheckout:
         # The return page polls this checkout's status, so it gets the id in the URL.
         assert fields["return_url"] == f"{RETURN_URL}?m={form.m_payment_id}"
         assert fields["cancel_url"] == CANCEL_URL
-        assert fields["email_address"] == owner.email
+        # The organization's email (WhatsApp plan, user story WA.D6.OM.J1.A2), as Stripe's customer has.
+        assert fields["email_address"] == tenant.email
 
     def test_free_or_unknown_plan_cannot_be_bought(self, tenant, owner):
         for plan in (FREE, "platinum_plan"):
             with pytest.raises(services.PayFastError):
                 subscription_checkout(tenant, owner, plan=plan)
+
+
+@pytest.mark.story("WA.D6.OM.J1.A2")
+class TestWhoIsBilled:
+    """
+    The organization pays, so PayFast bills the organization's email, never whoever pressed Pay (WhatsApp
+    plan, user story WA.D6.OM.J1.A2): its billing email, or its creator's when none is set, as upstream's
+    Tenant.email gives Stripe's customer and the trial and payment emails. PayFast also refuses a payment
+    from its own merchant, which a person paying as themselves could be.
+    """
+
+    def test_a_subscription_bills_the_organizations_billing_email(self, tenant, owner):
+        tenant.billing_email = "accounts@acme.example"
+        tenant.save()
+
+        assert subscription_checkout(tenant, owner).fields["email_address"] == "accounts@acme.example"
+
+    def test_a_donation_bills_the_organizations_billing_email(self, tenant, owner):
+        tenant.billing_email = "accounts@acme.example"
+        tenant.save()
+
+        form = services.create_donation_checkout(
+            tenant=tenant, user=owner, amount="100", return_url=RETURN_URL, cancel_url=CANCEL_URL
+        )
+
+        assert form.fields["email_address"] == "accounts@acme.example"
+
+    def test_without_a_billing_email_it_bills_the_organizations_creator_not_whoever_pays(self, tenant, owner):
+        tenant.billing_email = ""
+        tenant.save()
+
+        email = subscription_checkout(tenant, owner).fields["email_address"]
+
+        assert email == tenant.creator.email
+        assert email != owner.email
 
 
 class TestDonationCheckout:

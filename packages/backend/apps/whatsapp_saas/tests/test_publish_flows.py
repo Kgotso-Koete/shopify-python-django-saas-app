@@ -59,6 +59,7 @@ def publish():
     return out.getvalue()
 
 
+@pytest.mark.story("WA.D2.OM.J1.A3")
 class TestPublishing:
     def test_each_form_is_published_to_the_internal_numbers_account_and_its_id_stored(self, internal, meta):
         publish()
@@ -126,6 +127,7 @@ class TestPublishing:
         assert not WhatsAppFlow.objects.exists()
 
 
+@pytest.mark.story("WA.D7.OP.J1.A1")
 class TestWithoutMeta:
     def test_the_log_backend_stores_fake_ids_and_calls_nothing(self, internal, settings, mocker):
         settings.WHATSAPP_SEND_BACKEND = "LOG"
@@ -135,6 +137,21 @@ class TestWithoutMeta:
 
         post.assert_not_called()
         assert all(flow.flow_id.startswith("log-") for flow in WhatsAppFlow.objects.all())
+        assert WhatsAppFlow.objects.count() == len(SCREEN_NAMES)
+
+    def test_fake_ids_from_the_log_backend_are_published_for_real_on_meta(self, internal, settings, mocker):
+        # WhatsApp plan Step 4.6: a developer publishes on LOG, then switches to META. The fake ids never
+        # reached Meta, so every form must be published there, not reported up to date.
+        settings.WHATSAPP_SEND_BACKEND = "LOG"
+        publish()
+        settings.WHATSAPP_SEND_BACKEND = "META"
+        answers = iter(meta_response(200, {"id": f"90000000000{n:02d}", "success": True}) for n in range(20))
+        post = mocker.patch("apps.whatsapp.client.requests.post", side_effect=lambda *args, **kwargs: next(answers))
+
+        publish()
+
+        assert post.call_count == len(SCREEN_NAMES)
+        assert not any(flow.flow_id.startswith("log-") for flow in WhatsAppFlow.objects.all())
         assert WhatsAppFlow.objects.count() == len(SCREEN_NAMES)
 
     def test_without_an_internal_number_it_says_where_to_connect_one(self, settings):
@@ -147,6 +164,7 @@ class TestWithoutMeta:
         assert not WhatsAppFlow.objects.exists()
 
 
+@pytest.mark.story("WA.D2.OM.J1.A3")
 class TestOnConnecting:
     def test_the_handler_queues_publishing_for_the_new_number(self, internal, mocker):
         delay = mocker.patch.object(tasks.publish_forms, "delay")
@@ -172,6 +190,7 @@ class TestOnConnecting:
         assert not WhatsAppFlow.objects.exists()
 
 
+@pytest.mark.story("WA.D2.OM.J1.A3")
 class TestANumberServingBoth:
     """One number for the team and the customers (plan Step 2.7) is the team's number, so it gets the forms."""
 

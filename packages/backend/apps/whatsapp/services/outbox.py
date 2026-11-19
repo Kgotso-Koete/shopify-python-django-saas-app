@@ -24,6 +24,7 @@ from datetime import timedelta
 from functools import partial
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import connection, transaction
 from django.db.models import Min
 from django.utils import timezone
@@ -34,24 +35,35 @@ from ..models import WhatsAppContact, WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
-# A passing failure (a timeout, Meta's throughput or same-user pacing limits) is retried this many
-# times by the send task, each after a longer wait, before it counts as permanent.
-MAX_SEND_RETRIES = 5
+# A passing failure (a timeout, Meta's throughput or same-user pacing limits) is retried, each wait
+# longer, up to MAX_RETRY_DELAY_SECONDS.
 FIRST_RETRY_DELAY_SECONDS = 5
 MAX_RETRY_DELAY_SECONDS = 300
 # Strict mode waits this long at most for Meta's "sent" on the previous message: Meta's docs don't
 # promise a status for every message, and a queue must never stick forever.
 STRICT_MODE_MAX_WAIT_SECONDS = 30
-# The whatsapp_send_queued command (Step 1.4d) gives up on a message still failing for a passing
-# reason once it has been queued this long, so a queue never sticks forever without a worker either.
+# A message still failing for a passing reason once it has been queued this long fails, so a queue never
+# sticks forever. One rule since Step 4.7 (user story WA.D5.SY.J1.A1, decided 2026-11-08): the send task's
+# retries with a worker, and the send sweep without one (the whatsapp_send_queued command, Step 1.4d, or
+# the webhooks, sweep_if_due), so a Meta outage of up to an hour heals itself.
 QUEUED_MESSAGE_MAX_AGE_SECONDS = 60 * 60
+# Without a worker, the webhooks that already arrive run the send sweep, at most this often (decided
+# 2026-11-08: Render's free plan has no worker and no free cron). The cache holds when it last ran.
+SWEEP_EVERY_SECONDS = 5 * 60
+SWEEP_CACHE_KEY = "whatsapp:send-sweep"
 
 # The first half of the two-number advisory lock key (the contact id is the second), so these locks
 # can't collide with any other code's advisory locks. Any fixed number would do; 0x5741 is "WA".
 SEND_LOCK_NAMESPACE = 0x5741
 
-# A queued row's kind comes from the message's own type (builders.py makes only these three).
-KINDS_BY_TYPE = {"text": MessageKind.TEXT, "interactive": MessageKind.INTERACTIVE, "image": MessageKind.IMAGE}
+# A queued row's kind comes from the message's own type (builders.py makes only these).
+KINDS_BY_TYPE = {
+    "text": MessageKind.TEXT,
+    "interactive": MessageKind.INTERACTIVE,
+    "image": MessageKind.IMAGE,
+    "document": MessageKind.DOCUMENT,
+    "template": MessageKind.TEMPLATE,
+}
 
 
 class DrainResult(enum.StrEnum):
@@ -150,14 +162,35 @@ def drain_all() -> dict[str, int]:
         try:
             counts[outcome_counts[drain(contact_id)]] += 1
         except RetryableSendError as error:
-            head = _queued(contact_id).first()
-            cutoff = timezone.now() - timedelta(seconds=QUEUED_MESSAGE_MAX_AGE_SECONDS)
-            if head is not None and head.created_at <= cutoff:
+            if waited_too_long(contact_id):
                 give_up(contact_id, error)
                 counts["given_up"] += 1
             else:
                 counts["to_retry"] += 1
     return counts
+
+
+def waited_too_long(contact_id: int) -> bool:
+    """Whether the head of the contact's queue was queued QUEUED_MESSAGE_MAX_AGE_SECONDS ago or more."""
+    head = _queued(contact_id).first()
+    cutoff = timezone.now() - timedelta(seconds=QUEUED_MESSAGE_MAX_AGE_SECONDS)
+    return head is not None and head.created_at <= cutoff
+
+
+def sweep_if_due() -> None:
+    """
+    Without a Celery worker, run the send sweep (drain_all) at most once every SWEEP_EVERY_SECONDS: called
+    once their work is committed by the webhooks that already arrive, Meta's and Shopify's order webhooks
+    (user story WA.D5.SY.J1.A1, decided 2026-11-08), so a passing failure is retried even when no
+    customer writes again. With a worker, the send task does the retrying, so nothing runs here.
+    """
+    if not settings.CELERY_TASK_ALWAYS_EAGER:
+        return
+    # add() sets the key only if it isn't there, so one webhook in SWEEP_EVERY_SECONDS runs the sweep.
+    if not cache.add(SWEEP_CACHE_KEY, timezone.now().isoformat(), timeout=SWEEP_EVERY_SECONDS):
+        return
+    counts = drain_all()
+    logger.info("WhatsApp send sweep from a webhook: %s", counts)
 
 
 def give_up(contact_id: int, error: SendError) -> None:

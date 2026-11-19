@@ -12,7 +12,7 @@ import pytest
 from .utils import read_settings
 
 # The root conftest.py's autouse fixtures need the database, so these tests are marked to allow it.
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D6.OP.J1.A1")]
 
 
 class TestTheSetting:

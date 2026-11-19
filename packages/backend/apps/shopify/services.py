@@ -198,6 +198,25 @@ def handle_customers_redact(shop_domain: str, payload: dict) -> None:
     signals.customer_redacted.send(sender=ShopifyShop, shop=shop, customer=payload.get("customer") or {})
 
 
+def handle_orders_create(shop_domain: str, payload: dict) -> None:
+    """
+    orders/create: sends order_created with the short order the view kept (payloads.py), for the apps
+    that act on orders, such as apps.whatsapp_shop (WhatsApp plan Step 4.3b, decision 5).
+    """
+    shop = ShopifyShop.objects.filter(shop_domain=shop_domain).first()
+    if shop is None:
+        return
+    signals.order_created.send(sender=ShopifyShop, shop=shop, order=payload)
+
+
+def handle_orders_paid(shop_domain: str, payload: dict) -> None:
+    """orders/paid: sends order_paid, as handle_orders_create sends order_created."""
+    shop = ShopifyShop.objects.filter(shop_domain=shop_domain).first()
+    if shop is None:
+        return
+    signals.order_paid.send(sender=ShopifyShop, shop=shop, order=payload)
+
+
 def handle_customers_data_request(shop_domain: str, payload: dict) -> None:
     """
     customers/data_request: this slice stores no customer data, so we just record

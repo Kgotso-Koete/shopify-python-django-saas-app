@@ -23,7 +23,7 @@ import pytest
 from ..flows import FLOWS_DIR, SCREEN_NAMES
 
 # The root conftest.py registers fixtures whose autouse parts need the database.
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D2.OM.J1.A3")]
 
 FLOW_FILES = sorted(Path(FLOWS_DIR).glob("*.json"))
 DATA_REFERENCE = re.compile(r"\$\{data\.([a-z_]+)\}")

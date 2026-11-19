@@ -31,6 +31,8 @@ pytest_plugins = [
     "apps.multitenancy.tests.fixtures",
     "apps.sso.tests.fixtures",
     "apps.payfast.tests.fixtures",
+    # Fork addition (WhatsApp plan, 2026-11-07): each user story's passing tests, from @pytest.mark.story.
+    "tests.user_stories",
 ]
 
 
@@ -76,6 +78,19 @@ def plans_dont_decide(settings):
     development, and every test organization, on the free plan, would get no WhatsApp replies.
     """
     settings.PLAN_ENTITLEMENTS_ENABLED = False
+
+
+@pytest.fixture(autouse=True)
+def whatsapp_reaches_no_one(settings):
+    """
+    Fork addition (WhatsApp plan phase 4, Step 4.3d-2): no test sends anything to Meta unless it asks for
+    the Meta backend itself and fakes `requests.post`. Without it, a test run with `docker compose run`
+    takes WHATSAPP_SEND_BACKEND from a developer's local .env, where it may be META for real development;
+    on 2026-11-05 two tests reached Meta's real API that way (with a test factory's fake token).
+    """
+    from apps.whatsapp.constants import SendBackend
+
+    settings.WHATSAPP_SEND_BACKEND = SendBackend.LOG
 
 
 @pytest.fixture

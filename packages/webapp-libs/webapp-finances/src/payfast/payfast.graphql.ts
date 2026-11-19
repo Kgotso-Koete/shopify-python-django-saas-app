@@ -106,6 +106,43 @@ export const payfastCreateDonationCheckoutMutation = gql(/* GraphQL */ `
   }
 `);
 
+// The organization's invoices (WhatsApp plan phase 4, Step 4.5a): each matched to its payment's row in the
+// transaction history by paymentId, for billing.view. The PDF itself is fetched from /api/invoicing/<id>/pdf/.
+export const payfastInvoicesQuery = gql(/* GraphQL */ `
+  query payfastInvoicesQuery($tenantId: ID!) {
+    invoices(tenantId: $tenantId) {
+      id
+      number
+      paymentId
+    }
+  }
+`);
+
+// The organization's billing email (WhatsApp plan, user story WA.D6.OM.J1.A1), which PayFast bills: empty means
+// the organization's creator's. Any member can read it; the web app's current-tenant query doesn't select it.
+export const payfastTenantBillingEmailQuery = gql(/* GraphQL */ `
+  query payfastTenantBillingEmailQuery($id: ID!) {
+    tenant(id: $id) {
+      id
+      billingEmail
+    }
+  }
+`);
+
+// Saves it through upstream's updateTenant mutation (org.settings.edit), which needs the name too; asking for
+// billingEmail back lets Apollo's cache update the card above.
+export const payfastUpdateBillingEmailMutation = gql(/* GraphQL */ `
+  mutation payfastUpdateBillingEmailMutation($input: UpdateTenantMutationInput!) {
+    updateTenant(input: $input) {
+      tenant {
+        id
+        name
+        billingEmail
+      }
+    }
+  }
+`);
+
 export const payfastCancelSubscriptionMutation = gql(/* GraphQL */ `
   mutation payfastCancelSubscriptionMutation($input: PayFastCancelSubscriptionMutationInput!) {
     payfastCancelSubscription(input: $input) {

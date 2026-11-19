@@ -5,6 +5,7 @@ import { exec as _exec } from 'node:child_process';
 import { initConfig } from '../config/init';
 import { runCommand, CommandError } from '../lib/runCommand';
 import { assertDockerIsRunning, dockerHubLogin } from '../lib/docker';
+import { composeServices } from '../lib/composeServices';
 import { BaseCommand } from '../baseCommand';
 import {
   StepRenderer,
@@ -147,6 +148,16 @@ export default class Up extends BaseCommand<typeof Up> {
 
     // Initialize config (this also validates some environment things)
     await initConfig(this, { requireLocalEnvStage: true });
+
+    // Fork addition (WhatsApp plan Step 4.6): plus the ngrok tunnel when NGROK_DOMAIN is set. Checked
+    // before anything is built, so a missing ngrok setting stops here with what to fix.
+    let services: string[] = [];
+    try {
+      services = composeServices(process.env);
+    } catch (error) {
+      this.error((error as Error).message);
+    }
+
     await assertDockerIsRunning();
     await dockerHubLogin();
 
@@ -197,7 +208,13 @@ export default class Up extends BaseCommand<typeof Up> {
 
       // Step 4: Start services
       this.renderer.startStep('Starting Docker services');
-      await this.runStepCommand('docker', ['compose', 'up', '--force-recreate', '-d', 'backend', 'workers', 'celery_default', 'celery_beat', 'mcp-server']);
+      await this.runStepCommand('docker', [
+        'compose',
+        'up',
+        '--force-recreate',
+        '-d',
+        ...services,
+      ]);
       this.renderer.completeStep();
 
       // Step 5: Wait for backend

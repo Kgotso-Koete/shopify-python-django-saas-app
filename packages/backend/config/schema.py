@@ -18,6 +18,7 @@ from apps.shopify import schema as shopify_schema
 from apps.whatsapp import schema as whatsapp_schema
 from apps.whatsapp_shop import schema as whatsapp_shop_schema
 from apps.entitlements import schema as entitlements_schema
+from apps.invoicing import schema as invoicing_schema
 from common.graphql.utils import graphql_query, graphql_mutation, graphql_subscription
 
 schema = graphene.Schema(
@@ -37,6 +38,7 @@ schema = graphene.Schema(
             whatsapp_schema.Query,
             whatsapp_shop_schema.Query,
             entitlements_schema.Query,
+            invoicing_schema.Query,
         ]
     ),
     mutation=graphql_mutation(

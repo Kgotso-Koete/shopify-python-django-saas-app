@@ -1,5 +1,5 @@
 """
-Tests for apps/whatsapp/permissions.py (plan decision D16, user story 11): what whatsapp.view and
+Tests for apps/whatsapp/permissions.py (plan decision D16, user story WA.D3.OM.J1.A1): what whatsapp.view and
 whatsapp.manage each system role gets, and the data migration that grants them to existing
 organizations. Modelled on apps/shopify/tests/test_permissions.py.
 

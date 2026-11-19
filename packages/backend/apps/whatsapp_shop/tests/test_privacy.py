@@ -1,6 +1,6 @@
 """
 Tests for deleting store customers' data when Shopify asks (WhatsApp plan Step 2.6, phase 2 decision
-4, user story 14): apps.whatsapp_shop receives apps.shopify's customer_redacted and shop_redacted.
+4, user story WA.D4.SC.J2.A1): apps.whatsapp_shop receives apps.shopify's customer_redacted and shop_redacted.
 
 - customers/redact deletes the store customer whose WhatsApp number is Shopify's customer's phone,
   on the store's numbers: their contact, messages, conversation and store customer
@@ -25,7 +25,7 @@ from apps.whatsapp.tests.factories import ContactFactory, InternalAccountFactory
 from ..models import StoreCustomer, StorefrontChannel
 from .chat import selling_number, store
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D4.SC.J2.A1")]
 
 
 @pytest.fixture

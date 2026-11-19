@@ -33,11 +33,14 @@
 
 ---
 
-> ### 🤖 AI AGENTS: READ [`docs/superpowers/agents.md`](docs/superpowers/agents.md) FIRST
+> ### 🤖 AI AGENTS: READ [`agents.md`](agents.md) AND [`humans.md`](humans.md) FIRST
 >
 > **Any AI coding agent working in this repository must read
-> [`docs/superpowers/agents.md`](docs/superpowers/agents.md) before doing anything else, every
-> session.** It holds the standing rules for how the human maintainer and AI agents work here:
+> [`agents.md`](agents.md) and [`humans.md`](humans.md) before
+> doing anything else, at the start of every session and whenever the human maintainer asks for
+> a conversation to be resumed.** [`humans.md`](humans.md) is the human maintainer's own
+> account of how they learn, and why their attention, not an agent's speed, is the true cost of
+> the work. It holds the standing rules for how the human maintainer and AI agents work here:
 > who runs commands, strict test-driven RED/GREEN cycles, additive changes only, how commits and
 > plans are done, and more. It is the only source of truth for those rules, and it wins over an
 > agent's own defaults. The concrete values for this repository (branch, CI, verification
@@ -238,6 +241,38 @@ After starting the application, you'll have these services available:
 > 2. Check [http://localhost:1080](http://localhost:1080) for the verification email
 > 3. Log in to the Admin Panel at [http://admin.localhost:5001](http://admin.localhost:5001) using credentials from your `.env` file
 
+### Shopify app configuration (Shopify CLI)
+
+Fork addition. The Shopify app's scopes, webhook subscriptions and URLs live in a config file the Shopify CLI deploys,
+so they're kept as code rather than clicked in the Dev Dashboard. The CLI, `@shopify/cli`, is a pinned dev dependency in
+the root `package.json`, so `pnpm install` brings it: run it with `pnpm exec shopify` from the repository root, on
+Node 20 (agents.md section 5.3c). The file holds your app's client id and tunnel address, so git ignores it
+(`packages/backend/apps/shopify/shopify.app*.toml`); the committed template is `shopify.app.toml.example` beside it.
+The steps, with the reasons, are in the [Shopify walkthrough, section 13](docs/superpowers/specs/2026-10-12-shopify-walkthrough.md#13-configuring-the-shopify-app-with-the-shopify-cli).
+
+1. **Pull the app's live configuration** into `shopify.app.<app name>.toml`. Log in at https://accounts.shopify.com
+   first; the CLI then shows a code to enter at https://accounts.shopify.com/activate. Choose your organization,
+   **No, connect it to an existing app**, your app, and keep the file name it offers.
+
+   ```shell
+   nvm use 20
+   pnpm exec shopify app config link --path packages/backend/apps/shopify
+   ```
+
+2. **Edit the file:** scopes under `[access_scopes]`, subscriptions under `[webhooks]`. Every webhook `uri` ends in
+   `/api/shopify/webhooks/`, with the trailing slash.
+3. **Deploy it,** which creates and releases a new app version:
+
+   ```shell
+   pnpm exec shopify app deploy --path packages/backend/apps/shopify
+   ```
+
+4. **Match the backend:** `SHOPIFY_SCOPES` in `packages/backend/.env` lists the same scopes; restart the stack; and
+   reconnect each store on the web app's **Shopify** page, so it grants the new scopes.
+
+One setting stays in the Dev Dashboard (https://dev.shopify.com/dashboard), since the config file has none for it:
+the app's **protected customer data** level, which order webhooks need (Level 1).
+
 ### Adding a backend package
 
 > **Fork addition.** Not part of the original SaaS Boilerplate's documentation, which doesn't cover adding a backend package. Written for this fork on 2026-11-01, when ReportLab was added.
@@ -252,7 +287,7 @@ The backend's Python packages live in its Docker image: the image installs exact
    cd ../..
    ```
 
-2. Pin it exactly: in `packages/backend/pyproject.toml`, change the line `uv` added, such as `"<package>>=1.2.3"`, to `"<package>==1.2.3"` (every new dependency is pinned exactly, `docs/superpowers/agents.md` section 5.3). Then update the lock to match:
+2. Pin it exactly: in `packages/backend/pyproject.toml`, change the line `uv` added, such as `"<package>>=1.2.3"`, to `"<package>==1.2.3"` (every new dependency is pinned exactly, `agents.md` section 5.3). Then update the lock to match:
 
    ```shell
    cd packages/backend
@@ -397,7 +432,7 @@ git checkout -b feature/<short-description>
 ```
 
 **2. Update the changelog and bump the version**
-Add an entry for the new version at the top of `CHANGELOG.md` (major for a breaking change, minor for a new feature, patch for fixes only). Then set that version in every `package.json` listed in `.versionrc.js`. `--skip.changelog` keeps your entry, `--skip.tag` leaves tagging until after the merge (step 6), and `--skip.commit` lets step 3 commit everything together.
+Add an entry for the new version at the top of `CHANGELOG.md` (major for a breaking change, minor for a new feature, patch for fixes only). Then set that version in every `package.json` listed in `.versionrc.js`. `--skip.changelog` keeps your entry, `--skip.tag` leaves tagging until after the merge (step 7), and `--skip.commit` lets step 3 commit everything together.
 
 ```shell
 npx standard-version --release-as X.Y.Z --skip.changelog --skip.tag --skip.commit
@@ -412,15 +447,22 @@ git commit -m "feat(scope): brief description (vX.Y.Z)"
 
 Common prefixes: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`
 
-**4. Create a Pull Request**
+**4. Push the branch to GitHub**
+Send the branch to GitHub explicitly, rather than leaving it to `gh pr create`, which otherwise asks where to push. `-u` makes the local branch track the one on GitHub, so later fix commits on it need only `git push`.
+
+```shell
+git push -u origin feature/<short-description>
+```
+
+**5. Create a Pull Request**
 Use the GitHub CLI to open a PR for review.
 
 ```shell
 gh pr create --title "feat(scope): brief description" --body "Detailed explanation of changes."
 ```
 
-**5. Wait for the checks, then merge and delete the branch**
-Watch the PR's GitHub Actions checks in the terminal until they finish: `--watch` refreshes the list until every check is done, then prints the totals (`0 failing, N successful, …`). Use the PR number from step 4.
+**6. Wait for the checks, then merge and delete the branch**
+Watch the PR's GitHub Actions checks in the terminal until they finish: `--watch` refreshes the list until every check is done, then prints the totals (`0 failing, N successful, …`). Use the PR number from step 5.
 
 ```shell
 gh pr checks <PR number> --watch
@@ -432,7 +474,7 @@ Once every check has passed and the PR is approved, squash and merge it, and aut
 gh pr merge --squash --delete-branch
 ```
 
-**6. Tag the release**
+**7. Tag the release**
 Switch back to `master`, pull the merge commit, tag it with the version from step 2, and push the tag.
 
 ```shell

@@ -1,6 +1,7 @@
 """
 Tests for apps/whatsapp/services/router.py and registry.py: deciding what every inbound message gets
-as a reply (plan Step 1.8a, section 8.5, decision D1, user stories 2, 3 and 21).
+as a reply (plan Step 1.8a, section 8.5, decision D1, user stories WA.D1.OM.J1.A1, WA.D2.OM.J1.A1,
+WA.D2.OM.J3.A1 and WA.D4.SC.J1.A3).
 
 The channel stays generic: what an organization's team can do is a handler that apps.whatsapp_saas
 registers for internal communications numbers (D1), so these tests register a fake one. The router's
@@ -142,6 +143,7 @@ def press_the_button_shown(contact):
     return choice_id
 
 
+@pytest.mark.story("WA.D1.OM.J1.A1")
 class TestUnlinkedSenders:
     def test_an_unlinked_sender_gets_no_reply(self, handler):
         stranger = ContactFactory(account=InternalAccountFactory())
@@ -169,6 +171,7 @@ class TestUnlinkedSenders:
         assert "didn't work" in reply
 
 
+@pytest.mark.story("WA.D1.OM.J2.A1")
 class TestTheOrganization:
     def test_a_linked_member_works_in_the_numbers_organization(self, linked, handler):
         receive(linked, "hi")
@@ -177,6 +180,7 @@ class TestTheOrganization:
         assert WhatsAppConversation.objects.get(contact=linked).tenant == linked.account.tenant
 
 
+@pytest.mark.story("WA.D2.OM.J1.A1")
 class TestFreeText:
     def test_in_menu_mode_any_text_gets_the_main_menu(self, linked, handler):
         assert receive(linked, "hello") == ["MAIN MENU"]
@@ -200,6 +204,7 @@ class TestFreeText:
         assert receive(linked, "hi") == ["MAIN MENU"]
 
 
+@pytest.mark.story("WA.D2.OM.J3.A1")
 class TestButtons:
     def test_a_pressed_button_resolves_to_what_it_stands_for(self, linked, handler):
         receive(linked, "hi")
@@ -248,6 +253,7 @@ class TestButtons:
 
 
 class TestEscapeWords:
+    @pytest.mark.story("WA.D2.OM.J3.A1")
     @pytest.mark.parametrize("mode", [ConversationMode.WHATSAPP_FORM, ConversationMode.AGENTIC])
     @pytest.mark.parametrize("word", ["menu", " MENU ", "Menu"])
     def test_menu_shows_the_main_menu_in_both_modes(self, linked, handler, mode, word):
@@ -256,12 +262,14 @@ class TestEscapeWords:
 
         assert receive(linked, word) == ["MAIN MENU"]
 
+    @pytest.mark.story("WA.D2.OM.J3.A1")
     def test_help_explains_the_escape_words(self, linked, handler):
         [reply] = receive(linked, "help")
 
         for word in ("menu", "mode ai", "mode menu", "cancel", "unlink"):
             assert word in reply
 
+    @pytest.mark.story("WA.D2.OM.J1.A1")
     def test_mode_ai_and_mode_menu_switch_the_saved_mode(self, linked, handler):
         receive(linked, "mode ai")
         linked.identity.refresh_from_db()
@@ -271,6 +279,7 @@ class TestEscapeWords:
         linked.identity.refresh_from_db()
         assert linked.identity.conversation_mode == ConversationMode.WHATSAPP_FORM
 
+    @pytest.mark.story("WA.D2.OM.J1.A1")
     def test_switching_mode_changes_only_this_numbers_link(self, linked, handler):
         user = linked.identity.user
         elsewhere = ContactFactory(account=InternalAccountFactory(), wa_id=linked.wa_id)
@@ -281,6 +290,7 @@ class TestEscapeWords:
         elsewhere.identity.refresh_from_db()
         assert elsewhere.identity.conversation_mode == ""
 
+    @pytest.mark.story("WA.D2.OM.J1.A1")
     def test_switching_mode_discards_a_half_finished_screen(self, linked, handler):
         receive(linked, "hi")
         old_choice = press_the_button_shown(linked)
@@ -291,6 +301,7 @@ class TestEscapeWords:
             "That menu has expired"
         )
 
+    @pytest.mark.story("WA.D2.OM.J3.A1")
     def test_cancel_discards_the_screen_and_shows_the_main_menu(self, linked, handler):
         receive(linked, "hi")
         old_choice = press_the_button_shown(linked)
@@ -300,6 +311,7 @@ class TestEscapeWords:
             "That menu has expired"
         )
 
+    @pytest.mark.story("WA.D2.OM.J1.A1")
     @pytest.mark.parametrize("word", ["cancel", "mode menu", "mode ai"])
     def test_cancel_and_switching_mode_forget_the_assistants_history(self, linked, handler, word):
         # Chosen on 2026-10-20: kept until cancel, a mode switch or unlink.
@@ -310,6 +322,7 @@ class TestEscapeWords:
 
         assert not WhatsAppAgentItem.objects.exists()
 
+    @pytest.mark.story("WA.D2.OM.J1.A1")
     def test_an_expired_conversation_keeps_the_assistants_history(self, linked, handler):
         receive(linked, "hi")
         history.append(WhatsAppConversation.objects.get(contact=linked), {"role": "user", "content": "hi"})
@@ -321,6 +334,7 @@ class TestEscapeWords:
 
         assert WhatsAppAgentItem.objects.count() == 1
 
+    @pytest.mark.story("WA.D1.OM.J1.A2")
     def test_unlink_removes_the_link_on_this_number_only(self, linked, handler):
         elsewhere = ContactFactory(account=InternalAccountFactory(), wa_id=linked.wa_id)
         link_member(elsewhere, linked.identity.user)
@@ -330,6 +344,7 @@ class TestEscapeWords:
         assert "unlinked" in reply.lower()
         assert list(WhatsAppIdentity.objects.all()) == [elsewhere.identity]
 
+    @pytest.mark.story("WA.D1.OM.J1.A2")
     def test_unlink_in_chat_forgets_the_conversation(self, linked, handler):
         # The router saves its copy of the conversation last, so it must forget as unlink does.
         receive(linked, "hi")
@@ -343,6 +358,7 @@ class TestEscapeWords:
         assert not WhatsAppAgentItem.objects.exists()
 
 
+@pytest.mark.story("WA.D2.OM.J3.A1")
 class TestTypedAnswers:
     """A handler can ask for one typed answer, e.g. a search's words, which no button can carry."""
 
@@ -474,13 +490,14 @@ def customer(store_handler):
     return ContactFactory(account=ExternalAccountFactory())
 
 
+@pytest.mark.story("WA.D4.SC.J2.A1")
 class TestExternalNumbers:
     def test_anyone_gets_the_handlers_main_menu_without_linking(self, customer, store_handler):
         assert receive(customer, "hi") == ["MAIN MENU"]
         assert store_handler.organizations == [customer.account.tenant]
 
     def test_a_number_its_handler_wont_answer_gets_no_reply_at_all(self, customer, store_handler):
-        # E.g. no store chosen yet (user story 25): not even "menu expired" or help.
+        # E.g. no store chosen yet (user story WA.D3.OM.J1.A3): not even "menu expired" or help.
         store_handler.answering = False
 
         assert receive(customer, "hi") == []

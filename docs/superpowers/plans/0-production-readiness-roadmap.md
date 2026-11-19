@@ -41,6 +41,29 @@
       decision C (6.1.2) only works locally. Fix with the convention the products page uses:
       `GraphQlValidationError({"non_field_errors": [message]}, code=…)`, and read the code on the page.
       Found 2026-10-12, Shopify plan step 11, cycle 4.
+- [ ] **The WhatsApp message templates' names can clash with another app's on the same WhatsApp
+      Business account.** This service submits `shop_order_received`, `shop_order_paid` and
+      `team_link_code` to each business's own account, which other apps the business uses (another
+      store integration, a CRM) can also submit to. If one of them already has a template by the same
+      name, Meta refuses ours, or one app edits the other's template and changes its wording. Fix: give
+      every name a prefix unique to this service, such as a `WHATSAPP_TEMPLATE_PREFIX` setting with a
+      default naming the service, applied in `apps/whatsapp/services/templates.py`, and submit the
+      renamed templates (each goes through Meta's review again; the old ones are deleted from the
+      account). Raised by the maintainer on 2026-11-09, during the WhatsApp plan's Step 4.7 human checks.
+- [ ] **The Shopify app must pass Shopify's App Store review before real merchants can install it.** On
+      2026-11-10 the maintainer chose public distribution for the app, since many unrelated businesses connect
+      their stores (custom distribution locks an app to one business, and the choice can't be undone). Order
+      webhooks (`orders/create`, `orders/paid`) need protected customer data approval: Shopify refused to
+      release a version subscribing to them until it was requested. Development stores need no review; real
+      merchants' stores need the app reviewed, listed or not, with its data protection details, privacy
+      webhooks and protected customer data use justified. Found during the WhatsApp plan's Step 4.7 human
+      checks. https://shopify.dev/docs/apps/launch/protected-customer-data
+  - **Shopify's data protection questions, answered "No" today** (2026-11-10, when Shopify refused Level 2
+    for the order's status page; the WhatsApp plan's decision 30 works at Level 1 instead). Each needs to
+    be really true before the review: a notice telling merchants what data the app uses and why; privacy
+    and data protection agreements with merchants; retention periods for the data the app keeps; a data
+    loss prevention strategy; logging of staff access to personal data; and a security incident response
+    policy. Also to confirm with the hosting provider: the database and its backups encrypted at rest.
 - [x] **`packages/backend/apps/shopify/shopify.app.toml` held a personal tunnel address and the app's
       client id, and git tracked it** (committed in 6.1.0). Untracked and added to `.gitignore` in 6.2.0;
       the working copy stays on disk for the Shopify CLI. Found 2026-10-15, Shopify plan step 11.

@@ -1,5 +1,5 @@
 // Tests for the organization's WhatsApp page, in the sidebar (WhatsApp plan Steps 1.6, 1.17 and 1.19,
-// user story 11). Since Step 2.7 (decision 4) it has one form, asking who texts the number (the team,
+// user story WA.D3.OM.J1.A1). Since Step 2.7 (decision 4) it has one form, asking who texts the number (the team,
 // the customers, or both), and one list of every number with whom it serves, which an admin can change.
 //
 // Kind of test: integration (agents.md section 2.5). Why: the page renders with the real Apollo hooks,
@@ -18,6 +18,7 @@ import userEvent from '@testing-library/user-event';
 import { GraphQLError } from 'graphql';
 
 import { RoutesConfig } from '../../../config/routes';
+import { whatsAppFailedOrderUpdatesQuery } from '../../../graphql/failedOrderUpdates.graphql';
 import {
   changeWhatsAppNumberPurposeMutation,
   connectWhatsAppAccountMutation,
@@ -58,7 +59,18 @@ type AccountOverrides = Partial<{
   subscribedAt: string | null;
   lastMessageReceivedAt: string | null;
   metaAppId: string | null;
+  templates: ReturnType<typeof template>[];
 }>;
+
+// One message template on the number's WhatsApp Business account, with Meta's review status (Step 4.7, user
+// story WA.D3.OM.J2.A2), as apps/whatsapp/schema.py lists it.
+const template = (name: string, status: string, rejectedReason = '') => ({
+  name,
+  status,
+  rejectedReason,
+  statusCheckedAt: '2026-11-08T09:00:00+00:00',
+  __typename: 'WhatsAppTemplateType',
+});
 
 const account = (overrides: AccountOverrides = {}) => ({
   id: 'account-1',
@@ -74,6 +86,8 @@ const account = (overrides: AccountOverrides = {}) => ({
   lastMessageReceivedAt: null,
   // This service's Meta app (Step 2.9).
   metaAppId: null,
+  // No template submitted yet (Step 4.7).
+  templates: [] as ReturnType<typeof template>[],
   __typename: 'WhatsAppAccountType',
   ...overrides,
 });
@@ -178,6 +192,15 @@ type StoreOptions = {
 
 // By default no number has a store yet, the organization has one store that can sell on WhatsApp, no
 // Meta app of its own, and its plan includes WhatsApp.
+// No order update failed (Step 4.7, user story WA.D3.OM.J2.A3; its card is tested in failedUpdatesCard.component.spec.tsx).
+const noFailedUpdatesMock = () => ({
+  ...composeMockedQueryResult(whatsAppFailedOrderUpdatesQuery, {
+    variables: { tenantId },
+    data: { whatsAppFailedOrderUpdates: [] },
+  }),
+  maxUsageCount: Number.POSITIVE_INFINITY,
+});
+
 const renderTab = (
   permissions: string[],
   mocks: MockedResponse[],
@@ -192,6 +215,7 @@ const renderTab = (
       eligibleStoresMock(eligible, { reuse: true }),
       metaAppsMock(metaApps, { reuse: true }),
       { ...featuresMock(features), maxUsageCount: Number.POSITIVE_INFINITY },
+      noFailedUpdatesMock(),
     ],
     routerProps: createMockRouterProps(RoutesConfig.whatsapp, { tenantId }),
   });
@@ -224,8 +248,88 @@ const fillConnectForm = async (user: ReturnType<typeof userEvent.setup>, purpose
 const connectButton = async () => within(await connectForm()).findByRole('button', { name: /connect number/i });
 
 describe('WhatsAppSettings: Component', () => {
+  // Step 4.7: whether Meta approved each number's order template, so a business knows before a late order
+  // update fails. The status comes from Meta's API (decided 2026-11-08); the backend asks when the page opens.
+  // Since decision 30 (2026-11-11) each number has one, shop_order_update, in place of shop_order_paid and
+  // shop_order_received, which publishing deletes.
+  describe('WA.D3.OM.J2.A2 order templates', () => {
+    const withTemplates = (templates: ReturnType<typeof template>[]) =>
+      renderTab(VIEW_ONLY, [accountsMock([account({ id: 'account-1', templates })])]);
+
+    it("lists the number's order template with Meta's status", async () => {
+      withTemplates([template('shop_order_update', 'APPROVED')]);
+
+      const templates = await screen.findByTestId('whatsapp-templates-account-1');
+      expect(within(templates).getByTestId('whatsapp-template-shop_order_update')).toHaveTextContent(
+        /^order update: approved$/i
+      );
+    });
+
+    it("says late order updates fail while it isn't approved yet", async () => {
+      withTemplates([template('shop_order_update', 'IN_REVIEW')]);
+
+      expect(await screen.findByTestId('whatsapp-templates-account-1')).toHaveTextContent(
+        /order updates sent more than 24 hours after a customer's last message fail until meta approves/i
+      );
+    });
+
+    it("shows a rejection with Meta's reason in plain words, and that the operator has been told", async () => {
+      withTemplates([template('shop_order_update', 'REJECTED', 'INVALID_FORMAT')]);
+
+      const templates = await screen.findByTestId('whatsapp-templates-account-1');
+      expect(within(templates).getByTestId('whatsapp-template-shop_order_update')).toHaveTextContent(
+        /^order update: rejected$/i
+      );
+      expect(templates).toHaveTextContent(/meta rejected order update: invalid format/i);
+      expect(templates).toHaveTextContent(/the operator has been told/i);
+    });
+
+    it("says nothing fails once it's approved", async () => {
+      withTemplates([template('shop_order_update', 'APPROVED')]);
+
+      const templates = await screen.findByTestId('whatsapp-templates-account-1');
+      expect(templates).not.toHaveTextContent(/fail/i);
+      expect(templates).not.toHaveTextContent(/rejected/i);
+    });
+
+    it('shows nothing about templates for a number with none', async () => {
+      withTemplates([]);
+
+      expect(await screen.findByTestId('whatsapp-account-account-1')).toBeInTheDocument();
+      expect(screen.queryByTestId('whatsapp-templates-account-1')).not.toBeInTheDocument();
+    });
+  });
+
+  // Step 4.7: the order updates WhatsApp couldn't deliver, on the page (the card's own tests are in
+  // failedUpdatesCard.component.spec.tsx).
+  it('WA.D3.OM.J2.A3 the page shows the order updates that failed', async () => {
+    renderTab(VIEW_ONLY, [
+      accountsMock([account()]),
+      composeMockedQueryResult(whatsAppFailedOrderUpdatesQuery, {
+        variables: { tenantId },
+        data: {
+          whatsAppFailedOrderUpdates: [
+            {
+              checkoutId: '41',
+              stage: 'PAID',
+              accountId: 'account-1',
+              number: '27000000801',
+              customer: 'Thandi',
+              failedAt: '2026-11-08T09:00:00+00:00',
+              errorCode: 190,
+              reason: "Meta rejected the number's access token: it expired or was revoked.",
+              __typename: 'WhatsAppFailedOrderUpdateType',
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(await screen.findByTestId('whatsapp-failed-updates')).toHaveTextContent(/thandi/i);
+  });
+
   // Step 1.19: its own page, reached from the sidebar, so it carries its own heading.
-  it('is a page of its own, with a heading saying what it is for', async () => {
+  it('WA.D3.OM.J1.A1 is a page of its own, with a heading saying what it is for', async () => {
     renderTab(VIEW_ONLY, [accountsMock([])]);
 
     expect(await screen.findByRole('heading', { level: 1, name: /^whatsapp$/i })).toBeInTheDocument();
@@ -233,7 +337,7 @@ describe('WhatsAppSettings: Component', () => {
   });
 
   // Step 2.7: one number for both, or two numbers kept apart (decisions 1 and 4).
-  describe('the two setups', () => {
+  describe('WA.D3.OM.J1.A1 the two setups', () => {
     it('explains one number for both and two numbers kept apart, with examples', async () => {
       renderTab(MANAGE, [accountsMock([])]);
 
@@ -358,7 +462,7 @@ describe('WhatsAppSettings: Component', () => {
   });
 
   // Step 2.7, decisions 2 and 3: an admin changes whom a connected number serves, after confirming.
-  describe('changing whom a number serves', () => {
+  describe('WA.D3.OM.J1.A1 changing whom a number serves', () => {
     it('changes the team number to serve customers too, after the admin confirms', async () => {
       const user = userEvent.setup();
       const changeMock = composeMockedQueryResult(changeWhatsAppNumberPurposeMutation, {
@@ -400,7 +504,7 @@ describe('WhatsAppSettings: Component', () => {
     });
   });
 
-  describe('the numbers', () => {
+  describe('WA.D3.OM.J1.A1 the numbers', () => {
     it('lists each number with the proofs it has passed', async () => {
       renderTab(VIEW_ONLY, [
         accountsMock([
@@ -452,7 +556,7 @@ describe('WhatsAppSettings: Component', () => {
     });
   });
 
-  describe('connecting a number', () => {
+  describe('WA.D3.OM.J1.A1 connecting a number', () => {
     it('checks the required fields without asking the backend', async () => {
       const user = userEvent.setup();
       const connectMock = composeMockedQueryResult(connectWhatsAppAccountMutation, {
@@ -541,8 +645,8 @@ describe('WhatsAppSettings: Component', () => {
     });
   });
 
-  // Step 2.1b, user story 25: each external number sells from one of the organization's stores.
-  describe('the store an external number sells from', () => {
+  // Step 2.1b, user story WA.D3.OM.J1.A3: each external number sells from one of the organization's stores.
+  describe('WA.D3.OM.J1.A3 the store an external number sells from', () => {
     const connected = {
       connectWhatsAppAccount: {
         account: {
@@ -722,7 +826,7 @@ describe('WhatsAppSettings: Component', () => {
   });
 
   // Phase 2, decision 2: the number's own setting, not the customer's; menus by default.
-  describe("how a number's customers are answered", () => {
+  describe("WA.D3.OM.J1.A4 how a number's customers are answered", () => {
     it('says the external numbers answer customers now', async () => {
       renderTab(MANAGE, [accountsMock([])]);
 
@@ -815,7 +919,7 @@ describe('WhatsAppSettings: Component', () => {
   });
 
   // WhatsApp plan phase 3, decision 5: the page stays, read-only, with one way back to a plan.
-  describe("a plan that doesn't include WhatsApp", () => {
+  describe("WA.D6.OM.J3.A2 a plan that doesn't include WhatsApp", () => {
     const lapsedNumber = () => account({ id: 'account-2', displayPhoneNumber: '27000000802' });
 
     // Step 2.8, finding 16: setting up needs no plan, so a business can be ready before its trial
@@ -860,7 +964,7 @@ describe('WhatsAppSettings: Component', () => {
     });
   });
 
-  describe('a connected number', () => {
+  describe('WA.D3.OM.J1.A1 a connected number', () => {
     it("sends the test message and shows Meta's message id", async () => {
       const user = userEvent.setup();
       renderTab(MANAGE, [
@@ -928,7 +1032,7 @@ describe('WhatsAppSettings: Component', () => {
 
   // WhatsApp plan Step 2.9, decisions 1 to 5: an organization registers each of its own Meta apps once,
   // pastes the address and token we made into Meta, and picks the app when connecting a number.
-  describe("an organization's own Meta apps", () => {
+  describe("WA.D3.OM.J1.A1 an organization's own Meta apps", () => {
     const metaAppsCard = () => screen.findByTestId('whatsapp-meta-apps');
 
     it('shows each app with the callback URL and verify token to paste into Meta, never its secret', async () => {
@@ -1104,7 +1208,10 @@ describe('WhatsAppSettings: Component', () => {
       const form = within(await connectForm());
       expect(await form.findByLabelText(/access token/i)).toBeInTheDocument();
       expect(form.queryByLabelText(/^meta app$/i)).not.toBeInTheDocument();
-      expect(within(screen.getByTestId('whatsapp-account-account-1')).queryByLabelText(/^meta app$/i)).not.toBeInTheDocument();
+      // The number's row comes from the accounts query, apart from the form: wait for it too (CI, Node 22, 2026-11-19).
+      expect(
+        within(await screen.findByTestId('whatsapp-account-account-1')).queryByLabelText(/^meta app$/i)
+      ).not.toBeInTheDocument();
     });
 
     it("moves a number to the organization's app, after a reminder to paste its callback URL and token into Meta", async () => {

@@ -15,6 +15,10 @@ export enum EmailTemplateType {
   INVOICE_FILE_ADDED = 'INVOICE_FILE_ADDED',
   PROJECT_NOTE_MENTION = 'PROJECT_NOTE_MENTION',
   BACKUP_READY = 'BACKUP_READY',
+  // Fork addition (WhatsApp plan, user story WA.D7.OP.J2.A2): to the operator.
+  SHOPIFY_WEBHOOKS_UNHANDLED = 'SHOPIFY_WEBHOOKS_UNHANDLED',
+  // Fork addition (WhatsApp plan, user story WA.D7.OP.J2.A1): to the operator.
+  WHATSAPP_TEMPLATES_REFUSED = 'WHATSAPP_TEMPLATES_REFUSED',
   //<-- INJECT EMAIL TYPE -->
 }
 

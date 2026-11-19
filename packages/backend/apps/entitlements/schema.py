@@ -1,6 +1,6 @@
 """
 What the web app reads to show a feature's page working or read-only (WhatsApp plan Step 3.4, phase 3
-decision 8, user story 28).
+decision 8, user story WA.D6.OM.J3.A1).
 
 `organizationFeatures` lists only the names of the features the organization has unlocked, such as
 ["SHOPIFY", "WHATSAPP"], or [] on the free plan. It says nothing about the plan's name, price, trial

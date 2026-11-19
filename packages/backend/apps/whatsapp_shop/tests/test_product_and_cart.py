@@ -1,6 +1,6 @@
 """
 Tests for a product's screen and the cart in chat (WhatsApp plan Step 2.4, phase 2 decision 1, user
-stories 13, 16 and 21).
+stories WA.D4.SC.J1.A2, WA.D5.SC.J1.A1 and WA.D4.SC.J1.A3).
 
 - a product shows its picture, title, price and description; with one variant, Add to cart, Buy now
   and Back to the page it was listed on; with several, the variants for sale to pick from first
@@ -10,10 +10,15 @@ stories 13, 16 and 21).
 - a cart Shopify no longer has, or one from the number's previous store, is started afresh
 - Shopify refusing a line says why; a product no longer for sale says so
 
+Each new cart's checkout code (phase 4, Step 4.3a) is tested in test_checkout_code.py; here it's only
+expected to be there.
+
 Kind of test: integration (agents.md section 2.5). Why: the store, number, customer and cart id are
 rows in the test database, routed through the real router and handler; Shopify's Storefront API is
 faked at apps.shopify.storefront's functions.
 """
+
+from unittest.mock import ANY
 
 import pytest
 
@@ -28,6 +33,13 @@ from .chat import customer_of, selling_number, send, store
 pytestmark = pytest.mark.django_db
 
 CHECKOUT_URL = "https://acme.myshopify.com/cart/c/abc?key=secret"
+# Every new cart carries a checkout code; test_checkout_code.py tests its value.
+WITH_A_CODE = {"_whatsapp_checkout": ANY}
+
+
+def without_code(url):
+    """A View cart link without its checkout code, which test_checkout_code.py tests."""
+    return url.split("&attributes", 1)[0]
 
 
 def product(variants, *, image_url="https://cdn.shopify.com/s/files/board.jpg?v=1"):
@@ -128,6 +140,7 @@ def store_customer(customer):
     return StoreCustomer.objects.get(contact=customer)
 
 
+@pytest.mark.story("WA.D4.SC.J1.A2")
 class TestAProduct:
     def test_one_variant_shows_the_product_with_its_three_buttons(self, customer, shop, shopify):
         screen = open_product(customer)
@@ -174,13 +187,16 @@ class TestAProduct:
         assert main_menu.titles[0] == "Browse products"
 
 
+@pytest.mark.story("WA.D4.SC.J1.A2")
 class TestAddToCart:
     def test_the_first_add_makes_the_customers_cart_with_their_number(self, customer, shop, shopify):
         screen = open_product(customer)
 
         [added] = send(customer, press=screen.press("Add to cart"))
 
-        shopify.create_cart.assert_called_once_with(shop, "gid://shopify/ProductVariant/11", phone="+27000001001")
+        shopify.create_cart.assert_called_once_with(
+            shop, "gid://shopify/ProductVariant/11", phone="+27000001001", attributes=WITH_A_CODE
+        )
         assert added.body == "Added Snowboard to your cart. It holds 1 item: USD 19.99."
         assert added.titles == ["Checkout", "Your cart", "Keep shopping"]
         assert store_customer(customer).cart_id == "gid://shopify/Cart/abc"
@@ -228,7 +244,9 @@ class TestAddToCart:
 
         send(customer, press=open_product(customer).press("Add to cart"))
 
-        shopify.create_cart.assert_called_once_with(shop, "gid://shopify/ProductVariant/11", phone=None)
+        shopify.create_cart.assert_called_once_with(
+            shop, "gid://shopify/ProductVariant/11", phone=None, attributes=WITH_A_CODE
+        )
 
     def test_shopify_refusing_says_why(self, customer, shopify):
         shopify.create_cart.side_effect = ShopifyCartError("The product 'Snowboard' is already sold out.")
@@ -240,6 +258,7 @@ class TestAddToCart:
         assert store_customer(customer).cart_id == ""
 
 
+@pytest.mark.story("WA.D4.SC.J1.A2")
 class TestASoldOutProduct:
     """
     Finding 7 of Step 2.8: after one product sold out, every later add said "Sorry, that couldn't go in
@@ -279,13 +298,16 @@ class TestASoldOutProduct:
         assert added.titles == ["Checkout", "Your cart", "Keep shopping"]
 
 
+@pytest.mark.story("WA.D4.SC.J1.A2")
 class TestBuyNow:
     def test_it_sends_a_checkout_link_for_that_one_item(self, customer, shop, shopify):
         screen = open_product(customer)
 
         [link] = send(customer, press=screen.press("Buy now"))
 
-        shopify.create_cart.assert_called_once_with(shop, "gid://shopify/ProductVariant/11", phone="+27000001001")
+        shopify.create_cart.assert_called_once_with(
+            shop, "gid://shopify/ProductVariant/11", phone="+27000001001", attributes=WITH_A_CODE
+        )
         assert link.body == "Snowboard, USD 19.99. Tap Checkout to pay in the shop's secure Shopify checkout."
         assert link.link == {"display_text": "Checkout", "url": CHECKOUT_URL}
         # The open cart is left alone: Buy now makes its own.
@@ -299,6 +321,7 @@ class TestBuyNow:
         assert sorry.body == "The shop can't be reached right now. Please try again in a few minutes."
 
 
+@pytest.mark.story("WA.D5.SC.J1.A1")
 class TestYourCart:
     def open_cart(self, customer):
         """The cart's own screen, with its buttons: the last message "Your cart" sends."""
@@ -315,7 +338,8 @@ class TestYourCart:
         page, lines = send(customer, press=menu.press("Your cart"))
 
         assert page.body == "Review your cart on Acme Snow Co's website."
-        assert page.link == {"display_text": "View cart", "url": "https://acme.myshopify.com/cart/11:1?storefront=true"}
+        assert page.link["display_text"] == "View cart"
+        assert without_code(page.link["url"]) == "https://acme.myshopify.com/cart/11:1?storefront=true"
         assert lines.titles == ["Checkout", "Empty cart", "Main menu"]
 
     def test_an_empty_cart_has_no_page_to_offer(self, customer, shopify):
@@ -368,7 +392,8 @@ class TestYourCart:
         # Step 2.8, finding 10: the shop's own cart page first, then Checkout, nearest the thumb. A
         # link-button message carries one link, so they're two messages.
         assert page.body == "Review your cart on Acme Snow Co's website."
-        assert page.link == {"display_text": "View cart", "url": "https://acme.myshopify.com/cart/11:1?storefront=true"}
+        assert page.link["display_text"] == "View cart"
+        assert without_code(page.link["url"]) == "https://acme.myshopify.com/cart/11:1?storefront=true"
         assert link.link == {"display_text": "Checkout", "url": CHECKOUT_URL}
         # Step 2.8, finding 11: the store's own name in Shopify, faked in conftest.py.
         assert link.body == (

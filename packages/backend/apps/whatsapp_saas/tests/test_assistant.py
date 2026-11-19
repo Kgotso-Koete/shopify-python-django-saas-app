@@ -1,7 +1,7 @@
 """
 Tests for agentic mode for an organization's team (plan Step 1.13, decisions D11 and D12, user story
-8, Step 1.17): a linked member's words go to the assistant with this app's tools and instructions,
-and its writes go through the same Confirm as the menus'.
+WA.D2.OM.J2.A3, Step 1.17): a linked member's words go to the assistant with this app's tools and
+instructions, and its writes go through the same Confirm as the menus'.
 
 - the model gets the instructions, naming the number's organization, and the fixed tool list
 - "add an item called Monthly report" becomes Confirm and Cancel; only the press creates it, and the
@@ -25,7 +25,7 @@ from apps.whatsapp.tests.agent_fakes import FakeProvider, calls, says
 from ..tools import TOOLS
 from .chat import send, team_member
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D2.OM.J2.A3")]
 
 
 @pytest.fixture(autouse=True)

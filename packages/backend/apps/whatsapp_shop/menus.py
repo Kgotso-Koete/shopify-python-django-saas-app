@@ -1,30 +1,34 @@
 """
 The external communications numbers' handler: what a store customer gets when they text an
-organization's own WhatsApp number (plan phase 2, decision D1, user stories 12, 13, 14, 16 and 21).
-Registered with apps.whatsapp's registry in apps.py.
+organization's own WhatsApp number (plan phase 2, decision D1, user stories WA.D4.SC.J1.A1,
+WA.D4.SC.J1.A2, WA.D4.SC.J2.A1, WA.D5.SC.J1.A1 and WA.D4.SC.J1.A3). Registered with apps.whatsapp's
+registry in apps.py.
 
 - **Who is answered:** anyone texting a number that sells from a store that can still sell on
   WhatsApp. A number with no store chosen, or whose store was uninstalled, needs a reinstall or lacks
-  the storefront scopes, sends no reply at all (user story 25).
+  the storefront scopes, sends no reply at all (user story WA.D3.OM.J1.A3).
 - **The store customer:** made on their first message, one per contact (D4).
 - **The mode:** the number's own setting, menus by default (phase 2, decision 2).
 
 Every screen is built with apps.whatsapp's builders, so every one offers a way back (D17), and every
 button is an opaque id from turn.choice (section 8.5).
 
-Products (Step 2.3, user story 12) are read live from the store's Storefront API, never stored: only
+Products (Step 2.3, user story WA.D4.SC.J1.A1) are read live from the store's Storefront API, never stored: only
 those for sale, 7 to a page. Browsing lists the newest first; searching asks for typed words
 (turn.expect_text) and lists the most relevant first. Shopify pages by cursor, so each Previous and
 Next carries the cursor, and a search's words, of the page it leads to.
 
-A product (Step 2.4, user story 13) shows its picture, price and description. With one variant it
+A product (Step 2.4, user story WA.D4.SC.J1.A2) shows its picture, price and description. With one variant it
 offers Add to cart, Buy now and Back; with several, the customer picks a variant first.
 
-The cart (phase 2, decision 1, user story 16): Add to cart keeps one open cart per store customer, a
+The cart (phase 2, decision 1, user story WA.D5.SC.J1.A1): Add to cart keeps one open cart per store customer, a
 Storefront cart whose id is on their StoreCustomer; Buy now makes a separate one-item cart. Checkout
 is a link button to the cart's own Shopify checkout, which is the whole payment step (D13): this app
 never sees a payment. A cart Shopify no longer has (expired, or checked out) or one from the
 number's previous store is started afresh.
+
+Every cart the chat creates, and its View cart link, carries a checkout code, so its order finds the
+chat (phase 4, Step 4.3a; checkouts.py).
 """
 
 from datetime import timedelta
@@ -54,8 +58,9 @@ from apps.whatsapp.builders import (
 from apps.whatsapp.constants import MessageDirection
 from apps.whatsapp.models import WhatsAppMessage
 
-from . import services
+from . import checkouts, orders, services
 from .models import StoreCustomer
+from .templates import ORDER_DETAILS_PAYLOAD_PREFIX
 
 BROWSE = "browse"
 SEARCH = "search"
@@ -101,8 +106,23 @@ class StoreHandler:
         channel = services.channel_for(contact.account)
         return channel.conversation_mode if channel else ""
 
+    def on_connected(self, account) -> None:
+        # The order templates (phase 4, Step 4.3d-2); Meta's calls take a while, so the form doesn't wait.
+        from .tasks import publish_order_templates
+
+        publish_order_templates.delay(str(account.pk))
+
     def help_text(self, turn) -> str:
         return HELP_TEXT
+
+    def on_template_button(self, turn, action_id: str) -> list[dict]:
+        """
+        A tap on a template's quick-reply button (WhatsApp plan Step 4.7, decision 30): the update template's
+        Order details, whose payload is "order:<checkout code>". Any other is an old template's, so the main menu.
+        """
+        if action_id.startswith(ORDER_DETAILS_PAYLOAD_PREFIX):
+            return orders.details_reply(turn.contact, action_id.removeprefix(ORDER_DETAILS_PAYLOAD_PREFIX))
+        return self.main_menu(turn)
 
     def main_menu(self, turn) -> list[dict]:
         return _welcome_logo(turn) + self._menu(turn)
@@ -173,7 +193,7 @@ class StoreHandler:
             # Never Shopify's own words here: a store needing a reconnect is the business's to fix.
             return text_reply(UNREACHABLE_TEXT) + self.main_menu(turn)
 
-    # Browsing and searching (Step 2.3, user story 12)
+    # Browsing and searching (Step 2.3, user story WA.D4.SC.J1.A1)
 
     def _products(self, turn, data) -> list[dict]:
         """A page of the products for sale: the newest first, or those matching the search's words."""
@@ -219,7 +239,7 @@ class StoreHandler:
         turn.expect_text(SEARCH)
         return text_reply("Type what you're looking for, such as a product's name. Send *menu* to go back instead.")
 
-    # A product (Step 2.4, user story 13)
+    # A product (Step 2.4, user story WA.D4.SC.J1.A2)
 
     def _product(self, turn, data) -> list[dict]:
         """The product with its buttons, or, with several variants, a page of them to pick from."""
@@ -269,7 +289,7 @@ class StoreHandler:
         product = {"title": variant["product_title"], "image_url": variant["image_url"]}
         return [_buy_buttons(turn, product, variant, body, back, data["back"])]
 
-    # The cart (phase 2, decision 1, user story 16)
+    # The cart (phase 2, decision 1, user story WA.D5.SC.J1.A1)
 
     def _add_to_cart(self, turn, data) -> list[dict]:
         shop = services.store_for(turn.contact.account)
@@ -277,7 +297,7 @@ class StoreHandler:
         cart = _open_cart(customer, shop)
         try:
             if cart is None:
-                cart = storefront.create_cart(shop, data["variant_id"], phone=_phone(turn.contact))
+                cart = checkouts.create_cart(customer, shop, data["variant_id"], phone=_phone(turn.contact))
             else:
                 had = sum(line["quantity"] for line in cart["lines"] if line["variant_id"] == data["variant_id"])
                 cart = storefront.add_to_cart(shop, cart["id"], data["variant_id"], had=had)
@@ -303,7 +323,7 @@ class StoreHandler:
         """A one-item cart of its own, straight to checkout; the open cart is left as it is."""
         shop = services.store_for(turn.contact.account)
         try:
-            cart = storefront.create_cart(shop, data["variant_id"], phone=_phone(turn.contact))
+            cart = checkouts.create_cart(_store_customer(turn), shop, data["variant_id"], phone=_phone(turn.contact))
         except ShopifySoldOut:
             return text_reply(f"Sorry, {data['label']} is sold out.") + self.main_menu(turn)
         return [_checkout_link(cart, f"{data['label']}, {data['price']}. {CHECKOUT_TEXT}")]
@@ -406,11 +426,14 @@ def _row_description(product: dict) -> str:
 
 
 def _cart_page(turn, shop, cart: dict) -> dict:
-    """A link button to the shop's own cart page holding `cart`'s items (Step 2.8, findings 10 and 21)."""
+    """
+    A link button to the shop's own cart page holding `cart`'s items (Step 2.8, findings 10 and 21),
+    with the cart's checkout code (phase 4, decision 21).
+    """
     return link_button(
         f"Review your cart on {_shop_name(turn)}'s website.",
         display_text="View cart",
-        url=storefront.cart_page_url(shop, cart),
+        url=checkouts.view_cart_url(_store_customer(turn), shop, cart),
     )
 
 

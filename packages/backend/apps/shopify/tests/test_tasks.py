@@ -2,7 +2,7 @@
 Tests for the Shopify Celery task: process_shopify_webhook.
 
 Covers:
-- The task calls the correct handler from TOPIC_HANDLERS
+- The task calls the correct handler from deliveries.TOPIC_HANDLERS
 - A missing delivery row is logged and doesn't crash
 
 Kind of test: integration (agents.md section 2.5). Why: the task runs against delivery rows in the
@@ -14,7 +14,7 @@ from unittest.mock import patch, MagicMock
 
 from apps.shopify.models import ShopifyWebhookDelivery
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D7.SY.J1.A1")]
 
 
 class TestProcessShopifyWebhookTask:
@@ -32,14 +32,12 @@ class TestProcessShopifyWebhookTask:
             payload={"shop_domain": "task-shop.myshopify.com"},
         )
 
-        # Patch the handler so we can verify it's called without side effects
-        with patch("apps.shopify.tasks.TOPIC_HANDLERS") as mock_handlers:
-            mock_handler = MagicMock()
-            mock_handlers.get.return_value = mock_handler
-
+        # Patch the handler so we can verify it's called without side effects. The map lives in
+        # deliveries.py since WhatsApp plan Step 4.3e, shared with the webhook view.
+        mock_handler = MagicMock()
+        with patch.dict("apps.shopify.deliveries.TOPIC_HANDLERS", {"app/uninstalled": mock_handler}):
             process_shopify_webhook(delivery.id)
 
-            mock_handlers.get.assert_called_once_with("app/uninstalled")
             mock_handler.assert_called_once_with(
                 "task-shop.myshopify.com",
                 {"shop_domain": "task-shop.myshopify.com"},

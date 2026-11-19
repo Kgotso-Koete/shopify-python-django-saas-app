@@ -1,6 +1,6 @@
 {
   "name": "sb",
-  "version": "7.3.0",
+  "version": "8.0.0",
   "license": "MIT",
   "private": true,
   "packageManager": "pnpm@10.26.2",
@@ -31,6 +31,7 @@
     "@nx/webpack": "19.6.0",
     "@sb/cli": "workspace:*",
     "@sb/core": "workspace:*",
+    "@shopify/cli": "3.93.1",
     "@svgr/webpack": "^8.1.0",
     "@swc-node/register": "^1.11.1",
     "@swc/core": "^1.15.7",

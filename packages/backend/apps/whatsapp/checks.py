@@ -18,6 +18,8 @@ import re
 from django.conf import settings
 from django.core.checks import Error
 
+from apps.phone_verification.constants import Channel
+
 from .constants import ConversationMode, SendBackend
 
 # Meta's Graph API versions look like "v26.0" (https://developers.facebook.com/docs/graph-api/changelog).
@@ -130,6 +132,15 @@ def check_whatsapp_settings(app_configs, **kwargs):
                 "WHATSAPP_DEFAULT_CONVERSATION_MODE is 'AGENTIC'.",
                 hint="Set WHATSAPP_AI_MODEL to a model with function calling, such as 'gpt-5.1'.",
                 id="whatsapp.E009",
+            )
+        )
+
+    # Phase 7, user story WA.D1.OM.J1.A3: both channels are WhatsApp's; there's no SMS (2026-11-09).
+    if settings.PHONE_VERIFICATION_CHANNEL not in Channel.values:
+        errors.append(
+            Error(
+                f"PHONE_VERIFICATION_CHANNEL is {settings.PHONE_VERIFICATION_CHANNEL!r}, expected one of {Channel.values}.",
+                id="whatsapp.E010",
             )
         )
 

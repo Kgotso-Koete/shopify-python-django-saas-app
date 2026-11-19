@@ -1,6 +1,6 @@
 """
 Tests for apps/entitlements/schema.py: the field that tells the web app which features an
-organization has unlocked (WhatsApp plan Step 3.4, phase 3 decision 8, user story 28).
+organization has unlocked (WhatsApp plan Step 3.4, phase 3 decision 8, user story WA.D6.OM.J3.A1).
 
 - any member of the organization can read it, a Member included, who has no billing.view
 - it lists only feature names: on a paid plan or trial ["SHOPIFY", "WHATSAPP"], on the free plan [],
@@ -19,7 +19,7 @@ from apps.multitenancy.tests.factories import TenantFactory, TenantMembershipFac
 from apps.payfast.tests.factories import PayFastSubscriptionFactory
 from apps.users.tests.factories import UserFactory
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D6.OM.J3.A1")]
 
 FEATURES = "query($t: ID!) { organizationFeatures(tenantId: $t) }"
 

@@ -24,7 +24,7 @@ from ..services.flows import FormExpired, FormNotAvailable
 from ..services.router import Turn
 from .factories import ContactFactory, MessageFactory, InternalAccountFactory
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D2.OM.J1.A3")]
 
 NOW = datetime(2026, 10, 20, 9, 0, tzinfo=timezone.utc)
 

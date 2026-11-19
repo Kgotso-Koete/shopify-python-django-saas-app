@@ -128,6 +128,7 @@ def replies(contact, text):
     return texts
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestThePurpose:
     def test_there_are_three(self):
         assert AccountPurpose.values == [INTERNAL, EXTERNAL, both()]
@@ -149,6 +150,7 @@ class TestThePurpose:
         assert WhatsAppAccount.objects.internal_for(acme) == shared
 
 
+@pytest.mark.story("WA.D4.SC.J2.A1")
 class TestRouting:
     def test_a_linked_member_gets_the_team_on_a_shared_number(self, shared, team, shop):
         _, contact = member_on(shared)
@@ -175,6 +177,7 @@ class TestRouting:
         assert replies(contact, "hi") == ["SHOP MENU"]
 
 
+@pytest.mark.story("WA.D1.OM.J1.A2")
 class TestLinking:
     def test_a_member_links_on_the_shared_number(self, acme, shared):
         user = UserFactory()
@@ -206,6 +209,7 @@ def connect(tenant, purpose, phone_number_id="100000000000777"):
     ).account
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestConnecting:
     def test_a_shared_number_counts_as_the_teams(self, acme, meta_get):
         InternalAccountFactory(tenant=acme)
@@ -234,6 +238,7 @@ class TestConnecting:
         assert "Change" in str(raised.value)
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestChangingTheRole:
     def change(self, acme, number, purpose):
         return accounts.change_purpose(tenant=acme, account_id=number.pk, purpose=purpose)
@@ -301,6 +306,7 @@ mutation($input: ChangeWhatsAppNumberPurposeInput!) {
 """
 
 
+@pytest.mark.story("WA.D3.OM.J1.A1")
 class TestTheMutation:
     def act_as(self, graphene_client, acme, role):
         user = UserFactory()

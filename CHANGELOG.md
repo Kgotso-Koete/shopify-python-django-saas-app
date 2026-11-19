@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [8.0.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/7.3.0...8.0.0) (2026-11-19)
+
+### ⚠ BREAKING CHANGES
+
+- Order updates need more Shopify access: the `read_orders` scope in `SHOPIFY_SCOPES` and the app's configuration on Shopify, Level 1 protected customer data, and the `orders/create` and `orders/paid` subscriptions, after which each store is connected again (the operator guide's section 3d)
+- One order template, `shop_order_update`, replaces `shop_order_received` and `shop_order_paid`: run `whatsapp_publish_order_templates` once per deployment, which submits the new one and deletes the old two on Meta and in this app
+- The order page is gone: `StoreCheckout.order_link_token` is removed (migration `whatsapp_shop` 0007) with the `whatsapp-shop/` route, so **View order** links in messages already sent stop working; the order's details now come in the chat
+- The `SMS` phone verification channel is removed (migration `phone_verification` 0004)
+- PayFast now bills the organization's email, its billing email or, if none is set, its creator's, never the email of whoever presses Pay
+
+### Features
+
+- WhatsApp order updates for store customers, on the business's own number:
+  - Each cart the chat makes carries a code, `_whatsapp_checkout`, so a paid order finds its customer; the cart is forgotten once its order arrives, so the next **Add to cart** starts a new one
+  - "Order #… received, awaiting payment" for an unpaid order and "Order #… is paid", once each, with the order's items, total, payment and delivery as Shopify has them when the update is sent; the app keeps only the order's id
+  - After the 24-hour customer service window, the update is the utility template `shop_order_update`, with an **Order details** button that brings the details as a normal message, for the customer's own order only
+  - A message failing for a passing reason is retried for an hour, with a Celery worker or without one: Meta's and Shopify's webhooks run the send sweep when no worker does
+  - The WhatsApp page lists updates that didn't go out, with Meta's reason in plain words, and **Send again**, which builds the update fresh from Shopify (`whatsapp.manage`; `whatsapp.view` sees the list)
+- The operator:
+  - Each number's templates are submitted when it connects, and by `whatsapp_publish_order_templates`, past any number Meta refuses; their review status is asked of Meta's API, daily and when the WhatsApp page opens, and shown on each number's row
+  - `OPERATOR_EMAILS` receives one email per refused or rejected template, and one listing Shopify webhooks the sweep gave up on after 3 days; the Django admin lists templates read-only and handles deliveries again with **Handle again**
+  - Every Shopify webhook delivery is handled, or retried by the sweep (`shopify_handle_pending_deliveries`)
+- Invoices for PayFast payments, in the new `apps.invoicing`: one numbered PDF per payment, with the supplier from `INVOICE_SUPPLIER_NAME` and `INVOICE_SUPPLIER_ADDRESS` (warned about at startup when empty), **Download invoice** in the transaction history, and **My invoices** in the team's WhatsApp menu, sent through Meta's media upload; a trial says when the first invoice comes
+- **Plans and billing** in the team's WhatsApp menu and assistant, linking the Subscriptions page for `billing.manage`
+- The organization's billing email, on the PayFast Subscriptions page, saved by members with `org.settings.edit`
+- Linking a phone with a code received on WhatsApp: with `PHONE_VERIFICATION_CHANNEL=WHATSAPP_TEMPLATE`, the team number sends the code in the authentication template `team_link_code`, submitted when a team number connects or by `whatsapp_publish_link_templates`
+- PayFast payments outlive their organization, keeping a copy of its name (migration `payfast` 0005)
+- Local development: an optional ngrok tunnel in `docker-compose.local.yml`, started by `pnpm saas up` when `NGROK_AUTHTOKEN` and `NGROK_DOMAIN` are set; the Shopify CLI as a pinned root dev dependency, run with `pnpm exec shopify app … --path packages/backend/apps/shopify`
+
+### Bug Fixes
+
+- Shopify posts webhooks without the trailing slash, which failed every order webhook; both addresses now reach the same view
+- Meta's error messages can echo the request's access token; it's removed from exceptions, logs, command output and the operator's email
+- The billing email card couldn't save: `updateTenant` now accepts `tenantId`, which the tenant middleware needs to find the organization, and the card sends it
+- The Django admin's names for the WhatsApp and Shopify models, such as "WhatsApp templates" and "Shopify webhook deliveries" (options-only migrations `whatsapp` 0025 and `shopify` 0007)
+- `INVOICE_SUPPLIER_NAME` and `INVOICE_SUPPLIER_ADDRESS` are read without spaces at either end
+
+### Documentation
+
+- `humans.md`, the maintainer's account of how they learn, read by every AI agent at the start of each session and on every resume; `agents.md` moved to the repository root, with new rules: everything to copy in its own code block, verification commands straight after edits, hands-on steps in order, human checks kept few and essential with every command explained in the plan, documented commands fixed in the document, date-times in UTC, and autopilot
+- WhatsApp plan: Phase 4's decisions 17 to 30, every RED and GREEN, the human checks rewritten as journeys and their run of 2026-11-17 to 2026-11-19; the user stories file with each story's tests and human checks
+- README: the Shopify CLI configuration; the operator guide's order updates section
+
 ## [7.3.0](https://github.com/Kgotso-Koete/shopify-python-django-saas-app/compare/7.2.0...7.3.0) (2026-11-01)
 
 ### Features

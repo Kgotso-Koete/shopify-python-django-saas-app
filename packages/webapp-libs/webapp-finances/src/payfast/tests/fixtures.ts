@@ -5,6 +5,7 @@ import {
   payfastCardUpdateUrlQuery,
   payfastCheckoutStatusQuery,
   payfastDonationAmountsQuery,
+  payfastInvoicesQuery,
   payfastPaymentsQuery,
   payfastSubscriptionPlansQuery,
   paymentConfigQuery,
@@ -114,6 +115,16 @@ export const fillPayfastPaymentsQuery = (
         'PayFastPaymentType'
       ),
     },
+  });
+
+// The organization's invoices (WhatsApp plan phase 4, Step 4.5a), as apps/invoicing/schema.py returns them.
+export const fillPayfastInvoicesQuery = (
+  invoices: Array<{ id: string; number: string; paymentId: string | null }>,
+  tenantId = 'tenantId'
+) =>
+  composeMockedQueryResult(payfastInvoicesQuery, {
+    variables: { tenantId },
+    data: { invoices: invoices.map((invoice) => ({ ...invoice, __typename: 'InvoiceType' })) },
   });
 
 export const fillCheckoutStatusQuery = (status: string | null, mPaymentId: string, tenantId = 'tenantId') =>

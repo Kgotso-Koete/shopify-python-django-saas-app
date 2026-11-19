@@ -24,7 +24,7 @@ from ..models import MetaApp
 from .factories import ExternalAccountFactory, MetaAppFactory
 from .fakes import meta_response
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D3.OM.J1.A1")]
 
 APP_ID = "1234567890123456"
 APP_SECRET = "0123456789abcdef0123456789abcdef"

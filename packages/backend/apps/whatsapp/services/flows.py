@@ -4,7 +4,9 @@ decision D9).
 
 Publishing (Step 1.11a): a form's JSON is published once per WhatsApp Business account and its id
 kept in WhatsAppFlow with a hash of the JSON, so nothing is published again until the file changes.
-With the log send backend nothing reaches Meta, and a fake id is stored so the menus still work.
+With the log send backend nothing reaches Meta, and a fake id is stored so the menus still work. It
+starts with `log-`, and on the meta backend a form holding one counts as never published, so switching
+from log to meta publishes it on Meta rather than calling it up to date (plan Step 4.6).
 
 Opening and answering (Step 1.11b): what a form is for (its kind, and context such as the item being
 edited) stays on the server, in the contact's conversation. The flow_token Meta carries is only a
@@ -27,6 +29,7 @@ from ..builders import flow_message
 from ..client import WhatsAppClient
 from ..constants import SendBackend
 from ..models import WhatsAppFlow
+from .templates import FAKE_ID_PREFIX
 
 TOKEN_SALT = "apps.whatsapp.flows.form"
 
@@ -45,16 +48,18 @@ def publish(account, name: str, flow_json: str) -> tuple[WhatsAppFlow, bool]:
     same JSON is published already. Returns the stored flow and whether it was published now.
     """
     digest = hashlib.sha256(flow_json.encode("utf-8")).hexdigest()
+    on_meta = settings.WHATSAPP_SEND_BACKEND == SendBackend.META
     existing = WhatsAppFlow.objects.filter(waba_id=account.waba_id, name=name).first()
-    if existing is not None and existing.json_sha256 == digest:
+    fake = existing is not None and existing.flow_id.startswith(FAKE_ID_PREFIX)
+    if existing is not None and existing.json_sha256 == digest and not (on_meta and fake):
         return existing, False
 
     # Meta may refuse a name it has seen on the account, so each version gets its own.
     meta_name = f"{name}-{digest[:8]}"
-    if settings.WHATSAPP_SEND_BACKEND == SendBackend.META:
+    if on_meta:
         flow_id = WhatsAppClient(account).create_flow(meta_name, flow_json)
     else:
-        flow_id = f"log-{meta_name}"
+        flow_id = f"{FAKE_ID_PREFIX}{meta_name}"
 
     flow, _ = WhatsAppFlow.objects.update_or_create(
         waba_id=account.waba_id,

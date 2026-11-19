@@ -10,8 +10,8 @@ stored: it's too short to carry its own signature. So a code:
 - is bound to one normalized phone number (D19) and one channel; checking it from another number or
   on another channel fails
 
-The store knows nothing about WhatsApp: the WhatsApp linking (Step 1.7b), and later SMS, plug
-into it with their own channel (D20).
+The store knows nothing about WhatsApp: the WhatsApp linking (Step 1.7b), and later the code sent in a
+WhatsApp template (phase 7), plug into it with their own channel (D20; no SMS since 2026-11-09).
 
 Kind of test: integration (agents.md section 2.5). Why: codes are rows in the test database; nothing
 is faked.
@@ -27,7 +27,7 @@ from ..constants import Channel
 from ..models import PhoneVerificationCode
 from ..services import MAX_ATTEMPTS, CodeCheckError, check_code, issue_code
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D1.OM.J1.A2")]
 
 NUMBER = "27831234567"
 TEN_MINUTES = 600
@@ -117,7 +117,7 @@ class TestChecking:
         issued = issue(user)
 
         with pytest.raises(CodeCheckError):
-            check(issued.code, channel=Channel.SMS)
+            check(issued.code, channel=Channel.WHATSAPP_TEMPLATE)
 
     def test_a_wrong_code_is_refused(self, user):
         issued = issue(user)

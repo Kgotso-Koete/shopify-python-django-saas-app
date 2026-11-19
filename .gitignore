@@ -34,8 +34,9 @@ testem.log
 # Local test and CI logs (saved by the commands in docs/superpowers plans); never committed
 /logs/
 # The Shopify CLI's app config holds personal values (tunnel address, app client id); the committed
-# template is shopify.app.toml.example next to it
-/packages/backend/apps/shopify/shopify.app.toml
+# template is shopify.app.toml.example next to it. `app config link` names the file after the app
+# (shopify.app.<app name>.toml), so every such name is ignored; the template ends in .example.
+/packages/backend/apps/shopify/shopify.app*.toml
 /typings
 .local.env
 __pycache__/

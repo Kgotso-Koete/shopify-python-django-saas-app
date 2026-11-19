@@ -1,6 +1,6 @@
 import { gql } from '@sb/webapp-api-client/graphql';
 
-// The number troubleshooting tools (WhatsApp plan D18, Steps 1.5b and 1.6b, user story 23). Every one,
+// The number troubleshooting tools (WhatsApp plan D18, Steps 1.5b and 1.6b, user story WA.D3.OM.J2.A1). Every one,
 // Meta's status included, needs whatsapp.manage, and every repair is written to the action log.
 
 export const whatsAppNumberStatusQuery = gql(/* GraphQL */ `

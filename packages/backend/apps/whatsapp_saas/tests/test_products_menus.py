@@ -1,5 +1,5 @@
 """
-Tests for the Shopify product menus in apps/whatsapp_saas/menus.py (plan Step 1.12b, user story 7):
+Tests for the Shopify product menus in apps/whatsapp_saas/menus.py (plan Step 1.12b, user story WA.D2.OM.J2.A2):
 an organization member browses and searches their organization's stores from WhatsApp, on its
 internal communications number (Step 1.17).
 
@@ -27,7 +27,7 @@ from apps.shopify.products import ShopifyReconnectRequired
 
 from .chat import main_menu, send, team_member
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D2.OM.J2.A2")]
 
 
 def product(number, **overrides):

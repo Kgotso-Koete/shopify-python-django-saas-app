@@ -65,3 +65,19 @@ class TestShopifySettings:
             "SHOPIFY_WEBHOOK_DISPATCH": "'sync'",
             "SHOPIFY_ENABLED": "False",
         }
+
+
+@pytest.mark.story("WA.D7.OP.J2.A1", "WA.D7.OP.J2.A2")
+class TestOperatorEmails:
+    """
+    Where the operator's notices go (WhatsApp plan, user stories WA.D7.OP.J2.A1 and WA.D7.OP.J2.A2): Shopify
+    webhooks the sweep gave up on, and order templates Meta refused. Empty by default, which sends none.
+    """
+
+    def test_operator_emails_setting_reads_env_var(self):
+        values = read_settings(["OPERATOR_EMAILS"], OPERATOR_EMAILS="ops@example.com,alerts@example.com")
+
+        assert values == {"OPERATOR_EMAILS": "['ops@example.com', 'alerts@example.com']"}
+
+    def test_operator_emails_default_to_none(self):
+        assert read_settings(["OPERATOR_EMAILS"], OPERATOR_EMAILS=None) == {"OPERATOR_EMAILS": "[]"}

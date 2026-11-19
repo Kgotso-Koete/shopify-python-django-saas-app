@@ -16,11 +16,12 @@ import { whatsAppEligibleStoresQuery, whatsAppStorefrontsQuery } from '../../gra
 import { servesCustomers } from '../../utils/purposes';
 import { AccountRow, WhatsAppAccount } from './accountRow.component';
 import { ConnectNumberForm } from './connectNumberForm.component';
+import { FailedUpdatesCard } from './failedUpdatesCard.component';
 import { MetaApp, MetaAppsCard } from './metaAppsCard.component';
 
 /**
  * Which store each number serving customers sells from, and the stores the picker offers (WhatsApp plan
- * Step 2.1b, user story 25). A number serving the team only never sells.
+ * Step 2.1b, user story WA.D3.OM.J1.A3). A number serving the team only never sells.
  */
 type Storefronts = {
   // The store each number sells from, by account id; null while none is chosen.
@@ -37,7 +38,7 @@ type Storefronts = {
 type ListedAccount = WhatsAppAccount & { purpose: AccountPurpose };
 
 /**
- * The organization's WhatsApp page (WhatsApp plan Steps 1.6, 1.17 and 1.19, user story 11), in the
+ * The organization's WhatsApp page (WhatsApp plan Steps 1.6, 1.17 and 1.19, user story WA.D3.OM.J1.A1), in the
  * sidebar under Shopify products. Every number belongs to the organization. Since Step 2.7 (decision 4)
  * the page has one form, asking who texts the number (the team, the customers, or both), and one list of
  * every number with whom it serves: one number for both, or two numbers kept apart.
@@ -193,6 +194,9 @@ export const WhatsAppSettings = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Order updates WhatsApp couldn't deliver, with Send again (Step 4.7, user story WA.D3.OM.J2.A3). */}
+        <FailedUpdatesCard tenantId={tenantId} canManage={canManage} />
 
         {canManage && <MetaAppsCard tenantId={tenantId} apps={metaApps} onChanged={() => void refetchMetaApps()} />}
       </div>

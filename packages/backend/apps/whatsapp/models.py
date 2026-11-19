@@ -23,6 +23,7 @@ from .constants import (
     MessageKind,
     MessageStatus,
     TEAM_PURPOSES,
+    TemplateStatus,
 )
 from .crypto import decrypt_credential, encrypt_credential
 from .managers import WhatsAppAccountManager
@@ -56,6 +57,10 @@ class MetaApp(TimestampedMixin, models.Model):
     app_secret_encrypted = models.TextField()
     verify_token_encrypted = models.TextField()
     public_id = models.CharField(max_length=64, unique=True, default=new_public_id)
+
+    class Meta:
+        # The Django admin's name for it; from the class name it would read "meta app" (WhatsApp plan Step 4.7).
+        verbose_name = "Meta app"
 
     def __str__(self) -> str:
         return f"Meta app {self.app_id}"
@@ -111,14 +116,14 @@ class WhatsAppAccount(TimestampedMixin, models.Model):
     # number uses it (Step 2.9, decision 4), except with its organization, which deletes both.
     meta_app = models.ForeignKey(MetaApp, null=True, blank=True, on_delete=models.RESTRICT, related_name="accounts")
     # When Meta last subscribed our app to the number's WhatsApp Business account, so its messages
-    # reach our webhook: the form's second proof (user story 11, Step 1.18).
+    # reach our webhook: the form's second proof (user story WA.D3.OM.J1.A1, Step 1.18).
     subscribed_at = models.DateTimeField(null=True, blank=True)
     # The business name Meta verified for the number, as Meta returned it when the account was checked.
     verified_name = models.CharField(max_length=255, blank=True)
     connection_method = models.CharField(
         max_length=32, choices=ConnectionMethod.choices, default=ConnectionMethod.MANUAL
     )
-    # When Meta last accepted this account's id and token: the form's first proof (user story 11).
+    # When Meta last accepted this account's id and token: the form's first proof (user story WA.D3.OM.J1.A1).
     credentials_verified_at = models.DateTimeField(null=True, blank=True)
     # False once the organization disconnects the number: its secrets are wiped, its history kept, and
     # the webhook treats it as a number it doesn't know (plan Step 1.5, maintainer's decision).
@@ -127,6 +132,9 @@ class WhatsAppAccount(TimestampedMixin, models.Model):
     objects = WhatsAppAccountManager()
 
     class Meta:
+        # The Django admin's names for this app's models are written out, as apps/payfast's are: from the class
+        # name, Django makes "whats app account" (WhatsApp plan Step 4.7).
+        verbose_name = "WhatsApp account"
         constraints = [
             # An organization's team texts one number (Step 1.17), internal or serving both (Step 2.7); a
             # disconnected one doesn't count.
@@ -171,6 +179,7 @@ class WhatsAppContact(TimestampedMixin, models.Model):
     profile_name = models.CharField(max_length=255, blank=True)
 
     class Meta:
+        verbose_name = "WhatsApp contact"
         constraints = [
             models.UniqueConstraint(fields=["account", "bsuid"], name="whatsapp_contact_unique_bsuid_per_account"),
             # Unique only when known, so several contacts without a phone number can coexist.
@@ -186,9 +195,35 @@ class WhatsAppContact(TimestampedMixin, models.Model):
         return self.profile_name or self.wa_id or self.bsuid
 
 
+class WhatsAppWaitingLink(TimestampedMixin, models.Model):
+    """
+    A phone a member proved with a code received on WhatsApp and typed on the website (plan phase 7, user story
+    WA.D1.OM.J1.A3, decided 2026-11-09), linked on the team number once that phone first writes to it: a
+    contact is keyed by Meta's business-scoped id, which only an incoming message tells us. Kept for
+    services.identity.WAITING_LINK_DAYS; one per user per number, and one per phone per number.
+    """
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    account = models.ForeignKey(WhatsAppAccount, on_delete=models.CASCADE, related_name="waiting_links")
+    # International digits, no "+" (plan D19), as the contact's wa_id will be.
+    phone_number = models.CharField(max_length=32)
+
+    class Meta:
+        verbose_name = "WhatsApp waiting link"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "account"], name="whatsapp_waiting_link_unique_user_per_account"),
+            models.UniqueConstraint(
+                fields=["account", "phone_number"], name="whatsapp_waiting_link_unique_phone_per_account"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Waiting link on {self.account}"
+
+
 class WhatsAppIdentity(TimestampedMixin, models.Model):
     """
-    A user's phone, linked on one organization's internal number (plan decision D3, user story 1,
+    A user's phone, linked on one organization's internal number (plan decision D3, user story WA.D1.OM.J1.A2,
     Step 1.17): one per user per internal number, and one-to-one with the contact. The upstream User
     model is untouched. Created only when both proofs meet: a code issued to the logged-in user, sent
     from the phone (Step 1.7).
@@ -199,11 +234,14 @@ class WhatsAppIdentity(TimestampedMixin, models.Model):
     # database can keep one link per user per number.
     account = models.ForeignKey(WhatsAppAccount, on_delete=models.CASCADE, related_name="identities")
     contact = models.OneToOneField(WhatsAppContact, on_delete=models.CASCADE, related_name="identity")
-    # How the user wants to talk to the app; empty means WHATSAPP_DEFAULT_CONVERSATION_MODE (user story 3).
+    # How the user wants to talk to the app; empty means WHATSAPP_DEFAULT_CONVERSATION_MODE (user story WA.D2.OM.J1.A1).
     conversation_mode = models.CharField(max_length=32, choices=ConversationMode.choices, blank=True)
     linked_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        verbose_name = "WhatsApp identity"
+        # Django would add an "s": "identitys".
+        verbose_name_plural = "WhatsApp identities"
         constraints = [
             models.UniqueConstraint(fields=["user", "account"], name="whatsapp_identity_unique_user_per_account")
         ]
@@ -228,6 +266,9 @@ class WhatsAppConversation(TimestampedMixin, models.Model):
     state = models.JSONField(default=dict, blank=True)
     state_expires_at = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        verbose_name = "WhatsApp conversation"
+
     def __str__(self) -> str:
         return f"Conversation with {self.contact}"
 
@@ -249,6 +290,9 @@ class WhatsAppPendingAction(TimestampedMixin, models.Model):
     expires_at = models.DateTimeField()
     consumed_at = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        verbose_name = "WhatsApp pending action"
+
     def __str__(self) -> str:
         return f"{self.action} for {self.user}"
 
@@ -269,10 +313,47 @@ class WhatsAppFlow(TimestampedMixin, models.Model):
     published_at = models.DateTimeField()
 
     class Meta:
+        # Meta's own product name: a Flow.
+        verbose_name = "WhatsApp Flow"
         constraints = [models.UniqueConstraint(fields=["waba_id", "name"], name="whatsapp_flow_unique_name_per_waba")]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.flow_id})"
+
+
+class WhatsAppTemplate(TimestampedMixin, models.Model):
+    """
+    One message template this service submitted to a WhatsApp Business account (plan phase 4, Step
+    4.3d-2, decision 24): its name, Meta's id for it, and a hash of what it was submitted with, so it's
+    submitted again only when that changes. Unlike a published Flow, an approved template can be edited,
+    so a change edits the same template rather than adding one. Since Step 4.7 (user story WA.D3.OM.J2.A2)
+    Meta's review status is kept too, asked of Meta when it's submitted, once a day and when the WhatsApp
+    page opens (services/templates.py), so a business sees it before a late order update fails.
+    """
+
+    waba_id = models.CharField(max_length=64)
+    # The name Meta knows it by, e.g. "shop_order_paid": fixed, unique per WhatsApp Business account.
+    name = models.CharField(max_length=512)
+    template_id = models.CharField(max_length=64)
+    content_sha256 = models.CharField(max_length=64)
+    submitted_at = models.DateTimeField()
+    status = models.CharField(max_length=32, choices=TemplateStatus.choices, default=TemplateStatus.IN_REVIEW)
+    # Meta's rejected_reason as Meta sends it, such as "INVALID_FORMAT"; empty unless it's rejected.
+    rejected_reason = models.CharField(max_length=64, blank=True, default="")
+    # When Meta last told us the status; null until it has.
+    status_checked_at = models.DateTimeField(null=True, blank=True)
+    # When the operator was emailed about its rejection (user story WA.D7.OP.J2.A1); cleared once it's no
+    # longer rejected, so a later rejection is emailed too.
+    reported_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "WhatsApp template"
+        constraints = [
+            models.UniqueConstraint(fields=["waba_id", "name"], name="whatsapp_template_unique_name_per_waba")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.template_id})"
 
 
 class WhatsAppAgentItem(TimestampedMixin, models.Model):
@@ -289,6 +370,7 @@ class WhatsAppAgentItem(TimestampedMixin, models.Model):
     item = models.JSONField()
 
     class Meta:
+        verbose_name = "WhatsApp agent item"
         ordering = ["sequence"]
         constraints = [
             models.UniqueConstraint(fields=["conversation", "sequence"], name="whatsapp_agent_item_unique_sequence")
@@ -322,6 +404,7 @@ class WhatsAppMessage(TimestampedMixin, models.Model):
     sent_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        verbose_name = "WhatsApp message"
         constraints = [
             models.UniqueConstraint(
                 fields=["wamid"],

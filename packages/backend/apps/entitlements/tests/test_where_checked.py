@@ -1,6 +1,6 @@
 """
 Tests for where an organization's plan is checked (WhatsApp plan Step 3.3, phase 3 decisions 3, 4 and
-5, user stories 26 and 27).
+5, user stories WA.D6.OP.J1.A1 and WA.D6.OM.J3.A2).
 
 - browsing a store's products refuses an organization whose plan doesn't include Shopify, with
   "plan_required"
@@ -161,6 +161,7 @@ def errors_of(graphene_client, organization, request):
 
 
 class TestTheApi:
+    @pytest.mark.story("WA.D6.OP.J1.A1")
     @pytest.mark.parametrize("feature, name, request_text", LOCKED_FIELDS, ids=[name for _, name, _ in LOCKED_FIELDS])
     def test_a_field_using_a_feature_the_plan_lacks_is_refused(
         self, graphene_client, acme, feature, name, request_text
@@ -169,6 +170,7 @@ class TestTheApi:
 
         assert "plan_required" in errors_of(graphene_client, acme, request_text)
 
+    @pytest.mark.story("WA.D6.OP.J1.A1")
     @pytest.mark.parametrize("feature, name, request_text", SETUP_FIELDS, ids=[name for _, name, _ in SETUP_FIELDS])
     def test_setting_up_needs_no_plan(self, graphene_client, acme, feature, name, request_text):
         as_owner(graphene_client, acme)
@@ -176,12 +178,14 @@ class TestTheApi:
         # Its own validation may still refuse the made-up ids; never the plan.
         assert "plan_required" not in errors_of(graphene_client, acme, request_text)
 
+    @pytest.mark.story("WA.D6.OM.J3.A2")
     @pytest.mark.parametrize("name", READABLE)
     def test_what_is_kept_stays_readable(self, graphene_client, acme, name):
         as_owner(graphene_client, acme)
 
         assert errors_of(graphene_client, acme, READABLE[name]) == []
 
+    @pytest.mark.story("WA.D6.OM.J3.A2")
     def test_disconnecting_a_number_stays_allowed(self, graphene_client, acme):
         as_owner(graphene_client, acme)
         account = InternalAccountFactory(tenant=acme)
@@ -196,12 +200,14 @@ class TestTheApi:
 
         assert "plan_required" not in [error["message"] for error in response.get("errors") or []]
 
+    @pytest.mark.story("WA.D6.OP.J1.A1")
     def test_a_plan_with_the_feature_is_not_refused(self, graphene_client, acme):
         PayFastSubscriptionFactory(tenant=acme, monthly=True)
         as_owner(graphene_client, acme)
 
         assert "plan_required" not in errors_of(graphene_client, acme, FIELDS["SHOPIFY"]["shopifyProducts"])
 
+    @pytest.mark.story("WA.D6.OP.J1.A1")
     def test_with_the_setting_off_nothing_is_refused_for_the_plan(self, graphene_client, acme, settings):
         settings.PLAN_ENTITLEMENTS_ENABLED = False
         as_owner(graphene_client, acme)
@@ -210,18 +216,21 @@ class TestTheApi:
 
 
 class TestTheRouter:
+    @pytest.mark.story("WA.D6.OM.J3.A2")
     def test_a_lapsed_organizations_customers_get_no_reply_and_the_message_is_kept(self, acme):
         customer = customer_of(selling_number(acme, store(acme)))
 
         assert send(customer, "hi") == []
         assert WhatsAppMessage.objects.filter(contact=customer, direction=MessageDirection.INBOUND).exists()
 
+    @pytest.mark.story("WA.D6.OM.J3.A2")
     def test_a_lapsed_organizations_linked_members_get_no_reply(self, acme):
         member = ContactFactory(account=InternalAccountFactory(tenant=acme))
         link_member(member)
 
         assert send(member, "hi") == []
 
+    @pytest.mark.story("WA.D6.OP.J1.A1")
     def test_on_a_plan_with_whatsapp_the_customer_is_answered(self, acme):
         PayFastSubscriptionFactory(tenant=acme, monthly=True)
         customer = customer_of(selling_number(acme, store(acme)))

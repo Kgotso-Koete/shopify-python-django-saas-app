@@ -1,6 +1,6 @@
 """
 Tests for the CRUD item operations in apps/whatsapp_saas/use_cases.py (plan Step 1.9, decision D10,
-user stories 6 and 9).
+user stories WA.D2.OM.J2.A1 and WA.D1.OM.J2.A1).
 
 Each checks exactly what its GraphQL twin checks (the audit in plan Step 1.9): membership plus
 features.crud.view to read, features.crud.manage to write, always within the selected organization,
@@ -49,6 +49,7 @@ def items_in(tenant, count):
 
 
 class TestListing:
+    @pytest.mark.story("WA.D2.OM.J2.A1")
     def test_pages_hold_seven_items(self, user, organization):
         items_in(organization, 16)
 
@@ -61,6 +62,7 @@ class TestListing:
         assert len(third.items) == 2
         assert (third.has_previous, third.has_next) == (True, False)
 
+    @pytest.mark.story("WA.D2.OM.J2.A1")
     def test_items_are_listed_by_name_and_only_the_organizations_own(self, user, organization):
         CrudDemoItemFactory(tenant=organization, name="Beta")
         CrudDemoItemFactory(tenant=organization, name="Alpha")
@@ -68,11 +70,13 @@ class TestListing:
 
         assert [item.name for item in use_cases.list_items(user, organization, page=1).items] == ["Alpha", "Beta"]
 
+    @pytest.mark.story("WA.D2.OM.J2.A1")
     def test_a_page_past_the_end_shows_the_last_page(self, user, organization):
         items_in(organization, 3)
 
         assert use_cases.list_items(user, organization, page=9).page == 1
 
+    @pytest.mark.story("WA.D1.OM.J2.A1")
     def test_reading_needs_features_crud_view(self, user, member_organization):
         OrganizationRolePermission.objects.filter(
             role__tenant=member_organization, permission__code="features.crud.view"
@@ -85,11 +89,13 @@ class TestListing:
 
 
 class TestViewing:
+    @pytest.mark.story("WA.D2.OM.J2.A1")
     def test_an_item_is_shown(self, user, organization):
         [item] = items_in(organization, 1)
 
         assert use_cases.get_item(user, organization, item.pk) == item
 
+    @pytest.mark.story("WA.D1.OM.J2.A1")
     def test_another_organizations_item_is_not_found(self, user, organization):
         theirs = CrudDemoItemFactory(tenant=TenantFactory(type=TenantType.ORGANIZATION))
 
@@ -100,6 +106,7 @@ class TestViewing:
 
 
 class TestWriting:
+    @pytest.mark.story("WA.D2.OM.J2.A1")
     def test_an_item_is_created_through_the_websites_serializer(self, user, organization):
         item = use_cases.create_item(user, organization, "Monthly report")
 
@@ -107,6 +114,7 @@ class TestWriting:
         assert item.tenant == organization
         assert item.created_by == user
 
+    @pytest.mark.story("WA.D2.OM.J2.A1")
     def test_an_item_is_renamed(self, user, organization):
         [item] = items_in(organization, 1)
 
@@ -114,6 +122,7 @@ class TestWriting:
 
         assert CrudDemoItem.objects.get(pk=item.pk).name == "Renamed"
 
+    @pytest.mark.story("WA.D2.OM.J2.A1")
     def test_an_item_is_deleted(self, user, organization):
         [item] = items_in(organization, 1)
 
@@ -121,6 +130,7 @@ class TestWriting:
 
         assert not CrudDemoItem.objects.filter(pk=item.pk).exists()
 
+    @pytest.mark.story("WA.D2.OM.J2.A1")
     def test_validation_errors_come_back_as_a_message(self, user, organization):
         with pytest.raises(UseCaseError) as raised:
             use_cases.create_item(user, organization, "")
@@ -137,6 +147,7 @@ class TestWriting:
         ],
         ids=["create", "update", "delete"],
     )
+    @pytest.mark.story("WA.D1.OM.J2.A1")
     def test_writing_needs_features_crud_manage(self, user, member_organization, write):
         # Members have features.crud.view by default but not manage, as on the website.
         [item] = items_in(member_organization, 1)
@@ -150,6 +161,7 @@ class TestWriting:
         assert raised.value.code == "permission_denied"
         assert CrudDemoItem.objects.get(pk=item.pk).name == item.name
 
+    @pytest.mark.story("WA.D1.OM.J2.A1")
     def test_another_organizations_item_cant_be_changed(self, user, organization):
         theirs = CrudDemoItemFactory(tenant=TenantFactory(type=TenantType.ORGANIZATION), name="Theirs")
 
@@ -159,6 +171,7 @@ class TestWriting:
         assert raised.value.code == "not_found"
         assert CrudDemoItem.objects.get(pk=theirs.pk).name == "Theirs"
 
+    @pytest.mark.story("WA.D1.OM.J2.A1")
     def test_an_organization_the_user_isnt_in_is_not_found(self, user):
         stranger = TenantFactory(type=TenantType.ORGANIZATION)
 

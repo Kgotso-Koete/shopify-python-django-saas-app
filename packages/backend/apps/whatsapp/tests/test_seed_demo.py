@@ -27,7 +27,7 @@ from ..models import WhatsAppAccount, WhatsAppIdentity
 from ..services import identity
 from .factories import InternalAccountFactory
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D7.OP.J1.A1")]
 
 
 @pytest.fixture

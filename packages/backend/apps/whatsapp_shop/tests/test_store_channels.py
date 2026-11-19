@@ -1,6 +1,6 @@
 """
 Tests for apps/whatsapp_shop/services.py: which Shopify store each external communications number
-sells from (WhatsApp plan Step 2.1b, decisions 4 and 5, user story 25).
+sells from (WhatsApp plan Step 2.1b, decisions 4 and 5, user story WA.D3.OM.J1.A3).
 
 - one external number sells from one store (Step 2.1, decision 1); choosing again changes it
 - only the organization's own stores are offered, and only active ones holding the storefront
@@ -26,7 +26,7 @@ from .. import services
 from ..models import StorefrontChannel
 from ..services import StoreChannelError
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D3.OM.J1.A3")]
 
 # What a store needs for a WhatsApp customer's cart (Step 2.1b, decision 1): the Storefront API's
 # product listings and cart. unauthenticated_write_checkouts also grants reading checkouts.

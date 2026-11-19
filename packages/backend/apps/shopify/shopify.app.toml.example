@@ -19,3 +19,11 @@ api_version = "2026-10"
   [[webhooks.subscriptions]]
   compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
   uri = "https://<api-host>/api/shopify/webhooks/"
+
+  # Order updates in WhatsApp are opt-in (WhatsApp plan phase 4, decision 8). To turn them on:
+  # add read_orders to the scopes above, select Level 1 protected customer data for the app,
+  # release that app version, add read_orders to SHOPIFY_SCOPES, then uncomment:
+  #
+  # [[webhooks.subscriptions]]
+  # topics = ["orders/create", "orders/paid"]
+  # uri = "https://<api-host>/api/shopify/webhooks/"

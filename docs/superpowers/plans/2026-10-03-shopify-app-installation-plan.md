@@ -24,7 +24,7 @@ OAuth code, and HTTPS webhook endpoints. All three are ordinary Django views.
 ([`apps/payfast/`](../../../packages/backend/apps/payfast/)): its own settings block, system check,
 models, migrations, pure verification functions, an API client, views, GraphQL schema and tests. The only
 touches to upstream files are appended lines in the composition points (section 3.1 of
-[`agents.md`](../agents.md)):
+[`agents.md`](../../../agents.md)):
 
 - [`config/settings.py`](../../../packages/backend/config/settings.py): `"apps.shopify"` in `LOCAL_APPS`, plus a `SHOPIFY_*` settings block
 - [`config/urls_api.py`](../../../packages/backend/config/urls_api.py): `path("shopify/", include("apps.shopify.urls"))`
@@ -466,7 +466,7 @@ SHOPIFY_ENABLED = bool(SHOPIFY_API_KEY and SHOPIFY_API_SECRET)
   `SHOPIFY_WEBHOOK_DISPATCH` not in `{"sync", "celery"}`. When disabled, every Shopify view returns 404
   and every mutation refuses, as PayFast does on Stripe.
 - Each setting gets its `test_<name>_setting_reads_env_var` subprocess test (section 2.3 of
-  [`agents.md`](../agents.md)).
+  [`agents.md`](../../../agents.md)).
 - `cryptography` (for Fernet) is today only a transitive dependency. Add it to
   [`pyproject.toml`](../../../packages/backend/pyproject.toml) as a direct dependency pinned `==` to the
   version already in `uv.lock`, so the import doesn't depend on another package's choices.
@@ -574,7 +574,7 @@ type Mutation {
 }
 ```
 
-- **Privilege (section 3.5 of [`agents.md`](../agents.md)):** a token never leaves the backend through any
+- **Privilege (section 3.5 of [`agents.md`](../../../agents.md)):** a token never leaves the backend through any
   entrypoint. Connecting and disconnecting stores needs a new `shopify.manage` permission, viewing needs
   `shopify.view`, both registered from `apps/shopify/permissions.py` through the existing registry
   ([`apps/multitenancy/permissions.py`](../../../packages/backend/apps/multitenancy/permissions.py)) and
@@ -843,7 +843,7 @@ Five didn't match. The human maintainer's decisions, all as recommended:
 ## 5. Proposed Changes (implementation steps)
 
 Branch: `feat/shopify-app-installation` off `master`. Every step is strict TDD (section 2 of
-[`agents.md`](../agents.md)): write the tests listed first, see RED, then write the production files.
+[`agents.md`](../../../agents.md)): write the tests listed first, see RED, then write the production files.
 
 1. ✅ **Settings, system check, app skeleton, and rate-limit infrastructure.**
    - Tests first: `apps/shopify/tests/test_settings.py` (one subprocess test per setting, including
@@ -1511,7 +1511,7 @@ API_URL=https://<your-tunnel>.ngrok-free.app
 [`packages/backend/.env.shared`](../../../packages/backend/.env.shared) gets the same block commented
 out with placeholders. [`.test.env`](../../../packages/backend/.test.env) needs nothing: tests use
 `override_settings` (and `.test.env` must not gain comment lines, section 1.3 of
-[`agents.md`](../agents.md)). The Flask app's ngrok domain can be reused, pointed at the backend's port
+[`agents.md`](../../../agents.md)). The Flask app's ngrok domain can be reused, pointed at the backend's port
 instead of 5000.
 
 ---
@@ -1625,7 +1625,7 @@ human maintainer picks the number.
 ### Automated
 
 - RED per test file: `docker compose run --rm -T backend pytest apps/shopify/tests/<file> -v`
-  (check `DATABASE_URL` first, section 1.3 of [`agents.md`](../agents.md)).
+  (check `DATABASE_URL` first, section 1.3 of [`agents.md`](../../../agents.md)).
 - GREEN: `pnpm nx run backend:test`; for the frontend `pnpm nx run webapp-shopify:lint`,
   `pnpm nx run webapp-shopify:type-check`, `pnpm nx run webapp-shopify:test --watchAll=false`, the same
   three for `webapp` because its routes change, and `lint` and `type-check` for `webapp-tenants`. (The Nx

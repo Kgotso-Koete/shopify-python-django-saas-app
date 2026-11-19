@@ -13,6 +13,7 @@ Meta's references:
 """
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -35,6 +36,12 @@ RETRYABLE_ERROR_CODES = frozenset({130429, 131056, 4, 80007, 131000})
 WINDOW_CLOSED_ERROR_CODE = 131047
 # The access token expired or was revoked; every send fails until it's replaced.
 TOKEN_REJECTED_ERROR_CODE = 190
+# Meta's user and system user access tokens start "EAA", then letters and digits; 20 or more of them, so no
+# ordinary word in Meta's message matches.
+# https://developers.facebook.com/docs/facebook-login/guides/access-tokens
+ACCESS_TOKEN_SHAPE = re.compile(r"\bEAA[A-Za-z0-9]{20,}")
+# What an error's text says where Meta quoted a token.
+TOKEN_REMOVED = "[access token removed]"
 
 
 class SendError(Exception):
@@ -112,17 +119,26 @@ class WhatsAppClient:
         """
         Sends the approved template `name` to the phone number `to` (international digits, D19) and
         returns Meta's id for it. A template, unlike free text, may start a conversation: the
-        "Send test message" button (user story 11) sends Meta's sample `hello_world`.
+        "Send test message" button (user story WA.D3.OM.J1.A1) sends Meta's sample `hello_world`.
         https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview.md
         """
         envelope = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": to}
         template = {"name": name, "language": {"code": language}}
         return _wamid_from(self._post_message({**envelope, "type": "template", "template": template}))
 
+    def send_to(self, to: str, message: dict) -> str:
+        """
+        Sends `message` (one builder's output, such as a template message) to the phone number `to`
+        (international digits, D19), who needn't be a contact yet, and returns Meta's id for it: the code a
+        member links their phone with (plan phase 7, user story WA.D1.OM.J1.A3).
+        """
+        envelope = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": to}
+        return _wamid_from(self._post_message({**envelope, **message}))
+
     def get_phone_number(self) -> PhoneNumberDetails:
         """
         Asks Meta about this account's phone number id, with its token: the check that the id and
-        token work before they're saved (user story 11).
+        token work before they're saved (user story WA.D3.OM.J1.A1).
         https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/phone-numbers.md
         """
         data = self._call(
@@ -136,7 +152,7 @@ class WhatsAppClient:
             display_phone_number=data.get("display_phone_number", ""), verified_name=data.get("verified_name", "")
         )
 
-    # The number troubleshooting tools (plan D18, user story 23). None of these log anything: the
+    # The number troubleshooting tools (plan D18, user story WA.D3.OM.J2.A1). None of these log anything: the
     # code and the PIN pass straight to Meta.
 
     def get_number_status(self) -> dict:
@@ -222,6 +238,72 @@ class WhatsAppClient:
             raise FlowValidationError(data["validation_errors"])
         return data["id"]
 
+    def create_template(self, name: str, *, category: str, language: str, components: list[dict]) -> dict:
+        """
+        Submit a message template to the account's WhatsApp Business account for Meta's review, and
+        return Meta's answer: its `id` and `status` (plan phase 4, Step 4.3d-2; the status kept since Step
+        4.7). Review "can take up to 24 hours"; a utility template is often approved at once.
+        https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates
+        """
+        url = f"{GRAPH_API_URL}/{settings.WHATSAPP_GRAPH_API_VERSION}/{self.account.waba_id}/message_templates"
+        body = {"name": name, "category": category, "language": language, "components": components}
+        return self._call(requests.post, url, json=body, headers=self._headers, timeout=REQUEST_TIMEOUT_SECONDS)
+
+    def edit_template(self, template_id: str, *, components: list[dict]) -> None:
+        """
+        Replace a submitted template's components; Meta reviews it again. An approved template can be
+        edited at most once a day and 10 times in 30 days, and its category never, as providers' docs
+        restating Meta's rules say (https://infobip.com/docs/api/channels/whatsapp/whatsapp-service-management/edit-whatsapp-template);
+        Meta refuses more.
+        https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates
+        """
+        url = f"{GRAPH_API_URL}/{settings.WHATSAPP_GRAPH_API_VERSION}/{template_id}"
+        self._call(
+            requests.post, url, json={"components": components}, headers=self._headers, timeout=REQUEST_TIMEOUT_SECONDS
+        )
+
+    def delete_template(self, name: str) -> None:
+        """
+        Delete the template `name`, in every language, from the account's WhatsApp Business account: one this
+        service no longer sends (WhatsApp plan Step 4.7, decision 30). Meta deletes a template by its name.
+        https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates
+        """
+        url = f"{GRAPH_API_URL}/{settings.WHATSAPP_GRAPH_API_VERSION}/{self.account.waba_id}/message_templates"
+        self._call(requests.delete, url, params={"name": name}, headers=self._headers, timeout=REQUEST_TIMEOUT_SECONDS)
+
+    def get_template(self, template_id: str) -> dict:
+        """
+        Meta's view of one submitted template, its fields as Meta sends them: `name`, `status` (such as
+        "PENDING", "APPROVED" or "REJECTED") and `rejected_reason` ("NONE" unless rejected). Asked by its id,
+        so a business account holding hundreds of its own templates costs one small call per template
+        (plan Step 4.7, user story WA.D3.OM.J2.A2).
+        https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates
+        """
+        return self._call(
+            requests.get,
+            f"{GRAPH_API_URL}/{settings.WHATSAPP_GRAPH_API_VERSION}/{template_id}",
+            params={"fields": "name,status,rejected_reason"},
+            headers=self._headers,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+
+    def upload_media(self, content: bytes, *, filename: str, mime_type: str) -> str:
+        """
+        Upload a file to Meta for this number to send, such as an invoice's PDF (plan phase 4, D15), and
+        return its media id, which a document message names. The id is valid for 30 days.
+        https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media
+        """
+        data = self._call(
+            requests.post,
+            f"{self._number_url}/media",
+            data={"messaging_product": "whatsapp", "type": mime_type},
+            files={"file": (filename, content, mime_type)},
+            # Multipart: requests sets the Content-Type with its boundary, so only the token goes here.
+            headers={"Authorization": self._headers["Authorization"]},
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        return data["id"]
+
     def _post_message(self, body: dict) -> dict:
         return self._call(
             requests.post,
@@ -240,7 +322,9 @@ class WhatsAppClient:
             # The exception names the URL, which holds no secret; the token is only in the header.
             raise RetryableSendError(None, f"Couldn't reach Meta: {type(error).__name__}") from error
         if not response.ok:
-            raise _error_from(response)
+            # Every request carries the account's token in its Authorization header, and only there.
+            token = (kwargs.get("headers") or {}).get("Authorization", "").removeprefix("Bearer ")
+            raise _error_from(response, token)
         return response.json()
 
 
@@ -261,8 +345,11 @@ def _envelope(contact, message: dict) -> dict:
     return {"messaging_product": "whatsapp", "recipient_type": "individual", **recipient, **message}
 
 
-def _error_from(response) -> SendError:
-    """The SendError for a failed response, classified by Meta's error.code."""
+def _error_from(response, token: str = "") -> SendError:
+    """
+    The SendError for a failed response, classified by Meta's error.code. `token` is the access token the
+    request was sent with, removed from Meta's words with anything else shaped like one (_without_tokens).
+    """
     try:
         error = response.json()["error"]
         code = error["code"]
@@ -273,9 +360,13 @@ def _error_from(response) -> SendError:
             return RetryableSendError(None, message)
         return PermanentSendError(None, message)
 
-    # Meta's message, details and trace id help when asking Meta's support; none of them is the token.
+    # Meta's message, details and trace id help when asking Meta's support. Meta's message can quote the token it
+    # was sent ("Malformed access token EAA…", found in the WhatsApp plan's Step 4.7 human checks), and the error's
+    # text reaches logs, a command's output and the operator's email, so any token in it is removed.
     details = (error.get("error_data") or {}).get("details", "")
-    message = f"Meta error {code}: {error.get('message', '')} {details} (fbtrace_id {error.get('fbtrace_id', '')})"
+    message = _without_tokens(
+        f"Meta error {code}: {error.get('message', '')} {details} (fbtrace_id {error.get('fbtrace_id', '')})", token
+    )
     if code in RETRYABLE_ERROR_CODES:
         return RetryableSendError(code, message)
     if code == WINDOW_CLOSED_ERROR_CODE:
@@ -283,6 +374,16 @@ def _error_from(response) -> SendError:
     if code == TOKEN_REJECTED_ERROR_CODE:
         return TokenRejectedError(code, message)
     return PermanentSendError(code, message)
+
+
+def _without_tokens(text: str, token: str) -> str:
+    """
+    `text` with the request's own `token`, and anything shaped like a Meta access token (a shortened one, or one
+    sent before), replaced by TOKEN_REMOVED.
+    """
+    if token:
+        text = text.replace(token, TOKEN_REMOVED)
+    return ACCESS_TOKEN_SHAPE.sub(TOKEN_REMOVED, text)
 
 
 def _keep_metas_wa_id(contact, data: dict) -> None:
@@ -314,6 +415,17 @@ class LogSendBackend:
         logger.info("WhatsApp message not sent (log backend): %s to contact %s: %s", wamid, contact.pk, message)
         return wamid
 
+    def send_message_to(self, account, to: str, message: dict) -> str:
+        # Only the message's type: a link code's template carries the code, which is never logged.
+        wamid = f"log.{uuid.uuid4().hex}"
+        logger.info("WhatsApp %s not sent (log backend): %s from account %s", message.get("type"), wamid, account.pk)
+        return wamid
+
+    def upload_media(self, account, content: bytes, *, filename: str, mime_type: str) -> str:
+        media_id = f"log.{uuid.uuid4().hex}"
+        logger.info("WhatsApp media not uploaded (log backend): %s, %r from account %s", media_id, filename, account.pk)
+        return media_id
+
 
 class MetaSendBackend:
     """Sends messages through Meta's Cloud API, from the contact's own account's number."""
@@ -326,6 +438,12 @@ class MetaSendBackend:
 
     def send_template(self, account, to: str, name: str, *, language: str) -> str:
         return WhatsAppClient(account).send_template(to, name, language=language)
+
+    def send_message_to(self, account, to: str, message: dict) -> str:
+        return WhatsAppClient(account).send_to(to, message)
+
+    def upload_media(self, account, content: bytes, *, filename: str, mime_type: str) -> str:
+        return WhatsAppClient(account).upload_media(content, filename=filename, mime_type=mime_type)
 
 
 def send_backend() -> LogSendBackend | MetaSendBackend:

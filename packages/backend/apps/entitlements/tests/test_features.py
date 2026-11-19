@@ -1,6 +1,6 @@
 """
 Tests for an organization's features (WhatsApp plan Step 3.2, phase 3 decisions 1, 6 and 7, user
-story 26): one answer, the same under PayFast and Stripe.
+story WA.D6.OP.J1.A1): one answer, the same under PayFast and Stripe.
 
 - the plan that applies now (apps.finances.billing.effective_plan), then what that plan includes,
   from the catalog
@@ -27,7 +27,7 @@ from apps.multitenancy.tests.factories import TenantFactory
 from apps.payfast.models import PayFastSubscription
 from apps.payfast.tests.factories import PayFastSubscriptionFactory
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D6.OP.J1.A1")]
 
 BOTH = {"SHOPIFY", "WHATSAPP"}
 

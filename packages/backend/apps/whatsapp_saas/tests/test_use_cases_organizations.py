@@ -1,6 +1,6 @@
 """
 Tests for the organization operations in apps/whatsapp_saas/use_cases.py (plan Step 1.9, decision
-D10, user stories 4, 5 and 9).
+D10, user stories WA.D2.OM.J1.A2, WA.D2.OM.J1.A3 and WA.D1.OM.J2.A1).
 
 Menus, Flows and the assistant all call these, so each checks exactly what its GraphQL twin checks
 (the audit in plan Step 1.9), and reuses the website's serializer for its validation:
@@ -37,6 +37,7 @@ def organization_with(user, role, name="Acme"):
     return tenant
 
 
+@pytest.mark.story("WA.D2.OM.J1.A2")
 class TestListing:
     def test_only_accepted_memberships_are_listed_by_name(self, user):
         beta = organization_with(user, TenantUserRole.MEMBER, name="Beta")
@@ -50,6 +51,7 @@ class TestListing:
         assert use_cases.list_organizations(user) == sorted([alpha, beta, personal], key=lambda tenant: tenant.name)
 
 
+@pytest.mark.story("WA.D2.OM.J1.A2")
 class TestSelecting:
     def test_an_organization_the_user_belongs_to_is_selected(self, user):
         tenant = organization_with(user, TenantUserRole.MEMBER)
@@ -68,6 +70,7 @@ class TestSelecting:
         assert raised.value.code == "not_found"
 
 
+@pytest.mark.story("WA.D2.OM.J1.A3")
 class TestCreating:
     def test_the_creator_becomes_the_owner_as_on_the_website(self, user):
         tenant = use_cases.create_organization(user, "Monthly Club")
@@ -88,6 +91,7 @@ class TestCreating:
         assert not Tenant.objects.filter(creator=user, type=TenantType.ORGANIZATION).exists()
 
 
+@pytest.mark.story("WA.D2.OM.J1.A3")
 class TestRenaming:
     @pytest.mark.parametrize("role", [TenantUserRole.OWNER, TenantUserRole.ADMIN])
     def test_an_owner_or_admin_renames_it_and_the_action_is_logged(self, user, role):

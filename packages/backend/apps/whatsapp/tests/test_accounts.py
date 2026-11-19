@@ -1,6 +1,6 @@
 """
 Tests for apps/whatsapp/services/accounts.py: connecting an organization's number with the form,
-sending it a test message, and disconnecting it (plan Step 1.5e, user story 11). The GraphQL API
+sending it a test message, and disconnecting it (plan Step 1.5e, user story WA.D3.OM.J1.A1). The GraphQL API
 on top of these, with its permission checks, is Step 1.5f.
 
 The maintainer's decisions (plan Step 1.5, 2026-10-17):
@@ -44,7 +44,7 @@ from .fakes import meta_error, meta_response
 INTERNAL = AccountPurpose.INTERNAL_COMMUNICATIONS
 EXTERNAL = AccountPurpose.EXTERNAL_COMMUNICATIONS
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D3.OM.J1.A1")]
 
 PHONE_NUMBER_ID = "100000000000777"
 WABA_ID = "200000000000777"
@@ -122,7 +122,7 @@ class TestConnecting:
         assert account.verified_name == "Acme Store"
         assert account.connection_method == ConnectionMethod.MANUAL
         assert account.is_active is True
-        # The form's proofs (user story 11): Meta accepted the credentials, and our app is subscribed
+        # The form's proofs (user story WA.D3.OM.J1.A1): Meta accepted the credentials, and our app is subscribed
         # to the number's WhatsApp Business account, both now (Step 1.18).
         assert account.credentials_verified_at == NOW
         assert account.subscribed_at == NOW

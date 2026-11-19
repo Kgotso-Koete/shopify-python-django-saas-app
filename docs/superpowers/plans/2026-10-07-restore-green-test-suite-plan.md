@@ -315,7 +315,7 @@ were new.
 ## 3. Touching upstream code (exception granted by the human maintainer, 2026-10-07)
 
 The standing rule is to leave the original author's code alone (section 3 of
-[`agents.md`](../agents.md)). For this plan only, the human maintainer allows changes to upstream files
+[`agents.md`](../../../agents.md)). For this plan only, the human maintainer allows changes to upstream files
 where that's what turns the suite green, on three conditions:
 
 1. A failure is proven to come from upstream code (it also fails on a clean checkout of the upstream
@@ -349,7 +349,7 @@ that does is `webapp-sso`'s test setup (section 2.2, step 5.1).
 ## 5. Proposed Changes (implementation steps)
 
 Branch: `feature/restore-green-test-suite` off `master`. Strict TDD (section 2 of
-[`agents.md`](../agents.md)). For a broken test, the test failing is the RED: fix it, and the same
+[`agents.md`](../../../agents.md)). For a broken test, the test failing is the RED: fix it, and the same
 command going green is the GREEN.
 
 1. **Measure.** Run every suite locally once (section 8, "Automated", the full list), record each

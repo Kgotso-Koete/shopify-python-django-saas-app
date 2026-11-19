@@ -1,7 +1,63 @@
+// Kind of test: unit (agents.md section 2.5). Why: renderEmail renders one template to a subject and HTML on its
+// own, with its built-in translations; nothing else is rendered, and nothing is faked.
 import { renderEmail } from '../index';
 import { EmailTemplateType } from '../types';
 
 describe('renderEmail', () => {
+  // WhatsApp plan, user story WA.D7.OP.J2.A2: the operator is told about Shopify webhooks the sweep gave up on,
+  // each with its shop, topic and last error.
+  test('WA.D7.OP.J2.A2 SHOPIFY_WEBHOOKS_UNHANDLED', () => {
+    const result = renderEmail(
+      EmailTemplateType.SHOPIFY_WEBHOOKS_UNHANDLED,
+      {
+        to: 'ops@example.com',
+        deliveries: [
+          {
+            webhook_id: 'webhook-1',
+            topic: 'orders/paid',
+            shop_domain: 'acme.myshopify.com',
+            received_at: '2026-11-05T10:00:00Z',
+            last_error: 'RuntimeError: Shopify said no.',
+          },
+        ],
+      },
+      'en'
+    );
+
+    expect(result.subject).toContain("Shopify webhooks weren't handled");
+    expect(result.html).toContain('acme.myshopify.com');
+    expect(result.html).toContain('orders/paid');
+    expect(result.html).toContain('RuntimeError: Shopify said no.');
+    expect(result.html).toContain('Handle again');
+  });
+
+  // WhatsApp plan Step 4.7, user story WA.D7.OP.J2.A1: the operator is told about message templates a business
+  // can't use, each with its business, number, template and Meta's reason.
+  test('WA.D7.OP.J2.A1 WHATSAPP_TEMPLATES_REFUSED', () => {
+    const result = renderEmail(
+      EmailTemplateType.WHATSAPP_TEMPLATES_REFUSED,
+      {
+        to: 'ops@example.com',
+        problems: [
+          {
+            organization: 'Acme Outdoor',
+            number: '27000000777',
+            template: 'shop_order_paid',
+            reason: 'Meta rejected it: INVALID_FORMAT',
+          },
+        ],
+      },
+      'en'
+    );
+
+    expect(result.subject).toContain("WhatsApp templates can't be used");
+    expect(result.html).toContain('Acme Outdoor');
+    expect(result.html).toContain('27000000777');
+    expect(result.html).toContain('shop_order_paid');
+    expect(result.html).toContain('Meta rejected it: INVALID_FORMAT');
+    expect(result.html).toContain('whatsapp_publish_order_templates');
+  });
+
   test('ACCOUNT_ACTIVATION', () => {
     const result = renderEmail(
       EmailTemplateType.ACCOUNT_ACTIVATION,

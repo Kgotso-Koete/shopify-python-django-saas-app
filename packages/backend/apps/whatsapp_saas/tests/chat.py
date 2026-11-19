@@ -18,11 +18,19 @@ class Screen:
     """
 
     def __init__(self, message):
+        # A document, such as an invoice's PDF (plan phase 4, Step 4.5b), has no body or buttons.
+        self.document = message.get("document")
+        if self.document is not None:
+            self.body, self.image_url, self.flow, self.link = self.document.get("caption", ""), None, None, None
+            self.options, self.descriptions, self.has_buttons = [], [], False
+            return
         interactive = message["interactive"]
         self.body = interactive["body"]["text"]
         self.image_url = interactive.get("header", {}).get("image", {}).get("link")
         action = interactive["action"]
         self.flow = action.get("parameters") if interactive["type"] == "flow" else None
+        # A link-button message's {"display_text", "url"} (plan phase 4, Step 4.1).
+        self.link = action.get("parameters") if interactive["type"] == "cta_url" else None
         self.descriptions = []
         # Meta reports a press on a button and on a list row differently (button_reply, list_reply).
         self.has_buttons = "buttons" in action

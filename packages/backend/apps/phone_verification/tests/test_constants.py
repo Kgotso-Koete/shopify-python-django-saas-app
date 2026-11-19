@@ -15,4 +15,6 @@ pytestmark = pytest.mark.django_db
 
 
 def test_every_channel_is_stored_as_its_name():
-    assert [channel.value for channel in Channel] == ["WHATSAPP_INBOUND", "WHATSAPP_TEMPLATE", "SMS"]
+    # No SMS since 2026-11-09 (maintainer's decision, user story WA.D1.OM.J1.A3): a member proves their number
+    # on WhatsApp, which they use to talk to the app anyway.
+    assert [channel.value for channel in Channel] == ["WHATSAPP_INBOUND", "WHATSAPP_TEMPLATE"]

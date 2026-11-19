@@ -6,9 +6,11 @@
 
 ## 1. Who's who
 
-- **SaaS user:** has an account from the existing website sign-up, and memberships in organizations. WhatsApp knows them only after they link their number (user story 1), through a `WhatsAppIdentity` row.
+> **Since 2026-11-07,** the user stories use four actors: store customer, organization member (named Owner, Admin, Member or Support where it matters), operator, and system. They're defined in the key rows of the stories file (section 2); the entries below keep this plan's earlier wording.
+
+- **SaaS user:** has an account from the existing website sign-up, and memberships in organizations. WhatsApp knows them only after they link their number (user story WA.D1.OM.J1.A2), through a `WhatsAppIdentity` row.
 - **Organization member:** a SaaS user acting inside one organization. Their roles decide what they may do, with the same permission codes the website checks (`features.crud.view`, `features.crud.manage`, `shopify.view`, `billing.view`, `billing.manage`, and the new `whatsapp.view` / `whatsapp.manage`).
-- **Organization admin:** an organization member with `whatsapp.manage`, who connects the organization's own WhatsApp number with the credentials form (user story 11).
+- **Organization admin:** an organization member with `whatsapp.manage`, who connects the organization's own WhatsApp number with the credentials form (user story WA.D3.OM.J1.A1).
 - **Store customer (shopper):** someone texting an organization's WhatsApp number to buy from its Shopify store. Known as a `StoreCustomer` (phase 2) built on that number's `WhatsAppContact`: never a SaaS user, never a member, and scoped to that one organization. Named "store customer" rather than plain "customer" because `Customer` already means the paying organization in dj-stripe, and a customer record in Shopify's API (maintainer's choice, 2026-10-15).
 - **Support member:** an organization member who answers store customers that asked for a human (phase 6).
 - **Operator:** whoever runs the deployment and owns the platform's Meta app and platform number.
@@ -16,43 +18,14 @@
 
 ## 2. User stories
 
-| Story                                                                | As a                        | I want                                                                    | So that                                                                  | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Link my WhatsApp number (Steps 1.7, 1.14)                         | SaaS user                   | to link my WhatsApp number to my account                                  | the platform number knows it's me                                        | I enter my WhatsApp number on my profile in any common format, such as `083 123-4567` or `+27 (0)83 123 4567`, and it's saved as `27831234567` (D19)<br>I get a one-time code and a `wa.me` link, and the code works only when sent from that number<br>Sending it links the number; the signed webhook proves the number, my web session proves the account<br>Codes expire after 10 minutes, work once and are rate-limited<br>A number already linked to another account is refused<br>I can disconnect from the profile page or by sending `unlink`                                                                                                              |
-| 2. Strangers learn nothing (Step 1.7)                                | SaaS user                   | an unlinked number to get only linking instructions                       | nobody can see my data by texting the platform                           | An unlinked sender gets a short "link your account at …" reply and nothing else<br>The reply is the same whether or not the number belongs to a registered person                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 3. Choose how I talk to the app (Steps 1.8, 1.14)                    | SaaS user                   | to choose menus and forms, or the AI assistant                            | the experience suits me                                                  | The choice is saved on my `WhatsAppIdentity` and shown on my profile<br>`mode menu` and `mode ai` switch it in chat<br>With no choice saved, `WHATSAPP_DEFAULT_CONVERSATION_MODE` applies<br>Switching discards half-finished forms and unconfirmed actions                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 4. See and pick my organizations (Steps 1.9, 1.10)                   | SaaS user                   | to list my organizations and pick one to work in                          | later actions apply to the right organization                            | Only organizations where my membership is accepted are listed<br>Picking one stores it for the conversation; every later action rechecks the membership                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 5. Create and rename an organization in chat (Steps 1.9, 1.10, 1.11) | SaaS user                   | to create an organization, or rename one I manage                         | I can run my workspace from my phone                                     | Create opens a WhatsApp form; rename opens it pre-filled with the current name<br>Nothing is saved until I press Confirm<br>Validation is the same as the website's; rename needs the same permission as on the website                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 6. Manage CRUD items with paging (Steps 1.9, 1.10, 1.11)             | organization member         | to list, view, create, update and delete CRUD items                       | I can maintain organization data in chat                                 | Lists show 7 items per page, with Previous, Next and Main menu<br>Create and update use forms pre-filled with the organization and current values<br>Delete always asks for a separate confirmation<br>Reads need `features.crud.view`, writes need `features.crud.manage`                                                                                                                                                                                                                                                                                                                                                                                           |
-| 7. See my store's products (Step 1.12)                               | organization member         | to browse and search my organization's Shopify products                   | I can check my catalog from my phone                                     | Needs `shopify.view`, like the website's products page<br>Products are paged 7 at a time, newest first, with a free-text search<br>A store that must be reconnected gives a clear message, not an error                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 8. Ask the assistant (Step 1.13)                                     | SaaS user                   | to ask in plain words, such as "add an item called Monthly report"        | I don't have to learn the menus                                          | The assistant can only call the fixed list of tools, which run the same operations as the menus<br>Every write is shown back with Confirm and Cancel buttons, and only my press runs it<br>The assistant reports success only from the saved result                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 9. Never more than the website allows (Steps 1.9, 1.13)              | organization member         | WhatsApp to grant me exactly what the website grants me                   | chat is never a back door                                                | Every operation checks the same permission code as the matching GraphQL field<br>An action on another organization's item reads as "not found"<br>Organization ids never come from message text or from the AI                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 10. Try it without Meta (Steps 1.4, 1.15)                            | operator                    | to run the whole flow locally without a Meta account                      | development and demos cost nothing                                       | `WHATSAPP_SEND_BACKEND=log` (the default) stores replies without calling Meta<br>Seed data and signed sample webhooks drive every human check                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 11. Connect my organization's number with a form (Steps 1.5, 1.6)    | organization admin          | to enter my WhatsApp Business API details in a simple form                | the app can send and receive on my number, proven before anyone texts it | Needs `whatsapp.manage`; members with `whatsapp.view` see the status only<br>I enter the phone number id, the WhatsApp Business account id, the access token and my Meta app's secret<br>Saving checks the id and token with Meta first, then stores them encrypted; secrets are never shown again<br>The page shows the webhook URL and verify token to paste into my Meta app, and marks the webhook verified when Meta calls it<br>"Send test message" sends Meta's `hello_world` template to a number I enter in any common format (D19), and the page shows the last message received on my number<br>I can disconnect the number                               |
-| 12. Browse and search a store (Steps 2.2, 2.3)                       | store customer              | to text "hi, show me your products" or search for something               | I can shop without opening a website                                     | Products come from that organization's store, 7 per page, with Previous, Next and Main menu<br>Only products published to the store and available for sale are shown                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 13. See a product's details (Step 2.4)                               | store customer              | to tap a product and see its picture, price and options                   | I can decide as I would on the web page                                  | The reply shows the image, title, price and variants<br>Buttons offer Add to cart, Buy now and Back to results                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 14. A store customer stays inside one store (Steps 2.1, 2.2)         | store customer              | my chat with a store to be only about that store                          | other businesses never see or use my chat                                | A store customer belongs to exactly one organization's number<br>The same phone texting two stores is two separate store customers<br>Store data is redacted when Shopify asks (`customers/redact`, `shop/redact`)                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| 15. Buy a subscription in chat (Step 4.1)                            | organization member         | to pick a plan and pay from WhatsApp                                      | upgrading doesn't need the website menus                                 | Needs `billing.manage`<br>I get a single-use link to a page on this site that submits the PayFast form<br>"Paid" is only reported after PayFast's ITN confirms it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 16. Pay for my cart (Steps 2.4, 4.3)                                 | store customer              | to pay for what I picked                                                  | I can finish the purchase from the chat                                  | I get a button to the store's own Shopify checkout<br>Which payment provider takes the money is between the store and Shopify; this app never handles payment for store orders<br>When Shopify reports the order paid, I get a WhatsApp confirmation                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 17. Get my invoices on WhatsApp (Steps 4.4, 4.5)                     | organization member         | my subscription invoices as PDFs in chat                                  | I have them for my records                                               | Needs `billing.view`<br>Each successful subscription payment creates an invoice with the next number in the organization's sequence<br>The PDF holds what SARS lists for a tax invoice                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 18. Connect with Facebook instead (Phase 5)                          | organization admin          | to connect my number through a Facebook popup                             | I don't have to copy ids and tokens                                      | The popup's result is exchanged on the server<br>The number is subscribed and registered automatically                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 19. Ask for a human (Step 6.1)                                       | store customer              | to tap "Talk to a person"                                                 | someone real answers when the bot can't                                  | The bot stops replying until a person closes the conversation<br>The members who answer store customers see that it's waiting                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 20. Answer waiting store customers (Steps 6.2, 6.3)                  | support member              | to see the chats waiting for a person, answer from the web and close them | store customers get answers                                              | Needs `whatsapp.inbox`<br>My reply is sent through WhatsApp<br>Free text is refused 24 hours after the store customer's last message, with the reason shown                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 21. Never stuck (Steps 1.4, 1.10, 2.3, 2.4)                          | SaaS user or store customer | every reply to offer a way back                                           | I can always return to the main menu, whatever I'm looking at            | Every interactive reply carries a Back or Main menu option<br>Lists hold at most 7 items, so Previous, Next and Main menu always fit<br>Every footer says `Send *menu* at any time`, and `menu` works in both modes, even mid-form<br>Plain text replies, the assistant's included, come with a Main menu button<br>An expired button leads to the main menu, never to an error                                                                                                                                                                                                                                                                                      |
-| 22. Get my order receipt on WhatsApp (Step 4.3)                      | store customer              | my order's receipt in the chat after I pay                                | I have proof of what I bought without checking email                     | When Shopify reports the order paid, I get the order number, the total and a button to the order status page Shopify keeps for that order<br>The link is Shopify's own (`Order.statusPageUrl`); this app issues no tax invoice for store orders                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| 23. Fix my number's registration myself (Steps 1.5b, 1.6b)           | organization admin          | tools to check and repair my number's registration with Meta              | a stuck number doesn't stop my business, and I don't need Meta's support | Needs `whatsapp.manage`<br>The WhatsApp tab shows Meta's own status for my number: `status`, `code_verification_status`, `quality_rating`, `name_status`, `verified_name`<br>I can request a verification code by SMS or voice, enter it, register the number with its 6-digit PIN, and re-subscribe the app to my account's webhooks<br>Before registering, I'm warned that Meta allows 10 attempts per 72 hours<br>Meta's errors are shown with their code, a plain explanation and a link to Meta's page<br>The PIN is never stored, and every action is written to the action log<br>The operator has the same tools for the platform number in the Django admin |
-| 24. Verify my number by receiving a code (Phase 7)                   | SaaS user                   | to receive a code on my number and type it on the website                 | I can prove my number even if I can't send a message first               | The code arrives as a WhatsApp authentication template with a copy-code button, or later by SMS, as `PHONE_VERIFICATION_CHANNEL` chooses (D20)<br>It uses the same code store as linking (user story 1): hashed, expiring, single-use and rate-limited<br>The default stays inbound linking, which needs no template and no SMS provider                                                                                                                                                                                                                                                                                                                             |
-| 25. Choose which store my number sells from (Step 2.1b)              | organization admin          | to pick the store each external number sells from                         | customers texting it see that store's products, and only those           | Needs `whatsapp.manage`<br>Only my organization's own stores are offered, and only active ones holding the storefront scopes<br>I choose the store in the connect form, and can change it later on the number's row<br>A number with no store chosen says so on its row, and its customers get no reply                                                                                                                                                                                                                                                                                                                                                              |
-| 26. Shopify and WhatsApp come with a paid plan (Phase 3)             | operator                    | Shopify and WhatsApp included only in paid plans, trials included         | the service earns what it costs to run                                   | With `PLAN_ENTITLEMENTS_ENABLED` off, the default, nothing changes<br>With it on, the free plan includes neither; monthly and yearly include both; a trial includes what its plan includes<br>What each plan includes is a table in the database, created by migrations and read-only in the admin<br>The backend refuses a locked feature on every GraphQL field, on connecting a store, and in the WhatsApp router, the same way under PayFast and Stripe<br>Shopify's privacy webhooks and uninstalls are always handled                                                                                                                                          |
-| 27. My data waits for me when my plan ends (Phase 3)                 | organization admin          | my stores, numbers and customers kept when my plan ends                   | choosing a plan again brings everything straight back                    | Nothing is deleted when a plan ends<br>While lapsed, numbers send no reply, but incoming messages are still stored, and nothing goes to OpenAI<br>The Shopify and WhatsApp pages show what's kept, read-only, with "Choose a plan", or "Ask the organization's owner to choose a plan" without `billing.manage`<br>A new plan restores everything at once, with nothing to reconnect                                                                                                                                                                                                                                                                                 |
-| 28. I see what's unlocked, not what we pay (Phase 3)                 | organization member         | to see whether Shopify and WhatsApp are unlocked for my organization      | I understand why actions are disabled                                    | A field lists the organization's unlocked features, and any member can read it<br>It shows no plan name, price, trial date or payment state; those stay behind `billing.view`, which Members don't have<br>It's for display only: the backend checks every action itself                                                                                                                                                                                                                                                                                                                                                                                             |
+The user stories, each with where it stands (developed, tests passing, human checks, committed), are in their own file, which this plan links to rather than copies: [`2026-10-06-whatsapp-first-channel-user-stories.md`](user-stories/2026-10-06-whatsapp-first-channel-user-stories.md). Since 2026-11-07 they're grouped by domain, then actor, then journey, with IDs such as `WA.D5.SC.J1.A2`; the old numbers 1 to 28 were replaced throughout this plan the same day.
 
 ## 3. Deliberately out of scope
 
 - **WhatsApp-only sign-up.** Accounts are still created on the website; WhatsApp links to an existing account. A sign-up Flow can come later without changing the identity model.
 - **Taking payment for Shopify orders ourselves.** Shopify's API terms forbid it (section 6.2), so store customers always pay in Shopify Checkout.
 - **WhatsApp Pay.** Meta offers it only in India, Brazil and Singapore (section 6.1).
-- **Our own tax invoices for store orders.** The store is the seller, and Shopify keeps a status page for every order, which the store customer gets on WhatsApp instead (user story 22). No invoice or receipt PDF was found on Shopify's `Order` object (section 6.2); a store that needs formal invoices uses its own Shopify invoice app. Our invoices cover only our own SaaS billing.
+- **Our own tax invoices for store orders.** The store is the seller, and Shopify keeps a status page for every order, which the store customer gets on WhatsApp instead (user story WA.D5.SC.J1.A2). No invoice or receipt PDF was found on Shopify's `Order` object (section 6.2); a store that needs formal invoices uses its own Shopify invoice app. Our invoices cover only our own SaaS billing.
 - **A ticketing system.** Phase 6 is a waiting list with an assignee and a reply box: no SLAs, priorities, teams or canned replies. If it grows past that, it's dropped.
 - **Meta catalog product messages.** They need the merchant's catalog synced to their WhatsApp Business account. Plain messages with an image and buttons work for every store without that.
 - **An encrypted Flow data-exchange endpoint in phase 1.** Phase 1's forms are sent pre-filled and their answers come back in the ordinary webhook (D9). The endpoint arrives only when a form needs live data while it's open.
@@ -86,10 +59,12 @@
 - **D11. Every write is confirmed by the user, server-side.** A write first becomes a `WhatsAppPendingAction` holding the exact arguments, user, organization and expiry. The user gets a summary with Confirm and Cancel buttons. Only pressing Confirm runs it, after the permission is checked again. Menus and the AI share this mechanism, so the model can never confirm on the user's behalf.
 - **D12. The AI uses OpenAI's Responses API with strict function tools.** History, including tool calls and their results, is stored in our database, so a human reply or an expired conversation can rebuild it, with `store: false` sent to OpenAI. The provider sits behind a small interface with a fake for tests, so no test calls OpenAI. Tool calls per message are capped, and no agent framework is added. The `openai` package is already a backend dependency.
   - **Changed on 2026-10-20 (the maintainer's rule, agents.md section 5.3a):** the provider calls OpenAI with plain HTTP requests through `requests`, not the `openai` SDK (Step 1.13e). Upstream's own uses of the SDK stay.
-- **D13. Store customers pay in Shopify Checkout, and that link is all this app does about payment (maintainer's decision, 2026-10-15).** We build a Storefront API cart with the store customer's phone on it and send its `checkoutUrl`. Which payment provider takes the money is between the store and Shopify; this app never asks or checks. Shopify's `orders/paid` webhook triggers the WhatsApp confirmation and the order status link (user story 22).
+- **D13. Store customers pay in Shopify Checkout, and that link is all this app does about payment (maintainer's decision, 2026-10-15).** We build a Storefront API cart with the store customer's phone on it and send its `checkoutUrl`. Which payment provider takes the money is between the store and Shopify; this app never asks or checks. Shopify's `orders/paid` webhook triggers the WhatsApp confirmation and the order status link (user story WA.D5.SC.J1.A2).
   - **Confirmed on 2026-10-24 (Step 2.1, decision 3):** the Storefront cart stays, chosen as the long-term option over Admin API draft orders and cart permalinks, pending Step 2.1a's experiment on a dev store.
 - **D14. SaaS subscriptions keep our own PayFast flow,** through a single-use link to a page on this site that submits the signed form the backend already builds. PayFast's ITN stays the only proof of payment.
+  - **Changed on 2026-11-02 (phase 4, decision 9):** no single-use link; the team's chat sends a plain link to the organization's Subscriptions page, which checks login and `billing.manage` as it does today.
 - **D15. Invoices are generated with ReportLab (maintainer's choice, 2026-10-15),** in a Celery task, with no system packages added to the Docker image. Numbers come from a per-organization counter row locked with `select_for_update`, so there are no gaps. PDFs go to private storage and reach WhatsApp by uploading to Meta's media endpoint, never as a public link.
+  - **Changed on 2026-11-02 (phase 4, decisions 11 and 13):** one counter for the whole service, since the operator issues every invoice; no VAT, so the PDF is an "Invoice", not a "Tax Invoice".
 - **D16. New permission codes.** `whatsapp.view` and `whatsapp.manage` (Step 1.5), and `whatsapp.inbox` (phase 6), are registered in `apps/whatsapp/permissions.py` and seeded by a data migration, as Shopify does (decision D7 of [the Shopify plan](2026-10-03-shopify-app-installation-plan.md)).
 - **D17. Nobody is ever stuck (maintainer's rule, 2026-10-15).** Every reply offers a way back.
   - Lists hold at most 7 items, plus Previous, Next and Main menu rows (Meta allows 10 rows).
@@ -121,7 +96,7 @@
   - a single leading `0` is replaced by `WHATSAPP_DEFAULT_COUNTRY_CODE` (default `27`)
   - anything else must already start with its country code
 
-  The result must be 8 to 15 digits, E.164's limit (https://www.itu.int/rec/T-REC-E.164); anything else is refused with a clear error. It can't tell a real number from a well-shaped wrong one; the link code (user story 1) and the test message (user story 11) prove a number is real.
+  The result must be 8 to 15 digits, E.164's limit (https://www.itu.int/rec/T-REC-E.164); anything else is refused with a clear error. It can't tell a real number from a well-shaped wrong one; the link code (user story WA.D1.OM.J1.A2) and the test message (user story WA.D3.OM.J1.A1) prove a number is real.
 
 - **D20. Phone verification has one code store and swappable channels (maintainer's decision, 2026-10-15).** Proving a user controls a number works like the existing email confirmation (`apps/users/tokens.py`), except that a short typed code must be stored: it's too short to carry its own signature, as an email link's token does.
   - **The code store:** a small, channel-neutral `apps.phone_verification` app, built in Step 1.7, holds `PhoneVerificationCode`:
@@ -134,6 +109,7 @@
     - **`whatsapp_template`** (phase 7): we send the code in a WhatsApp authentication template with a copy-code button, and the user types it on the website. Meta requires an authentication template for codes, and its text is fixed, so it carries the code, not a link (section 6.1). It needs an approved template, and each one is billed.
     - **`sms`** (phase 7): the same, by SMS through an optional provider, switched on only when configured, since it's a paid service. It also covers numbers not on WhatsApp.
   - **Dependency direction:** the store knows nothing about WhatsApp. WhatsApp and SMS each plug a sender into it, so deleting either leaves the other working (agents.md section 3.1).
+  - **Changed 2026-11-09 (maintainer's decision, user story WA.D1.OM.J1.A3): no SMS channel.** Authentication relies on WhatsApp, which the member uses to talk to the app anyway, so the `sms` channel and its provider are dropped, and `SMS` is gone from `Channel` (migration `phone_verification` 0004). `whatsapp_template` sends the code from the organization's own team number, under an authentication template submitted when that number connects, like the order templates (decision 25 keeps its status). The store stays channel-neutral.
 - **D21. Replies go out in order, one contact at a time (maintainer's decision, 2026-10-16).** The reference app sent from an in-memory list inside the webhook request, with `sleep` between messages. Order broke whenever the request was retried or slow. Here:
   - **The queue is the message table.** Every reply is first stored as an outbound `WhatsAppMessage` with status `queued` (D8), so nothing is lost if a worker restarts, and no extra store such as Redis is needed (agents.md section 4.1).
   - **One sender per contact.** A send task drains one contact's queued messages strictly in the order they were queued (by id). It sends one, waits for Meta to accept it and return its id, and only then sends the next.
@@ -168,7 +144,7 @@ The maintainer's earlier WhatsApp-first project `python-flask-whatsapp-store` (a
 - Admin, payment and agent-reply routes had no authentication, and payment links trusted a phone number in the URL. Here every endpoint has a named authority: a Meta signature, a logged-in session, or a single-use token.
 - Flow tokens were unsigned strings that the server parsed. Here they're signed references to stored state (D9).
 - The number registration tools were unauthenticated GET routes that anyone could call. Here they're permission-checked, logged operations (D18).
-- Unknown senders crashed the handler, and the country code was hardcoded. Here unknown senders get linking instructions (user story 2), and numbers are stored as Meta sends them.
+- Unknown senders crashed the handler, and the country code was hardcoded. Here unknown senders get linking instructions (user story WA.D1.OM.J1.A1), and numbers are stored as Meta sends them.
 - Invoices sat in a public S3 bucket. Here they're private and sent through Meta's media endpoint (D15).
 - There were no tests beyond four user model tests. Here every step is RED/GREEN.
 
@@ -224,7 +200,7 @@ Every fact links to the official page it comes from. Anything a page doesn't sta
 - **Search:** `search(query:, types: [PRODUCT])`, sorted by relevance. https://shopify.dev/docs/api/storefront/latest/queries/search. Cursor paging with `first`/`after`. https://shopify.dev/docs/api/usage/pagination-graphql
 - **Cart checkout:** `cartCreate` with `buyerIdentity.phone`, then `cart.checkoutUrl` sends the buyer to Shopify's web checkout. https://shopify.dev/docs/api/storefront/latest/objects/Cart, https://shopify.dev/docs/api/storefront/latest/input-objects/CartBuyerIdentityInput
 - **No payment outside Shopify Checkout:** API Terms section 2.3.18 prohibits "an alternative to Shopify Checkout for checkout or payment processing for Shopify Merchants", and registering such transactions through the API. https://www.shopify.com/legal/api-terms
-- **Order receipt:** the Admin API `Order` object has `statusPageUrl`, "The URL where customers can check their order's current status, including tracking information and delivery updates", and `confirmationNumber`, "A customer-facing order identifier". No invoice or receipt PDF field was found on it. https://shopify.dev/docs/api/admin-graphql/latest/objects/Order
+- **Order receipt:** the Admin API `Order` object has `statusPageUrl`, "The URL where customers can check their order's current status, including tracking information and delivery updates", and `confirmationNumber`, "A customer-facing order identifier". No invoice or receipt PDF field was found on it. https://shopify.dev/docs/api/admin-graphql/latest/objects/Order. Found on 2026-11-10: `statusPageUrl` needs protected customer data Level 2, on every API version (https://shopify.dev/changelog/level-2-protected-customer-data-requirements-are-now-needed-to-access-the-order-statuspageurl-field), so the app uses Level 1 fields only (decision 30).
 - **Order webhooks:** `ORDERS_PAID` needs `read_orders`. https://shopify.dev/docs/api/admin-graphql/latest/enums/WebhookSubscriptionTopic. A buyer's name, email and phone in order data need protected customer data approval for public apps. https://shopify.dev/docs/apps/launch/protected-customer-data
 - **Privacy webhooks:** `customers/redact` and `shop/redact` must be acted on within 30 days. https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance
 
@@ -295,10 +271,10 @@ flowchart TD
 
 All in `apps.whatsapp`. Field names follow local conventions at implementation; the invariants are what tests pin. Since Step 1.16, every choice field stores its enum member names (agents.md section 5.3b); the values below are those names.
 
-- **`WhatsAppAccount`:** `purpose` (`INTERNAL_COMMUNICATIONS` or `EXTERNAL_COMMUNICATIONS`), `tenant` (null exactly when the purpose is `INTERNAL_COMMUNICATIONS`, enforced by a check constraint, until Step 1.17 gives every account an organization), `display_phone_number`, `phone_number_id` (unique), `waba_id`, encrypted `access_token`, encrypted `app_secret` (empty means "the platform's Meta app"), a hash of the app-generated `webhook_verify_token` (D6), `connection_method` (`SEED`, `MANUAL`, `EMBEDDED_SIGNUP`), `verified_name` (the business name Meta returns), `credentials_verified_at` and `webhook_verified_at` (the form's proof, user story 11), `is_active`, timestamps.
+- **`WhatsAppAccount`:** `purpose` (`INTERNAL_COMMUNICATIONS` or `EXTERNAL_COMMUNICATIONS`), `tenant` (null exactly when the purpose is `INTERNAL_COMMUNICATIONS`, enforced by a check constraint, until Step 1.17 gives every account an organization), `display_phone_number`, `phone_number_id` (unique), `waba_id`, encrypted `access_token`, encrypted `app_secret` (empty means "the platform's Meta app"), a hash of the app-generated `webhook_verify_token` (D6), `connection_method` (`SEED`, `MANUAL`, `EMBEDDED_SIGNUP`), `verified_name` (the business name Meta returns), `credentials_verified_at` and `webhook_verified_at` (the form's proof, user story WA.D3.OM.J1.A1), `is_active`, timestamps.
 - **`WhatsAppContact`:** `account`, `bsuid` (Meta's `user_id`, unique per account), `wa_id` (optional, unique per account when present), `profile_name` (for display only, never for authority), `last_inbound_at` (drives the 24-hour rule).
 - **`WhatsAppIdentity`:** `user` (one-to-one), `contact` (one-to-one, platform account only), `conversation_mode` (`WHATSAPP_FORM`, `AGENTIC` or empty), `linked_at`.
-- **`PhoneVerificationCode`** (in `apps.phone_verification`, D20): `user`, `phone_number` (normalized, D19), `channel`, a hash of the code, `expires_at`, `consumed_at`, `attempts`. Issuing a new code voids the user's unused ones. Linking (user story 1) uses it with the `WHATSAPP_INBOUND` channel.
+- **`PhoneVerificationCode`** (in `apps.phone_verification`, D20): `user`, `phone_number` (normalized, D19), `channel`, a hash of the code, `expires_at`, `consumed_at`, `attempts`. Issuing a new code voids the user's unused ones. Linking (user story WA.D1.OM.J1.A2) uses it with the `WHATSAPP_INBOUND` channel.
 - **`WhatsAppMessage`:** `contact` (and, through it, the account), `direction` (`INBOUND` or `OUTBOUND`), `wamid` (Meta's message id, unique when present), `kind`, `payload` (only what processing needs), `status` (inbound: `RECEIVED`, `PROCESSED`, `FAILED`; outbound: `QUEUED`, `ACCEPTED`, `SENT`, `DELIVERED`, `READ`, `FAILED`, `CANCELLED`), `error_code`, timestamps. Inbound and outbound share one table, so phase 6's transcript is a query rather than a new model.
 - **`WhatsAppConversation`:** one per contact. Holds the selected organization, the menu state (opaque choice ids mapped to real ids, paging cursors), and `state_expires_at`. Phase 6 adds `status`, `assignee` and `waiting_since`.
 - **`WhatsAppPendingAction`:** `conversation`, `action`, `arguments` (validated JSON), `tenant`, `expires_at`, `consumed_at`. One use only, and the permission is checked again when it runs (D11).
@@ -842,7 +818,7 @@ Added on 2026-10-17, after Step 1.4c; see the eager-mode risk in section 10. Don
 
 #### Step 1.5 — Connect a number with a form: backend
 
-The first user-facing step, and the first proof that a number works: credentials Meta accepts, a verified webhook, a test message out and a reply in, all before any conversation logic exists (user story 11).
+The first user-facing step, and the first proof that a number works: credentials Meta accepts, a verified webhook, a test message out and a reply in, all before any conversation logic exists (user story WA.D3.OM.J1.A1).
 
 - **Tests first:**
   - `test_phone_numbers.py` (D19), with examples including:
@@ -1097,13 +1073,13 @@ The first user-facing step, and the first proof that a number works: credentials
     - an action-log entry is written where the website writes one
 - **Then add:** `apps/whatsapp_saas` (`apps.py`, `use_cases.py`) calling the existing serializers with a server-built context (D10).
 - **The audit, done on 2026-10-18** by reading [`apps/multitenancy/schema.py`](../../../packages/backend/apps/multitenancy/schema.py) and [`apps/demo/schema.py`](../../../packages/backend/apps/demo/schema.py). Each WhatsApp operation checks what its GraphQL field checks:
-  - **List organizations** mirrors `allTenants`, which lists the user's memberships. WhatsApp lists accepted memberships only (user story 4): `TenantMembership.objects`, whose default manager leaves out invitations. Personal organizations are included, as on the website.
+  - **List organizations** mirrors `allTenants`, which lists the user's memberships. WhatsApp lists accepted memberships only (user story WA.D2.OM.J1.A2): `TenantMembership.objects`, whose default manager leaves out invitations. Personal organizations are included, as on the website.
   - **Select an organization** has no GraphQL twin. It stores the choice on the conversation, and every later operation rechecks the membership.
   - **Create an organization** mirrors `createTenant`: any logged-in user, through `TenantSerializer`, whose `create` makes the creator the owner. No action-log entry, as on the website.
   - **Rename an organization** mirrors `updateTenant`, which `TenantOwnerMutation` guards with `IsTenantAdminAccess` and `requires("org.settings.edit")`, and `@action_logged(entity_type="tenant", action_type=UPDATE)`. WhatsApp checks both, using the same `IsTenantAdminAccess` check, and writes the same entry with `log_update`.
   - **List and view items** mirror `allCrudDemoItems` and `crudDemoItem`: `IsTenantMemberAccess` and `features.crud.view`, filtered by the organization.
   - **Create, update and delete items** mirror the three item mutations: `IsTenantMemberAccess` and `features.crud.manage`, through `CrudDemoItemSerializer`. No action-log entries on the website (no `@action_logged`), so none in WhatsApp either. The plan's earlier "an action-log entry is written where the website writes one" therefore means the rename only.
-  - **The organization** always comes from the conversation's stored selection, never from message text (user story 9). Membership is checked with the accepted-memberships manager, and permissions with `user_has_permission`. Another organization's item reads as "not found".
+  - **The organization** always comes from the conversation's stored selection, never from message text (user story WA.D1.OM.J2.A1). Membership is checked with the accepted-memberships manager, and permissions with `user_has_permission`. Another organization's item reads as "not found".
 - **Done on 2026-10-18 by the AI agent, on autopilot:**
   - **RED:** both files `ImportError: cannot import name 'use_cases'`.
   - **Test corrections before the GREEN:**
@@ -1214,7 +1190,7 @@ The first user-facing step, and the first proof that a number works: credentials
   - Shopify's `query` argument is "a filter made up of terms…"; free text is "a case-insensitive search of multiple fields" (https://shopify.dev/docs/api/admin-graphql/latest/queries/products).
   - RED: `5 failed, 14 passed` in `apps/shopify/tests/test_products.py`, each `TypeError: fetch_products() got an unexpected keyword argument 'query'`. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_products.py > logs/backend-shopify-products.log 2>&1; echo "exit code: $?"`
   - GREEN: every Shopify test, `119 passed`, the website's products tests included, since a blank or missing query sends exactly what it sent before. Command: `mkdir -p logs; docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify > logs/backend-shopify.log 2>&1; echo "exit code: $?"`
-  - "Newest first" (user story 7) would need a `sortKey` that changes the website's products page too, so it isn't done; it's raised with the menus in Step 1.12b.
+  - "Newest first" (user story WA.D2.OM.J2.A2) would need a `sortKey` that changes the website's products page too, so it isn't done; it's raised with the menus in Step 1.12b.
 - **Step 1.12b, the product menus, done on 2026-10-20.** The maintainer chose two things that day:
   - **Newest first, for WhatsApp only:** `fetch_products` got an optional `newest_first`, which sends `sortKey: CREATED_AT` and `reverse: true`. The website passes neither, so its products page sends what it sent before.
   - **A typed search:** Search asks for the words, and the next text message is the search. This needed a small router change: `turn.expect_text(kind, **data)`, answered through the handler's new `on_typed_answer`. It's asked once, in either mode, and any other message drops it, an escape word included.
@@ -1718,7 +1694,7 @@ The organization's number is already connected and proven by the form (Steps 1.5
   - **Result 2, 2026-10-28: a write scope's implied read scope isn't listed back.** With all four scopes in the app's released version, Shopify's approval page appeared and the merchant approved it, but the callback refused again: "Merchant did not grant all required scopes. Missing: {'unauthenticated_read_checkouts'}". Shopify: "Any scope that writes a resource also grants read access to it, so request the write scope only when your app needs both" (https://shopify.dev/docs/api/usage/access-scopes). So `unauthenticated_write_checkouts` was granted and covers reading, but the granted list leaves `unauthenticated_read_checkouts` out, and the callback's check compares the lists word for word ([`services.py`](../../../packages/backend/apps/shopify/services.py)). The docs don't say the granted list drops implied scopes; this run shows it does. So `SHOPIFY_SCOPES` requests only `read_products`, `unauthenticated_read_product_listings` and `unauthenticated_write_checkouts`. Whether the check should also learn that a write scope covers its read scope is a Step 2.1b decision.
   - **Also seen on the approval page:** besides "View products: Product listings, collections" and "Edit Online Store: Checkout page", it asked for "View customer data: Device and activity data, Geolocation, App events", noting the app "may track and transmit app events on your storefront". That's what a merchant reads when granting storefront access, and the operator guide should say so.
   - **Results 3 to 8, 2026-10-28,** from section 13's E3 to E8 on a Shopify development store with Shopify's generated test products, run by the maintainer with the commands below (each on one line, as run). The store held `read_products`, `unauthenticated_read_product_listings` and `unauthenticated_write_checkouts`.
-    - **Result 3: a Storefront token sees 13 of the Admin API's 17 products.** The Admin API (E3) listed 15 `ACTIVE`, 1 `DRAFT` and 1 `ARCHIVED`. The Storefront API (E5) left out the draft, the archived one, and two active ones, The Minimal Snowboard and The Hidden Snowboard, most likely because they aren't published to the store's sales channel (not confirmed: the response doesn't name a channel). Products that can't be bought are still listed, with `"availableForSale": false` (Gift Card, The Out of Stock Snowboard), so the chat must filter them out to keep user story 12. Prices came in the store's currency, `USD`.
+    - **Result 3: a Storefront token sees 13 of the Admin API's 17 products.** The Admin API (E3) listed 15 `ACTIVE`, 1 `DRAFT` and 1 `ARCHIVED`. The Storefront API (E5) left out the draft, the archived one, and two active ones, The Minimal Snowboard and The Hidden Snowboard, most likely because they aren't published to the store's sales channel (not confirmed: the response doesn't name a channel). Products that can't be bought are still listed, with `"availableForSale": false` (Gift Card, The Out of Stock Snowboard), so the chat must filter them out to keep user story WA.D4.SC.J1.A1. Prices came in the store's currency, `USD`.
       - E3: `curl -s https://$SHOP_DOMAIN/admin/api/2026-10/graphql.json -H "X-Shopify-Access-Token: $ADMIN_TOKEN" -H 'Content-Type: application/json' -d "$(jq -n '{query: "{ products(first: 50) { nodes { id title handle status } } }"}')" | python3 -m json.tool`
       - E5: `curl -s https://$SHOP_DOMAIN/api/2026-10/graphql.json -H "X-Shopify-Storefront-Access-Token: $SF_TOKEN" -H 'Content-Type: application/json' -d "$(jq -n '{query: "{ products(first: 50) { nodes { id title handle availableForSale variants(first: 5) { nodes { id title availableForSale price { amount currencyCode } } } } } }"}')" | python3 -m json.tool`
     - **Result 4: `storefrontAccessTokenCreate` works.** It returned a 32-character token and `"userErrors": []`, and the token's `accessScopes` listed `unauthenticated_write_checkouts`, `unauthenticated_read_checkouts` and `unauthenticated_read_product_listings`, confirming result 2: the write scope grants the read one.
@@ -1734,7 +1710,7 @@ The organization's number is already connected and proven by the form (Steps 1.5
       - E7c: `jq -r '.data.cartCreate.cart.checkoutUrl' logs/experiment-2.1a-cart-no-country.json`, opened in the browser after entering the store's password.
     - **Tidy-up (E8):** the experiment's Storefront token was deleted (`storefrontAccessTokenDelete` returned its id and `"userErrors": []`), and `logs/experiment-2.1a-token.json` removed.
   - **What Step 2.1b starts from:** the Storefront cart works, with or without a separate token (result 5), and needs no buyer IP (result 7). It must filter products not for sale (result 3), choose the country it sends Shopify and explain a dropped line (result 6), and request three scopes that are also in the app's released configuration (results 1 and 2). The phone not reaching checkout (result 8) matters for later steps: the receipt in Step 4.3 matches orders by a cart attribute, not by phone.
-- **Step 2.1b Each external number is tied to its store, and every store gets the new scopes (user story 25).** Use case: an organization admin connects the shop's WhatsApp number and picks the store it sells from, so customers texting it see that store and only that store. Designed on 2026-10-28 from Step 2.1a's results, one decision at a time (maintainer's decisions):
+- **Step 2.1b Each external number is tied to its store, and every store gets the new scopes (user story WA.D3.OM.J1.A3).** Use case: an organization admin connects the shop's WhatsApp number and picks the store it sells from, so customers texting it see that store and only that store. Designed on 2026-10-28 from Step 2.1a's results, one decision at a time (maintainer's decisions):
   1. **The app sends the store's Admin token to the Storefront API, as a private token** (`Shopify-Storefront-Private-Token`, result 5). Nothing new is created or stored: the app already keeps and refreshes that token (`admin_client_for`). Shopify lists private tokens as the kind "used to query the API from a server" (https://shopify.dev/docs/api/storefront). A separate public token from `storefrontAccessTokenCreate` (result 4) would be one more secret per store.
   2. **The cart tells Shopify no country** (result 6). Without `countryCode`, the cart uses the store's own default country, so the store's own prices and stock show, and the customer types the real delivery address in Shopify Checkout, which rechecks what ships there. A country taken from the phone number would be wrong for travellers and gifts, and where the store doesn't sell there, every line drops as "sold out".
   3. **The install's scope check counts a granted write scope for its read scope** (result 2), following Shopify's "Any scope that writes a resource also grants read access to it" (https://shopify.dev/docs/api/usage/access-scopes). Listing a read scope and its write scope in `SHOPIFY_SCOPES` then works, instead of refusing every store with a message that looks like the merchant's fault.
@@ -1772,7 +1748,7 @@ The organization's number is already connected and proven by the form (Steps 1.5
     - **The seed tests' Shopify key, 2026-10-29:** found by the full pre-commit run (section 8 of the restore-green plan). `shopify_seed_demo` stores the demo stores' tokens encrypted, and `apps/whatsapp_shop`'s tests gave no `SHOPIFY_TOKEN_ENCRYPTION_KEY` of their own. They had passed in the module runs above only because the local `.env` holds one, which the full run doesn't read.
       - RED: the whole backend, `1752 passed, 2 failed`, the 2 in [`test_seed_demo.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_seed_demo.py). Command: `pnpm nx run backend:test --skip-nx-cache`, its output saved to `logs/backend-test.log`.
       - GREEN: an autouse `shopify_encryption_key` fixture in [`apps/whatsapp_shop/tests/conftest.py`](../../../packages/backend/apps/whatsapp_shop/tests/conftest.py), as `apps/shopify/tests/conftest.py` gives its own. The whole backend: `1754 passed`. Command: as the RED's.
-- **Phase 2's decisions, 2026-10-29 (maintainer's, one at a time, agents.md section 4.5a).** Use case: a store customer texts the shop's own WhatsApp number, browses and searches its products, fills a cart, and one tap opens the shop's Shopify Checkout with it (user stories 12, 13, 14 and 16).
+- **Phase 2's decisions, 2026-10-29 (maintainer's, one at a time, agents.md section 4.5a).** Use case: a store customer texts the shop's own WhatsApp number, browses and searches its products, fills a cart, and one tap opens the shop's Shopify Checkout with it (user stories WA.D4.SC.J1.A1, WA.D4.SC.J1.A2, WA.D4.SC.J2.A1 and WA.D5.SC.J1.A1).
   1. **The cart comes into phase 2.** Step 4.2's Storefront cart moves here, since a human check that can't buy doesn't prove the wiring. **Buy now** makes a one-item cart and sends its checkout link, leaving the open cart alone. **Add to cart** keeps one open cart per store customer. **Your cart** lists its lines, with **Checkout** and **Empty cart**. The paid-order receipt (Step 4.3, `read_orders` and `orders/paid`) stays in phase 4.
   2. **The number's setting decides menus or the assistant.** An admin sets it on each external number's row, menus by default, and it's stored with the number's store link. Customers can't switch: the assistant calls OpenAI on the deployment's key for every message, so the business controls that cost. With the assistant on, buttons and `menu` still answer as menus.
   3. **The store assistant shows, and the customer taps.** It can search, answer, and end its turn on a product's screen or the cart's, but it never changes the cart: the customer's own press on Add to cart or Buy now does. That keeps D11's rule (the model never writes) without D11's machinery, which needs a linked SaaS user.
@@ -1780,7 +1756,7 @@ The organization's number is already connected and proven by the form (Steps 1.5
 - **Step 2.2 The storefront handler.** Routing to the account's store, a `StoreCustomer` for each contact (D4), and the store's own conversation mode setting for its store customers.
   - **Detailed on 2026-10-29,** from phase 2's decisions:
     - **The Storefront API client** is a new module in `apps.shopify`, `storefront.py`, beside `products.py`, so Shopify's field names stay in `apps.shopify` and callers get plain dicts. It sends the store's Admin token as `Shopify-Storefront-Private-Token` (Step 2.1b, decision 1) and no country (decision 2). A store that must be reconnected and a throttled request raise the same `ShopifyReconnectRequired` and `ShopifyTryAgainLater` as the products page.
-    - **`apps.whatsapp_shop` registers the external numbers' handler,** as `apps.whatsapp_saas` registers the internal ones' (D1). A number with no store chosen, or whose store can't sell on WhatsApp any more (uninstalled, waiting for a reinstall, or without the storefront scopes), gets no reply, as user story 25 says for a number with no store.
+    - **`apps.whatsapp_shop` registers the external numbers' handler,** as `apps.whatsapp_saas` registers the internal ones' (D1). A number with no store chosen, or whose store can't sell on WhatsApp any more (uninstalled, waiting for a reinstall, or without the storefront scopes), gets no reply, as user story WA.D3.OM.J1.A3 says for a number with no store.
     - **`StoreCustomer`,** one-to-one with the contact (D4): the organization, and the open cart's id with the store it belongs to. Created on the customer's first message. A cart Shopify no longer knows, or one from the number's previous store, is dropped and a new one started.
     - **The mode** is a field on `StorefrontChannel` (phase 2, decision 2), `WHATSAPP_FORM` by default. The router asks the handler for a contact's mode and help text when the handler offers them (two optional methods in the registry), so a store customer never sees the team's `mode ai` or `unlink`.
     - **The main menu** greets the customer with the number's business name (Meta's `verified_name`, already stored, so no call to Shopify) and offers **Browse products**, **Search** and **Your cart**. Typed text in menu mode gets the main menu, as on the team's number.
@@ -2146,7 +2122,7 @@ The organization's number is already connected and proven by the form (Steps 1.5
 
 ### Phase 3 — Use case 5: Shopify and WhatsApp on a paid plan (outline)
 
-Use case: a Shopify business signs up, starts a free trial or pays for a plan, and only then connects its store and its WhatsApp number and talks to its customers there. When the plan ends, those features stop, and nothing is lost (user stories 26, 27 and 28). Added on 2026-10-31 as the new phase 3; the phases after it moved down by one, and use case numbers stay as they were. Designed the same day, one decision at a time (maintainer's decisions, agents.md section 4.5a). PayFast comes first, since Stripe isn't available in South Africa, with Stripe kept equal: every behaviour works, and is tested, the same way under both values of `PAYMENT_BACKEND`.
+Use case: a Shopify business signs up, starts a free trial or pays for a plan, and only then connects its store and its WhatsApp number and talks to its customers there. When the plan ends, those features stop, and nothing is lost (user stories WA.D6.OP.J1.A1, WA.D6.OM.J3.A2 and WA.D6.OM.J3.A1). Added on 2026-10-31 as the new phase 3; the phases after it moved down by one, and use case numbers stay as they were. Designed the same day, one decision at a time (maintainer's decisions, agents.md section 4.5a). PayFast comes first, since Stripe isn't available in South Africa, with Stripe kept equal: every behaviour works, and is tested, the same way under both values of `PAYMENT_BACKEND`.
 
 - **What exists today** (read on 2026-10-31):
   - A plan belongs to the organization (the tenant), not the user, and a user's personal workspace is a tenant too.
@@ -2178,7 +2154,7 @@ Use case: a Shopify business signs up, starts a free trial or pays for a plan, a
   - **Step 3.3 The backend checks.** A permission class beside `requires(...)` on the Shopify and WhatsApp GraphQL fields that act, or that call Shopify or Meta; connecting and linking a store; and the WhatsApp router, before any handler (decision 4). Reading kept data stays allowed (decision 5); webhooks and token refreshes are never gated (decision 3).
   - **Step 3.4 The members' field** (decision 8), then the schema and the types regenerated.
   - **Step 3.5 The web pages** (decision 5): Shopify, Shopify products and WhatsApp.
-  - **Step 3.6 Seed data and human checks:** demo organizations on the free plan, on a trial, and lapsed, with each of user stories 26, 27 and 28 checked.
+  - **Step 3.6 Seed data and human checks:** demo organizations on the free plan, on a trial, and lapsed, with each of user stories WA.D6.OP.J1.A1, WA.D6.OM.J3.A2 and WA.D6.OM.J3.A1 checked.
 - **Steps 3.1 to 3.4, done 2026-10-31,** in TDD cycles run by the AI agent (the maintainer's autopilot). Backend commands are `docker compose run --rm -T -e DATABASE_URL= backend pytest <path> -q -p no:warnings > logs/<log> 2>&1`, with the path and log given.
   - **3.1 the table and the setting:** the new [`apps.entitlements`](../../../packages/backend/apps/entitlements/) app: `Feature` (`SHOPIFY`, `WHATSAPP`), `PlanFeature` with database constraints refusing a plan not in code, an unknown feature, or the same pair twice, migration `0001_initial` (by `docker compose run --rm -T backend python manage.py makemigrations entitlements`) and the data migration `0002_what_each_plan_includes`, a read-only admin, and `PLAN_ENTITLEMENTS_ENABLED` (default off) in `config/settings.py`.
     - RED: the new `test_catalog.py` and `test_settings.py` couldn't be imported: the app didn't exist. Path `apps/entitlements`, log `step-3.1-red.log`.
@@ -2221,22 +2197,256 @@ Use case: a Shopify business signs up, starts a free trial or pays for a plan, a
   - **Not run yet:** W1, W2's command, W3, W5's assistant replies, W6, PL2, PL4, PL5 and F5.
   - **Setup step 2's command was wrong:** in a `.env` whose last line had no newline, `echo … >>` glued `PLAN_ENTITLEMENTS_ENABLED=true` onto that line, so the setting wasn't on. The command now writes a newline first.
 
-### Phase 4 — Use case 3: paying in chat, and invoices (outline)
+### Phase 4 — Use case 3: order updates in chat, and the business's own billing and invoices
 
-- **Step 4.1 Subscription checkout.**
-  - A single-use, expiring `WhatsAppCheckoutHandoff` token behind a link to a web app page.
-  - The page checks login and `billing.manage`, then submits the existing PayFast form.
-  - A `post_save` receiver on `PayFastPayment` sends "payment received", so `apps.payfast` isn't edited.
-- **Step 4.2 Store customer cart.**
-  - The cart is kept on the `StoreCustomer` and built with `cartCreate` and `buyerIdentity.phone`.
-  - Its `checkoutUrl` is sent as a link button, after checking that the host is the store's domain. That link is the whole payment step (D13).
-  - **Moved into phase 2 on 2026-10-29** (phase 2, decision 1): built with Step 2.4.
-- **Step 4.3 Paid orders and the receipt.** The `orders/paid` webhook (`read_orders` scope) is matched to the store customer by a cart attribute. The store customer gets the order number, the total and a button to the order's `statusPageUrl` (user story 22).
-- **Step 4.4 `apps.invoicing`.**
-  - An `Invoice` model and an organization counter row (D15).
-  - A ReportLab PDF with the section 6.5 fields, written to private storage.
-  - Created when a PayFast payment completes.
-- **Step 4.5 Invoices in chat and on the web.** A "My invoices" menu item and agent tool send the PDF through Meta's media upload; the web app gets a download link.
+Two use cases, both in this phase (decision 1):
+
+- **A store customer hears about their order where they shopped** (user story WA.D5.SC.J1.A2): "Order #1001 received, awaiting payment", then "Order #1001 is paid", on the business's own number, with the order's details as Shopify has them (decision 30, which replaced the **View order** link).
+- **A business pays this service and gets its invoices**: the Owner reaches the Subscriptions page from the team's chat, and the Owner and Admins get a PDF invoice for each PayFast payment, on the web and in WhatsApp.
+
+**Designed on 2026-11-02, one decision at a time (maintainer's decisions):**
+
+1. **Both use cases in one phase.**
+2. **A paid order finds its customer through a label on the cart.** When the chat creates a cart, it sets the cart attribute `_whatsapp_checkout` to a new random code per cart, `wachk_` and 22 characters from `secrets`, so the code says what it is and can't be guessed. Weighed: the order's phone (the customer can change it at checkout, and matching on it needs Level 2 customer data), and the order's cart token (not documented to match a Storefront cart).
+3. **"Received" and "paid", from `orders/create` and `orders/paid`.** An order placed unpaid (EFT and other manual methods) gets "received, awaiting payment", then "paid" when the payment lands; an order paid at once gets one "paid" message. At most one message per order per stage, even when Shopify retries a webhook. Weighed: paid only (EFT customers would hear nothing for days), placed only.
+4. **One table, `StoreCheckout`, in `apps.whatsapp_shop`:** made when the chat creates a cart (the code, unique; the store customer; the store; the cart's id), and filled in when its order arrives (Shopify's order id, unique; when "received" was sent; when "paid" was sent). Ids and timestamps only, never the order's contents: a message's number, total and link come from the webhook's own payload. Weighed: separate checkout and order tables, and columns on `StoreCustomer` (a second cart would overwrite the first's code).
+5. **`apps.shopify` receives the order webhooks and sends `order_created` and `order_paid` signals; `apps.whatsapp_shop` listens,** as the privacy webhooks already do (phase 2, decision 4). `apps.shopify` never imports WhatsApp code. Weighed: a second webhook address in `apps.whatsapp_shop`, and `apps.shopify` messaging customers itself.
+6. **Outside the 24-hour window, a utility template.** When a number that serves customers connects, the service submits an order-update template (blanks for the store, the order number, the total and the stage; a **View order** button) to that number's WhatsApp Business account, as connecting already publishes the team's Flows. An order message within 24 hours of the customer's last message is a normal message; later, the template. Until Meta approves the template, a late message is recorded as failed with Meta's reason. Weighed: staying silent after the window, and always the template.
+7. **The chat forgets the cart when its order arrives:** on `orders/create` matching a `StoreCheckout`, the store customer's `cart_id` is cleared if it's still that cart, so the next **Add to cart** starts a new cart with a new code. Weighed: keeping the cart until Shopify refuses it (undocumented), and forgetting it at **Checkout** (wrong for a customer who comes back).
+8. **`read_orders` is opt-in,** as the storefront scopes are (Step 2.1b): added to `SHOPIFY_SCOPES` by whoever runs the deployment, after releasing the app version that lists it and selecting Level 1 protected customer data. A store without it keeps selling, without order updates.
+9. **A link to the Subscriptions page, not a sign-in token (changes D14).** "Plans and billing" in the team's menu, or the team assistant when asked, sends a **Choose a plan** link to the organization's Subscriptions page, only to members with `billing.manage`; anyone else is told to ask the organization's owner. No token, no table, no change to PayFast's code. Weighed: the outline's single-use `WhatsAppCheckoutHandoff` (a new kind of secret in a message, to save one click), and a PayFast payment link (none documented, below).
+10. **Invoices for PayFast payments only,** subscriptions and donations; Stripe issues its own invoices.
+11. **One invoice sequence for the whole service (changes D15's counter),** numbered like `INV-2026-000123`: the operator issues every invoice, so the numbers belong to the operator's books. One counter row, locked with `select_for_update`, so there are no gaps or duplicates. **An organization reaches only its own invoices** (another's reads as "not found"); the operator sees all of them in the Django admin.
+12. **Invoices sit behind `billing.view`** (the Owner and Admins by default), upstream's own wording for that permission ("View subscription status, invoices, and payment methods", [`apps/multitenancy/permissions.py`](../../../packages/backend/apps/multitenancy/permissions.py)). Paying needs `billing.manage` (the Owner by default), so Admins see invoices for payments they can't make, as they already see those payments in the transaction history. Weighed: `billing.manage`, for strict parity.
+13. **The supplier's name and address come from two settings,** each with a safe default and its loader test, and each invoice keeps a copy of the details it was issued with. The PDF says "Invoice", with no VAT.
+14. **Invoices on request only:** a **Download invoice** link beside each payment in the transaction history (a signed, expiring link to private storage), and "My invoices" in the team's menu and assistant, which sends the PDF through Meta's media upload (D15). No template, no unrequested messages. The maintainer: invoicing can be built out further once the service makes money.
+15. **`apps.payfast` sends a `payment_completed` signal where the ITN completes a payment; `apps.invoicing` listens** and queues the task that creates the invoice and its PDF, if the payment has none yet (the invoice's link to its payment is unique). `apps.payfast` is the fork's own app and never imports `apps.invoicing`. Weighed: a `post_save` receiver (fires on every save), and creating invoices on first request (numbers out of payment order, missing invoices).
+16. **Invoices outlive their organization:** an invoice also copies the organization's name and the PayFast payment's ids when it's issued, and its links to the organization and the payment become empty when those are deleted (`SET_NULL`), so the operator's books keep every invoice, in the Django admin. Weighed: deleting invoices with the organization (gaps in the books), and refusing to delete an organization that has invoices (breaks upstream's delete flow).
+17. **PayFast payments outlive their organization too, without the buyer's personal details** (the maintainer's suggestion: "We never know if payment disputes happen"). A payment's link to its organization becomes empty, with a copy of the organization's name kept, and when the organization is deleted the buyer's name and email are removed from the stored ITN. What stays matches PayFast's own records: `pf_payment_id`, `m_payment_id`, amounts, fees, status, plan and dates. Weighed: keeping the full ITN, and leaving payments to be deleted with the organization.
+18. **A renewal recorded by the daily catch-up is invoiced at once, and its PayFast id filled in later.** The catch-up records a renewal whose ITN never came under a placeholder id (`caught-up-…`, [`apps/payfast/services.py`](../../../packages/backend/apps/payfast/services.py)), replaced with PayFast's real id if the ITN turns up. Its invoice is issued straight away; the invoice's copy of the PayFast id starts as the placeholder and is updated when the real one arrives. The PDF doesn't print PayFast's id, so it never changes. "One invoice per payment" is guarded by the invoice's unique link to its payment, which always holds since payments are no longer deleted (decision 17). Weighed: invoicing only when the ITN arrives (a renewal whose ITN never comes would have no invoice), and keeping the placeholder forever.
+19. **The web downloads an invoice through a backend address,** `/api/invoicing/<invoice id>/pdf/`, which checks login, membership and `billing.view` on every request, then sends the PDF from storage, the same on every storage backend. Weighed: the storage's own signed links (shareable until they expire, and on local storage a plain `/media/` path with no check at all), and the PDF in the GraphQL answer (heavy). Found while checking: upstream's storage guide shows a `generate_signed_url` in `common.storages` that doesn't exist in the code; raised with the maintainer, the guide left as it is (agents.md section 3.4).
+20. **The web's Download invoice renews the login, then fetches the PDF in the page and saves it,** as upstream's backup page saves its download (`backupSettings.component.tsx`). The access cookie lasts 5 minutes and only the GraphQL client renews it, so a plain link could fail after a quiet spell; the button calls the same `refreshToken` first, and a refusal (no `billing.view`, another organization's invoice) shows a message instead of an error page. Weighed: renewing then following a plain link (a refusal lands on a raw error page), and a short-lived signed code in the link (a new kind of secret in a link, which decision 9 avoided).
+21. **The View cart link carries the same code as the chat's cart (decided 2026-11-04, after Experiment 4.3).** `cart_page_url` adds `attributes[_whatsapp_checkout]=<the cart's code>` to the permalink, so a customer who taps **View cart**, changes the cart on the store's website and pays there still hears about the order on WhatsApp. The experiment showed the code survives `storefront=true` and reaches the order, and the customer never sees it (section 13, "Experiment 4.3", results). The code stays on the browser's own cart, so an order placed from that browser much later can still match the chat; decision 4 bounds it, since a code matches one order only and a later order with the same code is ignored. Weighed: no code on **View cart** (its orders would get no updates, and the customer couldn't tell why one order was announced and another wasn't), and dropping **View cart** (takes away editing the cart on the website, Step 2.8, finding 10).
+22. **An order delivery keeps only what the app uses (decided 2026-11-05, while building Step 4.3b).** The webhook view stores every delivery's payload and hands that stored copy to the handler, in the request or in the Celery task. For `orders/create` and `orders/paid` it keeps only Shopify's `id`, `name`, `total_price`, `currency`, `financial_status`, `order_status_url` and `note_attributes`, never the customer, the addresses or the lines, so `customers/redact` finds nothing personal in those rows (POPIA's minimality, and Shopify's protected customer data rules). `note_attributes` is filtered too, since any app on the store can write it: an app asks for its key (`apps.whatsapp_shop` for `_whatsapp_checkout`), and `apps.shopify` keeps only those, still knowing nothing of WhatsApp (decision 5). The kept fields are listed per topic in [`payloads.py`](../../../packages/backend/apps/shopify/payloads.py); a feature that needs another field adds it there, from then on. Weighed: storing the whole order and clearing it on `customers/redact` through `orders_to_redact` (safe only while that deletion never misses a case, and holding names and addresses for a Level 2 store), and storing nothing for orders (the Celery task reads the payload from the row, so `SHOPIFY_WEBHOOK_DISPATCH=celery` would break). **Changed 2026-11-05 by decision 23:** `order_status_url` is no longer kept; nothing uses it once **View order** is this app's own link, and it opens the customer's order to whoever holds it.
+23. **View order is this app's own link (decided 2026-11-05, while building Step 4.3d).** Meta's template URL buttons take one variable, "appended to the end of the URL string", the rest fixed when the template is submitted (https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates/components), and Shopify's status page links carry "purpose-specific capability tokens" since April 2025 (https://community.shopify.dev/t/new-arguments-added-to-statuspageurl-field-on-the-order-object/14170), so a Shopify link stored or put in a template can stop working. Every order message's **View order** button, normal or template, is `<API_URL>/api/whatsapp-shop/orders/<token>`, with no slash after the token, since a template's button adds its variable at the very end (corrected in Step 4.3d-2), and a random 32-character token made once per order and kept on its `StoreCheckout`; a click asks Shopify's Admin API for the order's current `statusPageUrl` and redirects there. The link works as long as the checkout row exists, so `customers/redact` ends it, and Shopify decides how long the page itself is reachable (the maintainer's choice, over a fixed lifetime such as 90 days). An unknown token, a forgotten customer, a store to reconnect and an order Shopify no longer has get the same "not available" page; Shopify busy or failing gets "try again". Rate-limited to 30 a minute from one address. Weighed: the store's domain as the template's fixed part (breaks on custom domains and Shopify's account pages, and the link can still expire), and the link in the message's text (about 800 characters, and it can still expire). **Replaced 2026-11-11 by decision 30:** `statusPageUrl` needs protected customer data Level 2, which Shopify refused.
+24. **One utility template per stage, edited in place (decided 2026-11-05, while building Step 4.3d-2; changes decision 6's single template).** `shop_order_received` and `shop_order_paid`, in English, each with fixed wording around three blanks (the store, the order number, the total), never starting or ending with one, and a **View order** button whose one variable is the order's token (decision 23). Meta's review refuses "too many variable parameters relative to the message length" and templates that "start or end with a parameter" (https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/template-review), so fixed wording per stage is the safer review on every business's account; each stage can be reworded or translated alone, and a later stage such as "shipped" is one more template. The names are fixed and start with `shop_`, so they can't take a name the business uses for its own templates; unlike a published Flow, which "cannot be modified or deleted" (https://developers.facebook.com/docs/whatsapp/flows/reference/flowsapi), an approved template can be edited, so a change edits the same template rather than adding one (providers restating Meta's rules: once a day, 10 times in 30 days, never its category, https://infobip.com/docs/api/channels/whatsapp/whatsapp-service-management/edit-whatsapp-template). The maintainer asked that templates not pile up on an account with each change, as Flows do. Weighed: one template with the stage as a fourth blank (decision 6 as first written), and a hash in each template's name, as the Flows have. **Replaced 2026-11-11 by decision 30:** one template for any stage, with a quick-reply button; the two are deleted when it's published.
+25. **A template's review status is asked of Meta's API, with no webhook (decided 2026-11-08, while building Step 4.7; changes the earlier choice of Meta's template status webhook for user story WA.D3.OM.J2.A2).** Since Step 2.9 every business connects its numbers through its own Meta app, and Meta sends `message_template_status_update` only to an app subscribed to that field, so a webhook would need every business to tick one more field, and a business that missed it would see "In review" forever with nothing showing it's missing. The status is kept on `WhatsAppTemplate` from Meta's answer when a template is submitted, then asked of Meta by the template's id (`GET /<template_id>?fields=name,status,rejected_reason`): once a day (beat, or `whatsapp_check_template_statuses` from cron), and when the WhatsApp page opens if the last answer is more than 10 minutes old. A rejection reaches the page and the operator within a day, which suits a review that already takes hours. Weighed: the webhook with this check as a backstop (more work and one more setup step, for statuses within seconds), and the webhook alone.
+26. **A message failing for a passing reason is retried for an hour, with a worker or without (decided 2026-11-08, while building Step 4.7, user story WA.D5.SY.J1.A1).** Until then the send task gave up after 5 retries, about 2.5 minutes, while the `whatsapp_send_queued` command gave up after an hour. Now the task retries, each wait longer up to 5 minutes, until the message has been queued for `QUEUED_MESSAGE_MAX_AGE_SECONDS` (an hour), then fails it and cancels what was queued behind it; a failed order update goes to the business's list (WA.D3.OM.J2.A3). A Meta outage of up to an hour heals itself without anyone pressing Send again; meanwhile that customer's later replies wait behind the stuck message, which during an outage would fail anyway. Each order stage keeps its message and counts as sent only once Meta accepts it (closing open question 16). Weighed: a day for order updates only (a stuck update would hold back the customer's chat replies for up to a day), and keeping the windows as they were.
+27. **Without a worker, the webhooks that already arrive run the send sweep (decided 2026-11-08, while building Step 4.7).** The maintainer may not afford a paid Render worker, and Render has no free cron job either (each costs at least $1 a month, https://render.com/docs/cronjobs). So with `CELERY_TASK_ALWAYS_EAGER`, Meta's webhook and Shopify's order webhooks run `outbox.drain_all` once their work is committed, at most once every 5 minutes (a cache key); the `whatsapp_send_queued` command still works from cron where there is one. With no webhook arriving, a message can pass its hour without a retry, and is then failed on the next sweep and listed. Weighed: a free outside scheduler calling a protected URL every 5 minutes (on time, and keeps the free service awake, but a token setting and a service outside the app), and a Render cron job (no code, but paid).
+28. **Send again builds the update fresh from Shopify (decided 2026-11-08, while building Step 4.7, user story WA.D3.OM.J2.A3).** A failed update usually waits hours for a person to fix its cause, by when the customer's 24-hour window has often closed and only the template, with the order's number and total, can go; the checkout keeps only ids (decision 4). So Send again asks Shopify's Admin API for the order by its id (`apps.shopify.orders.order_summary`, beside View order's status page query) and builds the update as it should go now: a normal message while the window is open, otherwise the stage's template. A store to reconnect, Shopify unreachable, or an order Shopify no longer has is refused with the reason. Weighed: keeping the order's number and total on the checkout (works while the store is disconnected, but changes decision 4), and sending the stored message again as it was (refused by Meta once the window has closed, the usual case). **Changed 2026-11-11 by decision 30:** Send again asks for `order_details`, and `order_summary` is gone.
+29. **A code received on WhatsApp, from the organization's team number, and no SMS (decided 2026-11-09, while building Step 4.7, user story WA.D1.OM.J1.A3; changes D20).** The maintainer chose to build phase 7's `whatsapp_template` channel now and drop `sms`: authentication relies on WhatsApp, which the member uses to talk to the app anyway. The code comes from the team number, the business's own (the north star: no number of the operator's), in an authentication template submitted when that number connects, which the business is billed for. A WhatsApp contact is keyed by Meta's business-scoped id, which only an incoming message gives, so typing the code saves a `WhatsAppWaitingLink`, and the link is made when that phone first writes to the team number (in `identity_for`, so the first message is answered as a member's), within 7 days; a phone that has written before is linked at once. Weighed: creating the contact at once under a stand-in key (a second matching rule on every incoming message, broken for Meta's username users), and reading the id from Meta's send answer (not documented to carry it).
+30. **The order's details in the chat, and one template with an Order details button (decided 2026-11-11, during Step 4.7's human checks, user story WA.D5.SC.J1.A2; replaces decisions 23 and 24, changes 28).** On the maintainer's dev store, **View order** failed: Shopify answered `ACCESS_DENIED`, "This app is not approved to use the statusPageUrl field", since the field needs protected customer data Level 2 (https://shopify.dev/changelog/level-2-protected-customer-data-requirements-are-now-needed-to-access-the-order-statuspageurl-field). The maintainer answered Shopify's data protection questions truthfully, some "No" (production-readiness roadmap), and Shopify refused Level 2; Level 1 still stands. The maintainer's use case (2026-11-10): "South African customers prefer communicating over mobile and many are not used to opening up Shopify. WhatsApp is supposed to solve the problem of a customer having to create an account and shop in a Shopify web UI." So the customer never leaves WhatsApp, under agents.md section 5.3d:
+    - **Within the 24-hour window,** each update is a normal message built from the order as Shopify has it when it's sent: `apps.shopify.orders.order_details`, Level 1 fields only (number, items and quantities, total, payment and delivery status, cancelled). When Shopify can't be asked, it says what the webhook carries, the number and total. The checkout still keeps only the order's id (decision 4).
+    - **After the window,** one utility template for any stage, `shop_order_update`: "Hello, this is {{1}}. There's an update on your order {{2}}. Tap Order details to see it.", with an **Order details** quick-reply button whose payload is `order:<the checkout's code>`. The tap is a message from the customer, which opens a new window, so the store answers with the same live details as a normal message, for the customer's own checkout only. Publishing deletes `shop_order_received` and `shop_order_paid` on Meta and here.
+    - **No link to the order:** the token, its route and its page are removed.
+    - **Weighed:** our own order page in a browser behind the existing link (no new Meta review, but a web page to maintain, and the customer still leaves WhatsApp; 7/10), against this (9/10). Considered earlier and dropped: requesting Level 2 (needs data protection measures the service doesn't have yet), and the store's customer account page (the customer signs in to Shopify, which the use case avoids).
+
+**Facts it relies on (read 2026-11-02):**
+
+- Cart attributes reach the order: "Attributes set on a cart carry over to the resulting order after checkout." https://shopify.dev/docs/api/storefront/latest/objects/Attribute. A cart's attributes are set with `CartInput.attributes` in `cartCreate`. https://shopify.dev/docs/api/storefront/latest/input-objects/CartInput
+- Order data needs protected customer data access: Level 1 covers it without name, address, phone or email; "You don't need to submit a request for review for apps that are installed only on development stores." https://shopify.dev/docs/apps/launch/protected-customer-data
+- "When the window closes, you can only send pre-approved template messages." https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages. Templates are created with the Message Templates API, as authentication, marketing or utility, and "Review can take up to 24 hours." https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview
+- Templates and Flows belong to a WhatsApp Business account, not to a Meta app: each business's account gets its own copy and its own review.
+- PayFast still documents no payment-link API, only the dashboard's Request Payment, Pay Now buttons, and the checkout and subscription APIs (section 6.3). Peach Payments has one (https://developer.peachpayments.com/docs/payment-links-overview), a possible future payment backend of its own.
+- Records: SARS says to "keep all supporting documents for a period of five (5) years from the date of submission of the return." https://www.sars.gov.za/faq/faq-for-how-long-am-i-expected-to-keep-the-supporting-documents/. POPIA section 14(1) allows keeping personal information longer than its purpose needs where "retention of the record is required or authorised by law", and section 14(4) says to "destroy or delete a record of personal information or de-identify it" "as soon as reasonably practicable" once that ends. https://popia.co.za/section-14-retention-and-restriction-of-records/. So invoices and payment amounts are kept (decisions 16 and 17), and the buyer's name and email are de-identified. A personal organization is named after its owner's email, which stays on its invoices as the recipient's details.
+- Private files use the default storage, the deployment's S3, R2, B2, MinIO or local disk, and are downloaded with signed, expiring links (upstream's guide, [`storage-backends.mdx`](../../../packages/internal/docs/docs/introduction/features/storage-backends.mdx)).
+
+**Not stated in those docs, so checked live before building:**
+
+- The webhook payload's field for cart attributes (`note_attributes` in sample payloads), and whether `_whatsapp_checkout`, with its underscore, stays hidden from the customer at checkout and on the order status page: one test order on the maintainer's dev store, before Step 4.3a. Found while writing it: **View cart** sends a cart permalink, whose order comes from the browser's own cart, not the chat's, so the experiment places a second order through a permalink carrying the code (section 13, "Experiment 4.3"). **Checked 2026-11-04:** both orders carry `_whatsapp_checkout` with their own value (the admin lists it under **Notes**, **Additional details**), and the customer sees it on none of the cart page, checkout, the thank-you page, the confirmation email or the order status page; so **View cart** carries the code too (decision 21). The payload's field name still waits for Step 4.3b's human checks. **Built 2026-11-05:** Step 4.3b follows Shopify's samples (`note_attributes`); the first real `orders/create` delivery proves it, in Step 4.6's human checks, since it needs `read_orders` and the two order subscriptions on the dev store.
+- What a completed Storefront cart does when asked for again (decision 7 doesn't depend on it).
+- That `generate_signed_url` exists in `common.storages` as the guide shows, before Step 4.4c. Checked 2026-11-02: it doesn't (decision 19).
+
+**An order's messages:**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Store customer
+    participant WA as Business's WhatsApp number
+    participant Shop as apps.whatsapp_shop
+    participant SF as Shopify
+    participant SH as apps.shopify
+
+    C->>WA: Checkout
+    Shop->>SF: cartCreate, attribute _whatsapp_checkout = wachk_…
+    Shop->>Shop: StoreCheckout (code, customer, store, cart)
+    WA-->>C: Checkout link
+    C->>SF: Places the order
+    SF->>SH: orders/create (signed), carries the code
+    SH->>Shop: order_created signal
+    Shop->>Shop: Match the code, forget the cart, record "received"
+    Shop-->>C: "Order #1001 received, awaiting payment" (or "paid", if already paid)
+    SF->>SH: orders/paid, maybe days later
+    SH->>Shop: order_paid signal
+    Shop-->>C: "Order #1001 is paid": a normal message within 24 hours, the template later
+```
+
+**TDD sub-steps:**
+
+- **4.3a The cart's code:** `StoreCheckout`, `_whatsapp_checkout` set in `cartCreate`, and the same code on the **View cart** permalink (decision 21) (`apps/shopify/storefront.py`, `apps/whatsapp_shop`).
+- **4.3b Order webhooks in `apps.shopify`:** `orders/create` and `orders/paid` accepted and recorded like the other topics, keeping only the fields the app uses and the note attributes an app asks for with `keep_note_attribute` (decision 22), sending `order_created` and `order_paid`; `read_orders` documented as opt-in.
+- **4.3c The receipts in `apps.whatsapp_shop`:** matching the code, one message per stage, forgetting the cart; normal messages within the window.
+- **4.3d The order template:** submitting it per WhatsApp Business account when a number serving customers connects (the client's template create call), and sending it with its blanks once the window has closed. Split while building: 4.3d-1, the **View order** link (decision 23), then 4.3d-2, the templates.
+- **4.3e Every Shopify delivery handled (section 14, open question 10):** `apps.shopify` work, done before 4.6 because it protects the order updates.
+  - `ShopifyWebhookDelivery.handled_at`, empty until the delivery's handler succeeds, and set in the same transaction as the handler's work.
+  - One function handles a delivery, for both dispatch modes, and holds the only map of topics to handlers (today `webhooks.py` and `tasks.py` each keep a copy).
+  - A repeated webhook id gets 200 and nothing more once its delivery is handled; otherwise it's handled again, inline with sync dispatch or queued again with Celery.
+  - The Celery task retries with a growing delay.
+  - A Celery beat task queues again the deliveries left unhandled for more than a few minutes, such as after a broker outage, and a management command does the same from cron.
+  - The admin lists unhandled deliveries.
+  - **Without a background worker** (`CELERY_TASK_ALWAYS_EAGER=True`, no beat; the maintainer's rule, 2026-11-05: every Celery function the fork adds works there): the sweep runs from the management command, and the operator guide recommends `SHOPIFY_WEBHOOK_DISPATCH=sync`, so a failed handler answers with an error and Shopify retries it; in eager mode a Celery retry would run inside the web request, against Shopify's 5-second timeout. Changed while building: Celery dispatch with no worker handles inline by itself, as sync does, so no setting needs choosing.
+- **4.1 Plans and billing:** the team's menu item and assistant tool, for `billing.manage`.
+- **4.4p PayFast payments outlive their organization (decision 17):** `PayFastPayment.tenant` becomes nullable with `SET_NULL`, a copy of the organization's name is kept, and deleting an organization removes the buyer's name and email from its payments' stored ITN; the transaction history still shows only the organization's own payments.
+- **4.4a `apps.invoicing`:** `Invoice` (its payment, unique; the organization; the number; the copied supplier details; the PDF file), the single counter, the two supplier settings with their loader tests, and the admin.
+- **4.4b Creating invoices:** the `payment_completed` signal in `apps.payfast`, and the task that numbers the invoice and writes its ReportLab PDF to the default storage.
+- **4.4c Invoices in the API:** the organization's invoices and a signed download link, for `billing.view`.
+- **4.5a The web:** **Download invoice** beside each PayFast payment in the transaction history.
+- **4.5b WhatsApp:** "My invoices" in the team's menu and assistant; the PDF through Meta's media upload and a document message.
+- **4.6 Seed data, docs and human checks,** then the WhatsApp walkthrough in `docs/superpowers/specs/` (the maintainer's request, 2026-11-02). It also adds the optional ngrok service in `docker-compose.local.yml`, the tunnel the human checks use, which `pnpm saas up` starts when `NGROK_DOMAIN` is set (section 14, open question 12).
+
+**Built so far, 2026-11-01 to 2026-11-05,** in TDD cycles run by the AI agent (the maintainer's autopilot): the business's billing and invoices (4.1, 4.4p, 4.4a to 4.4c, 4.5a, 4.5b), then the cart's code (4.3a), the order webhooks (4.3b), the order updates in the chat (4.3c), the **View order** link (4.3d-1) and the order templates (4.3d-2). The order updates (4.3a to 4.3d) waited for the experiment in section 13 ("Experiment 4.3: the checkout code on a test order"), run by the maintainer on 2026-11-02 and 2026-11-04, which led to decision 21. Backend commands are `docker compose run --rm -T -e DATABASE_URL= backend pytest <paths> -p no:cacheprovider -q -p no:warnings > logs/<log> 2>&1`, with the paths given for each run; web commands `pnpm nx run webapp-finances:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=<pattern> > logs/<log> 2>&1`.
+
+- **4.1 Plans and billing:** `subscriptions_link` and `can_choose_plan` in [`use_cases.py`](../../../packages/backend/apps/whatsapp_saas/use_cases.py), `plans_link` in the new [`billing.py`](../../../packages/backend/apps/whatsapp_saas/billing.py) (a **Choose a plan** link button), the "Plans and billing" row in [`menus.py`](../../../packages/backend/apps/whatsapp_saas/menus.py), the `send_plans_link` tool in [`tools.py`](../../../packages/backend/apps/whatsapp_saas/tools.py), and one line in [`prompts.py`](../../../packages/backend/apps/whatsapp_saas/prompts.py).
+  - RED: [`test_plans_and_billing.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_plans_and_billing.py) and `test_tools.py`, `10 failed, 16 passed`. Paths `apps/whatsapp_saas/tests/test_plans_and_billing.py apps/whatsapp_saas/tests/test_tools.py`, log `step-4.1-red.log`.
+  - GREEN: `apps/whatsapp_saas`, `1 failed, 134 passed`, log `step-4.1-green.log`. The failing test took `billing.manage` away from the Owner, but the Owner role holds every permission by design; rewritten as an Admin given `billing.manage` and then losing it: `12 passed`. Path `apps/whatsapp_saas/tests/test_plans_and_billing.py`, log `step-4.1-green-2.log`.
+- **4.4p PayFast payments outlive their organization:** `PayFastPayment.tenant` nullable with `SET_NULL` and a `tenant_name` copy ([`models.py`](../../../packages/backend/apps/payfast/models.py), migration `payfast` 0005, made by `pnpm saas backend makemigrations`, log `step-4.4p-makemigrations.log`), and [`receivers.py`](../../../packages/backend/apps/payfast/receivers.py), which copies the name and removes the buyer's `name_first`, `name_last`, `email_address` and `cell_number` from the stored ITN when the organization is deleted.
+  - RED: [`test_retention.py`](../../../packages/backend/apps/payfast/tests/test_retention.py), `3 failed`. Path `apps/payfast/tests/test_retention.py`, log `step-4.4p-red.log`.
+  - GREEN: `apps/payfast`, `237 passed`, log `step-4.4p-green.log`; the apps that delete organizations, `apps/multitenancy apps/finances`, `178 passed`, log `step-4.4p-neighbours.log`.
+- **4.4a `apps.invoicing`:** the new app: `Invoice` and `InvoiceCounter` ([`models.py`](../../../packages/backend/apps/invoicing/models.py), migration `invoicing` 0001 made by `pnpm saas backend makemigrations`, log `step-4.4a-makemigrations.log`, and 0002, written by hand, which creates the one counter row, so numbering never races to create it), `INVOICE_SUPPLIER_NAME` and `INVOICE_SUPPLIER_ADDRESS` in `config/settings.py`, the warnings `invoicing.W001` and `W002` in [`checks.py`](../../../packages/backend/apps/invoicing/checks.py) when PayFast is the backend and either is empty, `issue_invoice` in [`services.py`](../../../packages/backend/apps/invoicing/services.py), and a read-only [`admin.py`](../../../packages/backend/apps/invoicing/admin.py).
+  - RED: `apps/invoicing`, `3 errors` (the tests couldn't import the app), log `step-4.4a-red.log`.
+  - GREEN: first `9 passed, 6 errors`: the settings and checks tests, which need no database, still need the `django_db` mark, because the root conftest's automatic fixtures use the database. With it: `15 passed`, log `step-4.4a-green.log`.
+  - The admin: the agent first wrote `admin.py` with the model's GREEN, before any test of it, against agents.md section 2.1. It was deleted, and redone in order. RED: [`test_admin.py`](../../../packages/backend/apps/invoicing/tests/test_admin.py), `2 failed` (no admin pages), log `step-4.4a-admin-red.log`. GREEN: `apps/invoicing`, `17 passed`, log `step-4.4a-admin-green.log`.
+  - Decision 18: RED, the caught-up renewal's test in [`test_issuing.py`](../../../packages/backend/apps/invoicing/tests/test_issuing.py), `1 failed, 9 passed` (a second invoice for the same payment hit the unique constraint), log `step-4.4a-d18-red.log`. GREEN: an invoice is found by its payment, and its PayFast id copy updated; `apps/invoicing`, `18 passed`, log `step-4.4a-d18-green.log`.
+- **4.4b Creating invoices:** `payment_completed` in the new [`signals.py`](../../../packages/backend/apps/payfast/signals.py), sent from [`services.py`](../../../packages/backend/apps/payfast/services.py) when the ITN completes a payment, when the catch-up records one, and when the catch-up's placeholder gets PayFast's id; in `apps.invoicing`, the receiver queues [`tasks.py`](../../../packages/backend/apps/invoicing/tasks.py)'s `issue_invoice` after the commit, and [`pdf.py`](../../../packages/backend/apps/invoicing/pdf.py) writes the PDF with ReportLab.
+  - The signal. RED: [`test_payment_completed.py`](../../../packages/backend/apps/payfast/tests/test_payment_completed.py), `1 error` (no `apps.payfast.signals`), log `step-4.4b-signal-red.log`. GREEN: `apps/payfast`, `241 passed, 1 error`, log `step-4.4b-signal-green.log`: the new catch-up test asked for a `send_email` fixture that exists only in another test file; removed, `5 passed`, path `apps/payfast/tests/test_payment_completed.py`, log `step-4.4b-signal-green-2.log`.
+  - The invoice and its PDF. RED: [`test_pdf.py`](../../../packages/backend/apps/invoicing/tests/test_pdf.py) and [`test_from_payments.py`](../../../packages/backend/apps/invoicing/tests/test_from_payments.py), `2 errors` (no `pdf` or `tasks`), log `step-4.4b-red.log`. GREEN: `apps/invoicing apps/payfast`, `1 failed, 267 passed`, log `step-4.4b-green.log`: a PDF writes `(` and `)` in its text as `\(` and `\)`, so the test now looks for `Example SaaS \(Pty\) Ltd`; `apps/invoicing`, `26 passed`, log `step-4.4b-green-2.log`.
+- **4.4c Invoices in the API:** `invoices(tenantId)` in [`schema.py`](../../../packages/backend/apps/invoicing/schema.py), for `billing.view`, listing only invoices whose PDF is written; and, in place of the sub-step's signed link (decision 19), `InvoicePdfView` at `/api/invoicing/<id>/pdf/` ([`views.py`](../../../packages/backend/apps/invoicing/views.py), [`urls.py`](../../../packages/backend/apps/invoicing/urls.py)): "not found" for another organization's invoice, a deleted organization's, one without a PDF, or no membership, and "forbidden" without `billing.view`.
+  - RED: [`test_schema.py`](../../../packages/backend/apps/invoicing/tests/test_schema.py) and [`test_download.py`](../../../packages/backend/apps/invoicing/tests/test_download.py), `9 failed, 3 passed`, log `step-4.4c-red.log`.
+  - GREEN: `apps/invoicing`, `38 passed`, log `step-4.4c-green.log`.
+- **4.5b WhatsApp:** the channel first: `document_message` in [`builders.py`](../../../packages/backend/apps/whatsapp/builders.py) (caption at most 1,024 characters), the `DOCUMENT` message kind (migration `whatsapp` 0020, made by `pnpm saas backend makemigrations`, log `step-4.5b-makemigrations.log`), and `upload_media` in [`client.py`](../../../packages/backend/apps/whatsapp/client.py) (Meta's `POST /<PHONE_NUMBER_ID>/media`; the log backend returns a made-up id). Then the team's side: `recent_invoices` and `invoice_pdf` in `use_cases.py`, `invoices_screen` and `send_invoice` in `billing.py`, the "My invoices" row, the `show_invoices` tool, and one line in `prompts.py`.
+  - The channel. RED: [`test_documents.py`](../../../packages/backend/apps/whatsapp/tests/test_documents.py), `1 error` (no `DOCUMENT_CAPTION_MAX`), log `step-4.5b-channel-red.log`. GREEN: `6 passed`, log `step-4.5b-channel-green.log`.
+  - The team's side. RED: [`test_invoices.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_invoices.py) and `test_tools.py`, `10 failed, 15 passed`, log `step-4.5b-red.log`. GREEN: `apps/whatsapp_saas`, `146 passed`, log `step-4.5b-green.log`.
+  - The assistant's instructions. RED: `test_invoices.py -k instructions`, `1 failed, 10 deselected`, log `step-4.5b-prompt-red.log`. GREEN: `test_invoices.py` and `test_plans_and_billing.py`, `23 passed`, log `step-4.5b-prompt-green.log`.
+- **4.5a The web:** `payfastInvoicesQuery` in [`payfast.graphql.ts`](../../../packages/webapp-libs/webapp-finances/src/payfast/payfast.graphql.ts), with the schema downloaded by the maintainer with the backend running (`pnpm nx run webapp-api-client:graphql:download-schema`, exit code `0`, log `step-4.5a-download-schema.log`) and the types generated (`pnpm nx run webapp-api-client:graphql:generate-types --skip-nx-cache`, exit code `0`, log `step-4.5a-generate-types.log`); an **Invoice** column in [`transactionHistory.component.tsx`](../../../packages/webapp-libs/webapp-finances/src/payfast/routes/transactionHistory.component.tsx), whose **Download invoice** button renews the login, fetches the PDF and saves it, or shows "The invoice couldn't be downloaded. Please try again."
+  - RED: [`transactionHistory.invoices.spec.tsx`](../../../packages/webapp-libs/webapp-finances/src/payfast/__tests__/transactionHistory.invoices.spec.tsx), pattern `transactionHistory.invoices`, `Tests: 3 failed, 3 total`, log `step-4.5a-red.log`.
+  - GREEN: pattern `payfast`, `Tests: 61 passed, 61 total`, log `step-4.5a-green.log`. Run by the maintainer: `pnpm nx run webapp-finances:lint` and `pnpm nx run webapp-finances:type-check`, both exit code `0`, logs `step-4.5a-lint.log` and `step-4.5a-type-check.log`. Prettier's check found three lines to format, all older than this step: two `formatMessage` calls over 120 characters in the component, and a missing space in `fixtures.ts`; formatted as Prettier does, check log `step-4.5a-prettier.log`. No further Prettier check of TypeScript (2026-11-05): the repo never applies Prettier to `.ts` or `.tsx` (the pre-commit hook formats only `*.json`, `*.md` and `*.html`, and runs ESLint on TypeScript), and 31 of upstream's own files fail it (log `prettier-upstream-ts-check.log`); lint and type-check are TypeScript's checks.
+- **4.3a The cart's code (2026-11-04):** in [`storefront.py`](../../../packages/backend/apps/shopify/storefront.py), `create_cart` and `cart_page_url` take `attributes`: set on the cart, and added to the permalink as `&attributes[key]=value`, with the brackets as written in Experiment 4.3 and each key and value escaped. `apps.shopify` takes any attributes; the name `_whatsapp_checkout` lives only in `apps.whatsapp_shop` (decision 5). `StoreCheckout` in [`models.py`](../../../packages/backend/apps/whatsapp_shop/models.py) (the code, unique; the store customer, deleted with them; the store; the cart's id; migration `whatsapp_shop` 0003, made by `pnpm saas backend makemigrations`, which created nothing else, log `step-4.3a-makemigrations.log`). The new [`checkouts.py`](../../../packages/backend/apps/whatsapp_shop/checkouts.py) makes the code (`wachk_` and `secrets.token_urlsafe(16)`, 22 characters), creates the cart with it, keeps the row once Shopify has accepted the cart, and builds the **View cart** link with the cart's code (decision 21); Add to cart, Buy now, **Your cart** and **Checkout** in [`menus.py`](../../../packages/backend/apps/whatsapp_shop/menus.py) go through it. The order's columns (its id, and when "received" and "paid" were sent) come with Step 4.3c, which first tests them. A cart made before this step has no code and its link goes without one; Shopify forgets it within 30 days.
+  - RED: [`test_checkout_code.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_checkout_code.py) (new), three tests in [`test_storefront.py`](../../../packages/backend/apps/shopify/tests/test_storefront.py), and [`test_product_and_cart.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_product_and_cart.py)'s exact checks of `create_cart` calls and **View cart** links now allowing for the code: `14 failed, 48 passed`, each failing for want of `attributes` or `StoreCheckout`. One new test passed already: a cart made before codes existed gets a link without one, which guards GREEN's lookup. Paths `apps/shopify/tests/test_storefront.py apps/whatsapp_shop/tests/test_product_and_cart.py apps/whatsapp_shop/tests/test_checkout_code.py`, log `step-4.3a-red.log`.
+  - GREEN: the same paths and `apps/whatsapp_shop/tests/test_assistant.py`, `76 passed`, log `step-4.3a-green.log`; both apps, `apps/shopify apps/whatsapp_shop`, `279 passed`, log `step-4.3a-apps.log`.
+- **4.3b Order webhooks (2026-11-05):** `TOPIC_ORDERS_CREATE` and `TOPIC_ORDERS_PAID` in [`constants.py`](../../../packages/backend/apps/shopify/constants.py); the new [`payloads.py`](../../../packages/backend/apps/shopify/payloads.py), with the kept fields per topic, `keep_note_attribute` and `trim`, which [`webhooks.py`](../../../packages/backend/apps/shopify/webhooks.py) applies before storing a delivery (decision 22); `handle_orders_create` and `handle_orders_paid` in [`services.py`](../../../packages/backend/apps/shopify/services.py), in both topic maps (`webhooks.py` and [`tasks.py`](../../../packages/backend/apps/shopify/tasks.py)), sending the new `order_created` and `order_paid` from [`signals.py`](../../../packages/backend/apps/shopify/signals.py) with the store and the short order, and nothing for a store this app doesn't have. `apps.whatsapp_shop`'s [`apps.py`](../../../packages/backend/apps/whatsapp_shop/apps.py) asks to keep `_whatsapp_checkout`. `test_webhooks.py`'s unknown-topic test used `orders/create`, now handled, so it uses `products/update`. `read_orders` and the order subscriptions are shown, commented out, in [`shopify.app.toml.example`](../../../packages/backend/apps/shopify/shopify.app.toml.example) (decision 8); the operator guide comes with Step 4.6.
+  - RED: [`test_webhooks_orders.py`](../../../packages/backend/apps/shopify/tests/test_webhooks_orders.py) (new) and two tests in `test_checkout_code.py`: `2 failed, 21 passed, 11 errors`, each failure and error for want of `apps.shopify.payloads`; the 21 that passed are the tests already there. Paths `apps/shopify/tests/test_webhooks_orders.py apps/shopify/tests/test_webhooks.py apps/shopify/tests/test_webhooks_dispatch.py apps/whatsapp_shop/tests/test_checkout_code.py`, log `step-4.3b-red.log`.
+  - GREEN: the same paths, `34 passed`, log `step-4.3b-green.log`; both apps, `apps/shopify apps/whatsapp_shop`, `292 passed`, log `step-4.3b-apps.log`.
+- **4.3c The order updates in the chat (2026-11-05):** the 24-hour window in the new [`window.py`](../../../packages/backend/apps/whatsapp/services/window.py) of `apps.whatsapp`, `is_open(contact)`: open for 24 hours after the contact's last inbound message, by Meta's timestamp (`sent_at`), or by when it was stored if Meta gave none; the channel's concept, so Step 4.3d uses it too. `StoreCheckout` gains `order_id` (unique) and `received_sent_at` and `paid_sent_at` (migration `whatsapp_shop` 0004, made by `pnpm saas backend makemigrations`, which created nothing else, log `step-4.3c-makemigrations.log`). The new [`orders.py`](../../../packages/backend/apps/whatsapp_shop/orders.py) in `apps.whatsapp_shop` receives `order_created` and `order_paid` (connected in [`apps.py`](../../../packages/backend/apps/whatsapp_shop/apps.py)): it finds the checkout by the order's code within the store that sent it, under a row lock, so each stage is sent at most once even when both webhooks arrive together; keeps the first order's id and ignores a later order with the same code (decision 21); sends "received, awaiting payment" for an unpaid order and "paid" for a paid one, never "received" after "paid"; and forgets the cart if it's still the customer's open cart. Two choices made while building it:
+  - **The cart is forgotten on either webhook,** not only `orders/create` as decision 7 says, since Shopify doesn't promise the order its webhooks arrive in; it changes nothing once the order is matched.
+  - **The wording:** "Order #1001 received, awaiting payment. Total: ZAR 199.00." and "Order #1001 is paid. Total: ZAR 199.00.", following the phase's use case, with a **View order** button to the order's `order_status_url`, or a plain message with the **Main menu** button if the order came without one.
+  - Outside the window nothing is sent yet and the stage waits; Step 4.3d changes this test when it adds the template.
+  - RED: [`test_window.py`](../../../packages/backend/apps/whatsapp/tests/test_window.py) and [`test_order_updates.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_order_updates.py) (both new): `19 failed, 3 passed`, each failure for want of `window`, the receivers or the order's columns; the three that passed (an order without a code, one with an unknown code, a newer open cart kept) guard GREEN. Paths `apps/whatsapp/tests/test_window.py apps/whatsapp_shop/tests/test_order_updates.py`, log `step-4.3c-red.log`.
+  - GREEN: the same paths, `22 passed`, log `step-4.3c-green.log`; the three apps, `apps/whatsapp apps/whatsapp_shop apps/shopify`, `944 passed`, log `step-4.3c-apps.log`.
+- **4.3d-1 The View order link (2026-11-05, decision 23; removed in Step 4.7 by decision 30, so the files below named without a link no longer exist):** `order_status_url(shop, order_id)` in the new [`orders.py`](../../../packages/backend/apps/shopify/orders.py) of `apps.shopify` asks the Admin API for `order(id:) { statusPageUrl }`, with `products.py`'s errors for a store to reconnect and for Shopify busy; `order_status_url` is dropped from [`payloads.py`](../../../packages/backend/apps/shopify/payloads.py)'s kept fields (decision 22 changed). `StoreCheckout.order_link_token` (unique; migration `whatsapp_shop` 0005, made by `pnpm saas backend makemigrations`, which created nothing else, log `step-4.3d1-makemigrations.log`) is made with the order's id in [`orders.py`](../../../packages/backend/apps/whatsapp_shop/orders.py), whose **View order** button now points at the new `views.py`'s `order_link_view`, routed in `urls.py` and mounted at `api/whatsapp-shop/` in [`urls_api.py`](../../../packages/backend/config/urls_api.py). The view is GET only, `never_cache`, `Referrer-Policy: no-referrer`, follows only a `https` link, and is rate-limited with `django-ratelimit` (`key="ip"`, `30/m`), as Shopify's install views are. An order Shopify sent without its id gets its message without the button.
+  - RED: `test_orders.py` and `test_order_link.py` (both new), `test_webhooks_orders.py` with `order_status_url` among the fields never stored, and `test_order_updates.py` with the button's new link and a test of the token: `12 failed, 18 passed, 14 errors`, each for want of `apps.shopify.orders` or `order_link_token`, or because `order_status_url` was still stored; the new test of an order without its id passed already, and guards GREEN. Paths `apps/shopify/tests/test_orders.py apps/shopify/tests/test_webhooks_orders.py apps/whatsapp_shop/tests/test_order_link.py apps/whatsapp_shop/tests/test_order_updates.py`, log `step-4.3d1-red.log`.
+  - GREEN: first `5 failed, 39 passed`, log `step-4.3d1-green.log`: the page escapes the apostrophe of "isn't" as `&#x27;`, as it should, and the tests compared the raw HTML; they now read the text as a browser shows it (`html.unescape`): `44 passed`, log `step-4.3d1-green-2.log`. Both apps, `apps/shopify apps/whatsapp_shop`, `325 passed`, log `step-4.3d1-apps.log`.
+- **4.3d-2 The order templates (2026-11-05, decisions 6 and 24):** in `apps.whatsapp`, `create_template` and `edit_template` in [`client.py`](../../../packages/backend/apps/whatsapp/client.py) (`POST /<WABA_ID>/message_templates`, and `POST /<TEMPLATE_ID>` with the new components); `WhatsAppTemplate` in [`models.py`](../../../packages/backend/apps/whatsapp/models.py) (the WhatsApp Business account, the fixed name, Meta's id, a hash of the content; no review status, decision 6); the new [`templates.py`](../../../packages/backend/apps/whatsapp/services/templates.py), which creates a template once and edits the same one when its content changes, with fake ids on the log backend; `template_message` in [`builders.py`](../../../packages/backend/apps/whatsapp/builders.py); and the `TEMPLATE` message kind, queued by [`outbox.py`](../../../packages/backend/apps/whatsapp/services/outbox.py) (migration `whatsapp` 0021, made by `pnpm saas backend makemigrations`, which created nothing else, log `step-4.3d2-makemigrations.log`). In `apps.whatsapp_shop`, the new [`templates.py`](../../../packages/backend/apps/whatsapp_shop/templates.py) with the two templates, built from `API_URL` when used; [`tasks.py`](../../../packages/backend/apps/whatsapp_shop/tasks.py)'s `publish_order_templates`, queued by the store handler's new `on_connected` in [`menus.py`](../../../packages/backend/apps/whatsapp_shop/menus.py) for a number serving customers; the [`whatsapp_publish_order_templates`](../../../packages/backend/apps/whatsapp_shop/management/commands/whatsapp_publish_order_templates.py) command, for numbers connected earlier and after the wording or `API_URL` changes; and in [`orders.py`](../../../packages/backend/apps/whatsapp_shop/orders.py), after the window, the stage's template with the number's verified name, the order number, the total and the token (an order without its id has no link, and waits).
+  - RED: [`test_templates.py`](../../../packages/backend/apps/whatsapp/tests/test_templates.py) and [`test_order_templates.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_order_templates.py) (both new), and `test_order_updates.py`'s closed-window test, changed as Step 4.3c said, to expect the template: `20 failed, 16 passed`, each for want of the template service, the builder, the shop's templates, the task, the command or the closed-window send; the new test of an order without its id passed already, and guards GREEN. Paths `apps/whatsapp/tests/test_templates.py apps/whatsapp_shop/tests/test_order_templates.py apps/whatsapp_shop/tests/test_order_updates.py`, log `step-4.3d2-red.log`.
+  - GREEN: first `4 failed, 32 passed`, log `step-4.3d2-green.log`, for two reasons. **Two tests reached Meta's real API:** the container's `WHATSAPP_SEND_BACKEND` is `META`, and the tests assumed the log backend; they sent the test factory's fake token and fake ids to graph.facebook.com, which answered error 190 ("Invalid OAuth access token"), so no real credentials left the machine. Both template test files now pin the log backend, and only the tests faking `requests.post` ask for Meta's. **The link ended in a slash:** a template's button adds its variable at the very end of the address, so the route is now `orders/<token>` in `urls.py`, and Step 4.3d-1's tests follow it (decision 23 corrected). Then, with `test_order_link.py` added to the paths, `47 passed`, log `step-4.3d2-green-2.log`; the four apps, `apps/whatsapp apps/whatsapp_shop apps/whatsapp_saas apps/shopify`, `1129 passed`, log `step-4.3d2-apps.log`.
+- **The checks of Steps 4.1 to 4.3 (2026-11-05):**
+  - **The safety net:** the two template test files' pins of the log backend moved to the root [`conftest.py`](../../../packages/backend/conftest.py), whose automatic `whatsapp_reaches_no_one` fixture sets `WHATSAPP_SEND_BACKEND` to `LOG` for every test; a test that needs Meta's backend asks for it and fakes `requests.post`. The network backstop is its own step after phase 4 (section 14, open question 9).
+  - **Formatting and migrations:** `pnpm saas backend black` reformatted 10 files, all from phases 3 and 4, log `step-4.3-black.log`; `pnpm saas backend makemigrations`, run again, found no changes, log `step-4.3-makemigrations-again.log`.
+  - **The full backend run:** `pnpm nx run backend:test --skip-nx-cache > logs/step-4.3-backend-test-5.log 2>&1`, exit code `0`, `2180 passed, 3515 warnings in 2057.84s (0:34:17)`, with black's check ("631 files would be left unchanged") and `makemigrations --check` ("No changes detected") passing in it. Run by the maintainer with the stack up. The runs before it:
+    - The first stopped at black's check, before the reformatting, log `step-4.3-backend-test.log`.
+    - The next ones stopped collecting `apps/invoicing/tests/test_pdf.py` with `No module named 'reportlab'` (logs `step-4.3-backend-test-2.log` and `step-4.3-backend-test-4.log`). Nx loads the root `.env.test` only for targets named `test`, and its `PROJECT_NAME=saas` made the test step run the image `saas/backend`, last built on 2026-09-22, while the build step built the image named in the root `.env`. The code is mounted into the container, so the old image ran new code without complaint until Step 4.4b added the first new Python package since then, ReportLab; the two images differ in `reportlab` alone (log `step-4.3-image-compare.log`). Setting `PROJECT_NAME` before the command doesn't help: Nx drops a variable whose value matches the root `.env`, then loads `.env.test` first, and the first value loaded wins (`nx/src/tasks-runner/task-env.js`, Nx 19.6.0). The line was deleted from `.env.test`, upstream's file, with the maintainer's agreement; its `COMPOSE_FILE` stays.
+    - Nx then reported the task as flaky: `.env.test` isn't among the task's inputs, so it saw the same inputs fail and pass. No test is flaky.
+  - **Ruff:** 9 errors, which `run_tests.sh` reports without failing, all in this fork's code from before phase 4. The maintainer's choice (2026-11-05): five fixed, with no change in behaviour, so no RED (agents.md section 2.1, the maintainer's call): four lines over 120 characters wrapped (the docstrings of `whatsapp/admin.py` and `whatsapp/registry.py`, and the messages in `whatsapp/services/accounts.py` and `whatsapp_saas/tools.py`, whose text is unchanged), and `invoicing/checks.py` uses `checks.Warning` instead of importing `Warning`, which hid Python's own (A004). Four are kept, and recorded here, since agents.md section 4.4 rules out `# noqa`: DJ001 on the two `frequency` fields in `payfast/models.py` (lines 56 and 142), empty on purpose for the free plan and donations, where changing it would need a migration and change what stored rows mean; and S603 in `entitlements/tests/utils.py` and `whatsapp/tests/utils.py`, whose command is fixed. `ruff check .` now reports those 4 (log `ruff-fixes-ruff-2.log`); `pnpm saas backend black`, 631 files unchanged (log `ruff-fixes-black-2.log`); `apps/whatsapp apps/whatsapp_saas apps/invoicing`, `830 passed`, log `ruff-fixes-apps.log`.
+- **4.3e Every Shopify delivery handled (2026-11-05, section 14, open question 10),** in four TDD cycles on the maintainer's autopilot, all in `apps.shopify` but one composition line in `config/settings.py`:
+  - **Handled once, retried until it is.** `ShopifyWebhookDelivery.handled_at` ([`models.py`](../../../packages/backend/apps/shopify/models.py); migration `shopify` 0004 made by `pnpm saas backend makemigrations`, log `step-4.3e1-makemigrations.log`, and 0005, written by hand, which marks the deliveries stored before it as handled at their arrival, so neither a repeat nor the sweep runs an old one again, such as an old `app/uninstalled` wiping a reinstalled store's tokens). The new [`deliveries.py`](../../../packages/backend/apps/shopify/deliveries.py) holds the only map of topics to handlers and `handle`, which locks the row, runs the handler unless it's handled, and marks it handled in the same transaction; a topic with no handler is only marked handled. [`webhooks.py`](../../../packages/backend/apps/shopify/webhooks.py) answers a repeated id with 200 only once its delivery is handled, otherwise handles it again, and answers a failed handler with 500, so Shopify retries.
+    - RED: [`test_webhooks_handled.py`](../../../packages/backend/apps/shopify/tests/test_webhooks_handled.py) (new), `1 error` (no `apps.shopify.deliveries`), path `apps/shopify/tests/test_webhooks_handled.py`, log `step-4.3e1-red.log`.
+    - GREEN: with the other webhook and task tests, `apps/shopify/tests/test_webhooks_handled.py apps/shopify/tests/test_webhooks.py apps/shopify/tests/test_webhooks_dispatch.py apps/shopify/tests/test_webhooks_orders.py apps/shopify/tests/test_tasks.py` with `--create-db`, since the migrations changed: `32 passed`, log `step-4.3e1-green.log`. Both apps, `apps/shopify apps/whatsapp_shop`, `343 passed`, log `step-4.3e1-apps.log`; black reformatted one line of `webhooks.py`, log `step-4.3e1-black.log`; `makemigrations` again, "No changes detected".
+  - **Celery dispatch.** [`tasks.py`](../../../packages/backend/apps/shopify/tasks.py)' `process_shopify_webhook` goes through `deliveries.handle`, and retries a failure 5 times, after 1, 2, 4, 8 and 16 minutes, then leaves it for the sweep. The view queues a repeat of an unhandled delivery again, answers 500 when the queue is down, and, without a worker (`CELERY_TASK_ALWAYS_EAGER`), handles inline as sync dispatch does, so a failure still makes Shopify retry (agents.md section 4.1).
+    - RED: Celery and no-worker tests added to `test_webhooks_handled.py`, and `test_tasks.py`'s handler test patching `deliveries.TOPIC_HANDLERS`: `7 failed, 9 passed`, paths `apps/shopify/tests/test_webhooks_handled.py apps/shopify/tests/test_tasks.py`, log `step-4.3e2-red.log`.
+    - GREEN: those paths and the other webhook tests, `39 passed`, log `step-4.3e2-green.log`.
+  - **The sweep.** `deliveries.handle_pending` handles the deliveries unhandled for 45 minutes to 3 days (past the task's retries, and up to past Shopify's 48 hours), oldest first, logging and counting a failure and going on. Two callers: the new [`shopify_handle_pending_deliveries`](../../../packages/backend/apps/shopify/management/commands/shopify_handle_pending_deliveries.py) command, for cron, and the beat task `handle_pending_deliveries`, scheduled every 15 minutes in `CELERY_BEAT_SCHEDULE` when `SHOPIFY_ENABLED` (a touch to an upstream file's composition point, agents.md section 3.1). An older one stays unhandled, for a person to look at. No third caller on "a path that already runs" (agents.md section 4.1), the maintainer's choice, 2026-11-05: the only such path is the webhook itself, whose 5-second budget a delivery that keeps failing would eat into. Without a worker or cron, Shopify's own retries, about 48 hours of them, and the admin's **Not handled** filter remain.
+    - RED: [`test_pending_deliveries.py`](../../../packages/backend/apps/shopify/tests/test_pending_deliveries.py) (new), `8 failed, 1 passed`, the one passing (no beat entry without Shopify) guarding GREEN, log `step-4.3e3-red.log`.
+    - GREEN: with `test_webhooks_handled.py` and `test_tasks.py`, `25 passed`, log `step-4.3e3-green.log`.
+  - **The admin** ([`admin.py`](../../../packages/backend/apps/shopify/admin.py)): a **handled** column and filter, and `handled_at` read-only.
+    - RED: [`test_admin_deliveries.py`](../../../packages/backend/apps/shopify/tests/test_admin_deliveries.py) (new), `3 failed`, log `step-4.3e4-red.log`. GREEN: `3 passed`, log `step-4.3e4-green.log`.
+  - Both apps, `apps/shopify apps/whatsapp_shop`, `362 passed`, log `step-4.3e-apps.log`; `pnpm saas backend black`, 636 files unchanged; `makemigrations` again, "No changes detected"; `ruff check .`, the 4 known errors. The full backend run, for the `config/settings.py` line: `pnpm nx run backend:test --skip-nx-cache > logs/step-4.3e-backend-test.log 2>&1`, exit code `0`, `2205 passed, 3518 warnings in 1877.44s (0:31:17)`, run by the AI agent with the stack up.
+- **4.6 Seed data, docs and human checks (2026-11-06, in progress),** on the maintainer's autopilot:
+  - **Seed data, without tests** (agents.md section 2.1; the maintainer, 2026-11-06: a seed is to a human check what a fixture is to a test, so a seed that needed tests would need tests of its tests). For store customers, [`whatsapp_shop_seed_demo`](../../../packages/backend/apps/whatsapp_shop/management/commands/whatsapp_shop_seed_demo.py) adds three store customers on the demo number `…803`, with fixed checkout codes, order ids and link tokens, each put back in its starting state on every run. For organization members, the new [`invoicing_seed_demo`](../../../packages/backend/apps/invoicing/management/commands/invoicing_seed_demo.py) issues invoices for `payfast_seed_demo`'s payments, adds an Admin and a Member, and a second organization with its own invoice. The existing seed tests still pass, `apps/whatsapp_shop/tests/test_seed_demo.py apps/whatsapp/tests/test_seed_demo.py`, `9 passed`, log `step-4.6-seed-tests.log`.
+  - **Invoice storage stays switchable** (the maintainer, 2026-11-06): invoices are saved to Django's default storage, chosen by `STORAGE_BACKEND` (`s3`, `r2`, `b2`, `minio` or `local`, in [`common/storages.py`](../../../packages/backend/common/storages.py)), so a deployment moves between AWS S3 and Cloudflare R2 by that one setting. Nothing in `apps.invoicing` names a provider or a bucket, and nothing may. The maintainer's local development uses R2, which is fine for the seeded invoices.
+  - **The tunnel:** an `ngrok` service at the end of [`docker-compose.local.yml`](../../../docker-compose.local.yml), `ngrok/ngrok:3.39.13-alpine`, with `--url` (ngrok's replacement for the deprecated `--domain`, https://ngrok.com/docs/agent/cli/), opened once the backend container has started (`depends_on`, `service_started`). It first went into its own `docker-compose.ngrok.yml`, switched on through `COMPOSE_FILE`, and `pnpm saas up` didn't start it, since that command starts five named services only. The maintainer's choices, 2026-11-06:
+    - `NGROK_DOMAIN` in the root `.env` is the one switch. [`composeServices`](../../../packages/internal/cli/src/lib/composeServices.ts) adds `ngrok` to the services [`saas up`](../../../packages/internal/cli/src/commands/up.ts) starts when it's set, and refuses a domain without `NGROK_AUTHTOKEN` before anything is built.
+    - The service lives in `docker-compose.local.yml`, next to upstream's other local-only services, rather than in a file of its own. Its `ngrok` profile keeps Compose from starting it on its own, and its variables default to empty, because Compose reads the file on every command. `.env.shared` keeps upstream's `COMPOSE_FILE` and gains an empty "NGROK TUNNEL" section.
+    - No healthcheck on the backend: the tunnel waits for the backend container to start, not for Django to answer.
+    - The CLI had no tests. [`test/composeServices.test.js`](../../../packages/internal/cli/test/composeServices.test.js) runs on Node's own test runner against the compiled `dist/`, through a new `test` script in the CLI's `package.json`, so nothing new is installed. Command: `pnpm --filter @sb/cli test`. RED, the first design: `7 failed`, "Cannot find module", log `step-4.6-saas-up-tunnel-red.log`; GREEN `7 passed`, log `step-4.6-saas-up-tunnel-green.log`. RED, moving the service into the local file: `1 failed, 3 passed`, the old `COMPOSE_FILE` check, log `step-4.6-saas-up-local-file-red.log`; GREEN `4 passed`, log `step-4.6-saas-up-local-file-green.log`. `docker compose config --quiet` passes, and `config --services` lists `ngrok` only with `--profile ngrok`, log `step-4.6-saas-up-local-file-checks.log`.
+  - **The operator guide** ([`features/whatsapp/index.mdx`](../../../packages/internal/docs/docs/features/whatsapp/index.mdx)): section 3 sets `NGROK_DOMAIN` instead of starting ngrok by hand, and a new section 3d covers order updates: the `read_orders` opt-in, the order subscriptions, `whatsapp_publish_order_templates`, and the deliveries' retries, sweep and `shopify_handle_pending_deliveries` from cron.
+  - **A fake id never counts as submitted** (the maintainer's choice, 2026-11-06, found while writing the order checks): on the log backend, a template or form is stored with a fake `log-` id and the hash of its content, so after switching to the meta backend the same content was called up to date and never reached Meta. Now, on the meta backend, a stored `log-` id counts as never submitted, in [`services/templates.py`](../../../packages/backend/apps/whatsapp/services/templates.py) and [`services/flows.py`](../../../packages/backend/apps/whatsapp/services/flows.py). RED: two tests in [`test_templates.py`](../../../packages/backend/apps/whatsapp/tests/test_templates.py) and one in [`test_publish_flows.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_publish_flows.py), paths `apps/whatsapp/tests/test_templates.py apps/whatsapp_saas/tests/test_publish_flows.py`, `3 failed, 20 passed`, log `step-4.6-fake-ids-red.log`. GREEN: the same paths, `23 passed`, log `step-4.6-fake-ids-green.log`; the three apps, `apps/whatsapp apps/whatsapp_saas apps/whatsapp_shop`, `953 passed`, log `step-4.6-fake-ids-apps.log`; black reformatted the new flows test only.
+  - **One refused number doesn't stop the others** (the maintainer's choice, 2026-11-06): [`whatsapp_publish_order_templates`](../../../packages/backend/apps/whatsapp_shop/management/commands/whatsapp_publish_order_templates.py) printed Meta's refusal and stopped, leaving every later number without templates. Now it prints the refusal, goes on, and ends with an error naming every number refused. RED: one test in [`test_order_templates.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_order_templates.py), path `apps/whatsapp_shop/tests/test_order_templates.py`, `1 failed, 10 passed`, log `step-4.6-publish-all-red.log`. GREEN: `apps/whatsapp_shop`, `159 passed`, log `step-4.6-publish-all-green.log`; black, 639 files unchanged.
+  - **Human checks:** section 13's "Phase 4: order updates for store customers", OU1 to OU6, on seeded store customers with the log backend, and "Phase 4: invoices for organization members", IN1 to IN4, on seeded payments. `invoicing_seed_demo` was first run by the AI agent inside a transaction rolled back at the end, with `STORAGE_BACKEND=local`: three invoices numbered one after another, the same three on a second run, and nothing left in the database (log `step-4.6-invoicing-seed-dry-run.log`). Local storage wrote the PDFs to `packages/backend/media/`, which git doesn't ignore; they were deleted. Then "Phase 4: on your real number and dev store", R1 to R6: the order templates reaching Meta, a card order and a manual-payment order from the chat, **View order**, "Plans and billing" and "My invoices". Still to write: the WhatsApp walkthrough in `docs/superpowers/specs/`.
+  - **Human checks, first pass** (2026-11-07, run by the AI agent at the maintainer's request; the maintainer runs the second pass):
+    - **Order updates:** OU1 to OU6 pass, logs `step-4.6-human-ou-first-pass.log`. The stack was on the meta send backend, not the log one, so each message ends `FAILED` with Meta's error 190 (the demo numbers' fake tokens); wording, button, template and once-only are decided before the send, so the checks still hold.
+    - **Invoices:** Setup and IN1 pass, logs `step-4.6-human-in-setup-first-pass.log` and `step-4.6-human-in-first-pass.log`. Downloads by `curl`, logged in through the `tokenAuth` mutation as the seeded Admin and Member: the Admin's own invoice 200 `application/pdf`, named `INV-2026-000002.pdf`, reading "Invoice", the supplier, the organization, "Monthly plan" and ZAR 199.00; the Member's 403 with "You don't have permission to see this organization's invoices."; the second organization's and `NoSuchId` both 404 "Not found." Logs `step-4.6-human-in-downloads-first-pass.log`, `step-4.6-human-in2-pdf-text.log`.
+    - **Fixed in this plan:** invoice Setup step 1 expected `PAYMENT_BACKEND=PAYFAST`; the setting takes exactly `payfast` (`config/settings.py`, check `payfast.E001`).
+    - **Found in the maintainer's `.env`, not the code:** `INVOICE_SUPPLIER_NAME` starts with a space, which every invoice copies.
+    - **Left for the second pass:** IN2's and IN3's pages in the web app, and R1 to R6.
+  - **Human checks rewritten as journeys** (2026-11-07, the maintainer's rule in agents.md section 1.3, after the second pass of the order checks showed they repeated the integration tests): section 13's "Phase 4: journeys on your real number and dev store" replaces the three sections the first pass ran (OU1 to OU6, IN1 to IN4, R1 to R6). J1 is the operator keeping order templates submitted; J2 a store customer buying on your phone, with Shopify's retry, the 24-hour window and a data erasure simulated on that same order and phone; J3 the Owner's **Plans and billing** and **My invoices**; J4 who in the organization can reach invoices. Paying in PayFast's sandbox joins J3 once the checkout bills the organization's billing email (user story WA.D6.OM.J1.A1). The user stories file (section 2) names the journey steps in its Human checks column.
+- **4.7 The stories added on 2026-11-07, built before any human check of their domains (2026-11-08, in progress),** on the maintainer's autopilot: human checks now wait until a domain's journeys are built (agents.md section 1.3). The list: WA.D5.SY.J1.A1; WA.D6.OM.J1.A1, WA.D6.OM.J1.A2, WA.D6.OM.J2.A1, WA.D6.OP.J1.A2; domain D7's WA.D7.OP.J2.A1 and WA.D7.OP.J2.A2; WA.D1.OM.J1.A3, WA.D3.OM.J2.A2, WA.D3.OM.J2.A3; and what they depend on.
+  - **WA.D6.OP.J1.A2, the supplier's details exactly as set:** `config/settings.py` drops spaces at either end of `INVOICE_SUPPLIER_NAME` and `INVOICE_SUPPLIER_ADDRESS`, and [`apps/invoicing/checks.py`](../../../packages/backend/apps/invoicing/checks.py) warns about a value of only spaces as it does an empty one (still a warning, decision 13). RED: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/invoicing/tests/test_settings.py apps/invoicing/tests/test_checks.py`, `3 failed, 6 passed`, log `wa-d6-op-j1-a2-red.log`. GREEN: `… pytest apps/invoicing`, `41 passed`, story `9/9 (BS)`, log `wa-d6-op-j1-a2-green.log`.
+  - **WA.D6.OM.J2.A1, the first invoice during a trial:** a trial's R0.00 payment already got no invoice, and the web app already hid it. Now, during a trial with no invoices yet, **My invoices** ([`whatsapp_saas/billing.py`](../../../packages/backend/apps/whatsapp_saas/billing.py), with `use_cases.first_invoice_date`, which reads the subscription without creating it) and the PayFast transaction history ([`transactionHistory.component.tsx`](../../../packages/webapp-libs/webapp-finances/src/payfast/routes/transactionHistory.component.tsx)) say "No invoices yet. Your first comes with your first payment on <the trial's end>." RED, backend: `… pytest apps/whatsapp_saas/tests/test_invoices.py`, `1 failed, 11 passed`, log `wa-d6-om-j2-a1-backend-red.log`; frontend: `pnpm nx run webapp-finances:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=transactionHistory.invoices --verbose`, `1 failed, 4 passed`, log `wa-d6-om-j2-a1-frontend-red.log`. GREEN: `… pytest apps/whatsapp_saas`, `149 passed`, log `wa-d6-om-j2-a1-backend-green.log`; `… webapp-finances:test … --testPathPattern=transactionHistory --verbose`, `6 passed`, with `webapp-finances:lint` and `:type-check` exit 0, logs `wa-d6-om-j2-a1-frontend-green.log`, `wa-d6-om-j2-a1-lint.log`, `wa-d6-om-j2-a1-type-check.log`. The new message's translation id, `PayFast / Transaction history / First invoice`, shows its English default until the translation files have it.
+  - **WA.D6.OM.J1.A2, PayFast bills the organization:** [`apps/payfast/services.py`](../../../packages/backend/apps/payfast/services.py)'s checkout sends `Tenant.email`, the billing email or the creator's, never the logged-in person's; the WhatsApp trial date and the plan page both read the subscription's trial end. RED: `… pytest apps/payfast/tests/test_services.py -k "TestWhoIsBilled or test_form_is_signed"`, `4 failed`, log `wa-d6-om-j1-a2-red.log`. GREEN: `… pytest apps/payfast`, `245 passed`, log `wa-d6-om-j1-a2-green.log`. black reformatted one new test.
+  - **WA.D6.OM.J1.A1, the billing email card** (the maintainer's choice, 2026-11-08: on the fork's PayFast Subscriptions page, saved through upstream's mutation): [`billingEmailCard.component.tsx`](../../../packages/webapp-libs/webapp-finances/src/payfast/routes/billingEmailCard.component.tsx) under the current subscription, with two new documents in `payfast.graphql.ts`, a query for the organization's `billingEmail` (the current-tenant query doesn't select it) and `updateTenant` asking for `billingEmail` back, so the cache updates; types regenerated with `pnpm nx run webapp-api-client:graphql:generate-types --skip-nx-cache`, log `wa-d6-om-j1-a1-codegen.log`. With `org.settings.edit` the card is a form; without it, read-only; empty, it says the creator is billed. No upstream file changed. RED: `pnpm nx run webapp-finances:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=billingEmailCard --verbose`, the suite failing on the missing component, log `wa-d6-om-j1-a1-red.log`; the page's test, `--testPathPattern=currentSubscription.content`, `1 failed, 9 passed`, log `wa-d6-om-j1-a1-red-page.log`. GREEN: the whole project, `109 passed`, story `4/4 (FI)`, with `webapp-finances:lint` and `:type-check` exit 0, logs `wa-d6-om-j1-a1-green.log`, `wa-d6-om-j1-a1-lint.log`, `wa-d6-om-j1-a1-type-check.log`. Domain D6's four stories are now built.
+  - **WA.D7.OP.J2.A2, the operator hears about Shopify webhooks the sweep gave up on** (the maintainer's choices, 2026-11-07 and 2026-11-08: one email when the sweep gives up, plus **Handle again**; sent through upstream's email system): `OPERATOR_EMAILS` in `config/settings.py` (a list, empty by default, which sends nothing; not Django's `ADMINS`), `last_error` and `reported_at` on `ShopifyWebhookDelivery` (migration `shopify` 0006), [`deliveries.py`](../../../packages/backend/apps/shopify/deliveries.py)'s `try_to_handle` keeping each failure's error and `report_given_up` emailing each given-up delivery once, [`apps/shopify/emails.py`](../../../packages/backend/apps/shopify/emails.py), the **Handle again** admin action, and the `SHOPIFY_WEBHOOKS_UNHANDLED` template in [`webapp-emails`](../../../packages/webapp-libs/webapp-emails/src/templates/shopifyWebhooksUnhandled/shopifyWebhooksUnhandled.component.tsx). A delivery's keys stay snake_case in the template, since renderEmail camelCases only the top level. Locally, the Celery worker sees a new template only after `pnpm nx run backend:build-email-renderer`. RED, backend: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_settings.py apps/shopify/tests/test_pending_deliveries.py apps/shopify/tests/test_admin_deliveries.py`, `7 failed, 15 passed`, log `wa-d7-op-j2-a2-backend-red.log`; email: `pnpm nx run webapp-emails:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=renderEmail --verbose`, `1 failed, 15 passed` ("Missing template"), log `wa-d7-op-j2-a2-email-red.log`. GREEN: `pnpm saas backend makemigrations` made 0006, then "No changes detected"; `… pytest apps/shopify`, `212 passed`, log `wa-d7-op-j2-a2-backend-green.log`; `webapp-emails:test`, `73 passed`, with `:lint` and `:type-check` exit 0; story `6/6 (BI), 2/2 (BS), 1/1 (FU)`; black, 641 files unchanged.
+  - **WA.D3.OM.J2.A2, the order templates' review status on the WhatsApp page** (decision 25, the maintainer's choice, 2026-11-08: asked of Meta's API, no webhook): `TemplateStatus` in `constants.py` (`IN_REVIEW`, `APPROVED`, `REJECTED`, `PAUSED`, `DISABLED`; Meta's `PENDING` and `IN_APPEAL` are in review, and a status this app doesn't know counts as disabled), `status`, `rejected_reason` and `status_checked_at` on `WhatsAppTemplate` (migration `whatsapp` 0022), the client's `get_template`, and in [`services/templates.py`](../../../packages/backend/apps/whatsapp/services/templates.py) the status from Meta's answer on submit (an edit is in review again; the log backend's templates count as approved), `check_statuses`, `check_if_stale` (the page, after `CHECK_AGAIN_AFTER`, 10 minutes; a failure keeps the last status) and `check_all` (daily, past any number Meta refuses), with the `whatsapp_check_template_statuses` command, the `check_template_statuses` task, and its beat entry when `WHATSAPP_ENABLED`. `create_template` now returns Meta's whole answer, so its status is kept. `whatsAppAccounts` gives each number its `templates`, and [`templateStatus.component.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/templateStatus.component.tsx) shows them on the number's row to anyone with `whatsapp.view`: each template's status, that late order updates fail while one isn't approved, and a rejection's reason in plain words with "The operator has been told". `api.graphql` was edited by hand, since the backend wasn't running to download it, then types regenerated (log `step-4-7-wa-d3-om-j2-a2-codegen.log`). The enum guard in `test_enums.py` now lists `TemplateStatus`. RED, backend: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_template_status.py -q -p no:cacheprovider`, `24 failed, 1 passed`, log `step-4-7-wa-d3-om-j2-a2-red.log`; frontend: `pnpm nx run webapp-whatsapp:test --skip-nx-cache --testFile=whatsappSettings.component.spec.tsx --json --outputFile=<repo>/logs/step-4-7-wa-d3-om-j2-a2-fe-red.json`, `4 failed, 51 passed`, log `step-4-7-wa-d3-om-j2-a2-fe-red.log`. GREEN: the same backend file, `25 passed`, log `step-4-7-wa-d3-om-j2-a2-green.log`; `… pytest apps/whatsapp apps/whatsapp_shop apps/whatsapp_saas` with `makemigrations --check` first, "No changes detected" and `1 failed, 980 passed`, the one failure the enum guard, then `… pytest apps/whatsapp/tests/test_enums.py`, `11 passed`, logs `step-4-7-wa-d3-om-j2-a2-whatsapp-apps.log`, `step-4-7-wa-d3-om-j2-a2-enums.log`; `pnpm nx run webapp-whatsapp:test --skip-nx-cache`, `73 passed`, with `:lint` and `:type-check` exit 0, logs `step-4-7-wa-d3-om-j2-a2-fe-green.log`, `-fe-lint.log`, `-fe-types.log`; story `25/25 (BI), 5/5 (FI)`; black, 96 files unchanged.
+  - **WA.D7.OP.J2.A1, the operator hears about templates a business can't use:** `reported_at` on `WhatsAppTemplate` (migration `whatsapp` 0023); [`apps/whatsapp/emails.py`](../../../packages/backend/apps/whatsapp/emails.py) and the `WHATSAPP_TEMPLATES_REFUSED` template in [`webapp-emails`](../../../packages/webapp-libs/webapp-emails/src/templates/whatsAppTemplatesRefused/whatsAppTemplatesRefused.component.tsx), sent to `OPERATOR_EMAILS` with the business, number, template and Meta's reason: by `submit` when Meta refuses a submission (it still raises), and by `report_rejections` after any check, once per rejection, cleared once it's no longer rejected so a later rejection is emailed again; none while no address is set. The Django admin lists every template with its numbers, status and reason, read-only, filterable by status. The order-template tests for connecting and the command (Step 4.3d-2) are now tagged with this story too. RED, backend: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_template_problems.py -q -p no:cacheprovider`, `8 failed, 2 passed`, log `step-4-7-wa-d7-op-j2-a1-red.log`; email: `pnpm nx run webapp-emails:test --skip-nx-cache --testFile=renderEmail.spec.tsx --json --outputFile=<repo>/logs/step-4-7-wa-d7-op-j2-a1-email-red.json`, `1 failed, 73 passed`, log `step-4-7-wa-d7-op-j2-a1-email-red.log`. GREEN: `makemigrations --check`, "No changes detected", then `… pytest` on the new file with `test_template_status.py`, `test_templates.py`, `test_admin.py` and `whatsapp_shop/tests/test_order_templates.py`, `71 passed`, log `step-4-7-wa-d7-op-j2-a1-green.log`; `webapp-emails:test`, `74 passed`, with `:lint` and `:type-check` exit 0; story `17/17 (BI), 2/2 (BS), 1/1 (FU)`, log `step-4-7-wa-d7-op-j2-a1-count.log`; black, 575 files unchanged. Locally, the worker needs `pnpm nx run backend:build-email-renderer` to see the new template. Domain D7's journey 2 is now built.
+  - **WA.D5.SY.J1.A1, every order update that can be delivered** (decisions 26 and 27, the maintainer's choices, 2026-11-08): in [`outbox.py`](../../../packages/backend/apps/whatsapp/services/outbox.py) `MAX_SEND_RETRIES` is gone; `waited_too_long` gives one limit, an hour queued, to the send task ([`tasks.py`](../../../packages/backend/apps/whatsapp/tasks.py)) and the sweep, and `sweep_if_due` runs `drain_all` without a worker, at most once every `SWEEP_EVERY_SECONDS` (5 minutes), called on commit by Meta's webhook ([`views.py`](../../../packages/backend/apps/whatsapp/views.py)) and Shopify's order webhooks ([`orders.py`](../../../packages/backend/apps/whatsapp_shop/orders.py)). `StoreCheckout` keeps `received_message` and `paid_message` instead of `received_sent_at` and `paid_sent_at` (migration `whatsapp_shop` 0006), with `stage_sent`, true once Meta accepted the message; a stage with a message, even a failed one, isn't queued again by a retried webhook, and Send again (WA.D3.OM.J2.A3) is what sends a failed one. `whatsapp_shop_seed_demo` gives its told stages a sent message. Changed tests: `test_outbox.py`'s 5-retry test moved to the new `test_retries.py` as the hour rule; `test_order_updates.py` checks each stage's message, not a time; `test_webhook_views.py` counts the sweep's on-commit callback. RED: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_retries.py apps/whatsapp_shop/tests/test_order_delivery.py apps/whatsapp_shop/tests/test_order_updates.py -q -p no:cacheprovider`, `9 failed, 16 passed, 8 errors` (the errors: the sweep's cache key missing), log `step-4-7-wa-d5-sy-j1-a1-red.log`. GREEN: `makemigrations --check`, "No changes detected", and the same files, `2 failed, 31 passed`, the two reading a message after the test had deleted it, fixed to read its id, log `step-4-7-wa-d5-sy-j1-a1-green.log`; `… pytest apps/whatsapp apps/whatsapp_shop`, `1 failed, 855 passed`, the webhook test counting on-commit callbacks, now 2, log `step-4-7-wa-d5-sy-j1-a1-green-apps.log`; that file with the new ones and `test_seed_demo.py`, `52 passed`, log `step-4-7-wa-d5-sy-j1-a1-green-webhook.log`; `… pytest apps/shopify apps/whatsapp_saas`, `361 passed`, log `step-4-7-wa-d5-sy-j1-a1-neighbours.log`; story `15/15 (BI)`; black, 577 files unchanged.
+  - **WA.D3.OM.J2.A3, the failed order updates and Send again** (decision 28, the maintainer's choice, 2026-11-08): [`apps/shopify/orders.py`](../../../packages/backend/apps/shopify/orders.py) gains `order_summary` (the order's `name`, `total_price` and `currency`, asked of the Admin API), sharing its checks with `order_status_url`; [`whatsapp_shop/failed_updates.py`](../../../packages/backend/apps/whatsapp_shop/failed_updates.py) lists the stages whose message is `FAILED` or `CANCELLED` (a "received" overtaken by "paid" isn't), explains Meta's error code in plain words, and `send_again` builds the update fresh through `orders.stage_messages`, now shared with the webhooks; [`schema.py`](../../../packages/backend/apps/whatsapp_shop/schema.py) adds `whatsAppFailedOrderUpdates` (`whatsapp.view`) and `sendWhatsAppOrderUpdateAgain` (`whatsapp.manage`). On the page, [`failedUpdatesCard.component.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/failedUpdatesCard.component.tsx), shown only while an update failed. `api.graphql` edited by hand again, types regenerated (log `step-4-7-wa-d3-om-j2-a3-codegen.log`); the two page specs mock the new query as empty. RED, backend: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_shop/tests/test_failed_updates.py -q -p no:cacheprovider`, `16 failed`, log `step-4-7-wa-d3-om-j2-a3-red.log`; frontend: `pnpm nx run webapp-whatsapp:test --skip-nx-cache --json --outputFile=<repo>/logs/step-4-7-wa-d3-om-j2-a3-fe-red.json`, 3 suites failing on the missing query module, `11 passed` in the fourth, log `step-4-7-wa-d3-om-j2-a3-fe-red.log`. GREEN: `makemigrations --check`, "No changes detected", and the same file, `16 passed`, log `step-4-7-wa-d3-om-j2-a3-green.log`; `… pytest apps/whatsapp_shop apps/shopify`, `394 passed`, black reformatting the new test file, since fixed, log `step-4-7-wa-d3-om-j2-a3-neighbours.log`; `webapp-whatsapp:test`, `79 passed`, with `:lint` and `:type-check` exit 0, logs `step-4-7-wa-d3-om-j2-a3-fe-green.log`, `-fe-lint.log`, `-fe-types.log`; story `16/16 (BI), 6/6 (FI)`.
+  - **No SMS channel (2026-11-09, D20's change):** `SMS` removed from `apps/phone_verification/constants.py`'s `Channel` (migration `phone_verification` 0004), its docstrings, and Step 7.3. RED: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/phone_verification/tests/test_constants.py -q -p no:cacheprovider`, `1 failed`, log `step-4-7-wa-d1-om-j1-a3-no-sms-red.log`. GREEN: `… pytest apps/phone_verification`, `1 failed, 14 passed` (a test using SMS as "another channel", now the template channel), then `15 passed`, log `step-4-7-wa-d1-om-j1-a3-no-sms-green.log`; "No changes detected".
+  - **WA.D1.OM.J1.A3, a link code received on WhatsApp** (decision 29, the maintainer's choices, 2026-11-09): `PHONE_VERIFICATION_CHANNEL` in `config/settings.py` (`WHATSAPP_INBOUND` by default, or `WHATSAPP_TEMPLATE`; documented in `.env.shared`) with check `whatsapp.E010`; in [`services/identity.py`](../../../packages/backend/apps/whatsapp/services/identity.py) `link_template` (category `AUTHENTICATION`, the security line, the code's expiry, a copy-code button), `publish_link_template`, `start_link` sending the code from the team number through the send backend's new `send_message_to` (the client's `send_to`, to a phone that needn't be a contact; the log backend never logs the code), `confirm_link`, `WhatsAppWaitingLink` (migration `whatsapp` 0024) completed in `identity_for`, and `_attach`, now shared with inbound linking; the `publish_link_template` task, queued by `accounts._set_up` for a team number when the channel is the template, and the `whatsapp_publish_link_templates` command; in `schema.py`, `startWhatsAppLink`'s `channel`, `WhatsAppLinkType.waiting` and `confirmWhatsAppLink`. On the profile page, [`whatsappProfileSection.component.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/components/whatsappProfileSection/whatsappProfileSection.component.tsx) asks for the code it sent and shows a waiting link's "send any message" line; `api.graphql` edited by hand, types regenerated (log `step-4-7-wa-d1-om-j1-a3-codegen.log`). RED, backend: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_link_by_code.py -q -p no:cacheprovider`, `12 failed, 2 passed, 10 errors`, log `step-4-7-wa-d1-om-j1-a3-red.log`; frontend: `pnpm nx run webapp-whatsapp:test --skip-nx-cache --testFile=whatsappProfileSection.component.spec.tsx --json --outputFile=<repo>/logs/step-4-7-wa-d1-om-j1-a3-fe-red.json`, `5 failed, 11 passed`, log `step-4-7-wa-d1-om-j1-a3-fe-red.log`. GREEN: "No changes detected" and the same file, `24 passed`, log `step-4-7-wa-d1-om-j1-a3-green.log`; `… pytest apps/whatsapp apps/whatsapp_saas apps/whatsapp_shop apps/phone_verification`, `1060 passed`, black reformatting the new test file, since fixed, log `step-4-7-wa-d1-om-j1-a3-apps.log`; `webapp-whatsapp:test`, `83 passed, 1 failed` (the new test's text matcher, split by a `<strong>`, fixed to check its paragraph), then `84 passed`, with `webapp-whatsapp:lint`, `:type-check` and `webapp:type-check` exit 0; story `24/24 (BI), 5/5 (FI)`.
+  - **The Shopify CLI for the app's configuration** (2026-11-10, found in J2's setup: the order scope and subscriptions had to reach the app on Shopify; agents.md section 5.3c): `@shopify/cli` 3.93.1 is an exact root `devDependency`, run as `pnpm exec shopify app … --path packages/backend/apps/shopify`, never `pnpm dlx`. The CLI's own file, `shopify.app.<the app's name>.toml`, is git-ignored with `shopify.app.toml` (`.gitignore`'s `/packages/backend/apps/shopify/shopify.app*.toml`), since it holds the maintainer's tunnel address. The README's "Shopify app configuration (Shopify CLI)" and the Shopify walkthrough's section 13 show linking, editing and deploying it. The maintainer chose public distribution and protected customer data Level 1 on 2026-11-10 (the roadmap's App Store review item).
+  - **Shopify posts webhooks without the trailing slash** (2026-11-10, J2.1): Shopify called `/api/shopify/webhooks`, and Django's `APPEND_SLASH` can't redirect a POST, so every order webhook failed with a 500 (a 301 with `DEBUG` off). [`apps/shopify/urls.py`](../../../packages/backend/apps/shopify/urls.py) now routes both spellings to the same view; `TestWithoutTheTrailingSlash` in [`test_webhooks.py`](../../../packages/backend/apps/shopify/tests/test_webhooks.py). RED: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_webhooks.py -q -p no:cacheprovider -k TestWithoutTheTrailingSlash`, `2 failed`, log `step-4-7-shopify-no-slash-red.log`. GREEN: `docker compose run --rm -T -e DATABASE_URL= backend sh -c "pytest apps/shopify -q -p no:cacheprovider; black --check apps/shopify"`, `214 passed`, log `step-4-7-shopify-no-slash-green.log`. J2.1's order then got its "is paid" message.
+  - **WA.D5.SC.J1.A2, the order's details in the chat** (decision 30, the maintainer's choice, 2026-11-11), in five TDD steps:
+    - **Step 1, the order as Shopify has it:** `order_details` in [`apps/shopify/orders.py`](../../../packages/backend/apps/shopify/orders.py), Level 1 fields only. RED: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/shopify/tests/test_order_details.py -q -p no:cacheprovider`, `7 failed`, log `step-4-7-order-details-red.log`; GREEN: the same, `7 passed`, log `step-4-7-order-details-green.log`.
+    - **Steps 2 and 3, the updates carry the details, and one template replaces two:** [`whatsapp_shop/orders.py`](../../../packages/backend/apps/whatsapp_shop/orders.py)'s `stage_messages` and `details_text`; [`whatsapp_shop/templates.py`](../../../packages/backend/apps/whatsapp_shop/templates.py)'s `shop_order_update` with its quick-reply button, retiring the two old templates through the client's new `delete_template` and `services/templates.retire`; `builders.template_message`'s `quick_reply_payload`; [`failed_updates.py`](../../../packages/backend/apps/whatsapp_shop/failed_updates.py)'s Send again asking for `order_details`. RED: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_shop/tests/test_order_updates.py apps/whatsapp_shop/tests/test_order_templates.py apps/whatsapp_shop/tests/test_failed_updates.py apps/whatsapp/tests/test_templates.py -q -p no:cacheprovider`, `20 failed, 38 passed`, log `step-4-7-order-messages-red.log`; GREEN: the same, `58 passed`, log `step-4-7-order-messages-green.log`.
+    - **Step 4, the Order details button:** [`normalize.py`](../../../packages/backend/apps/whatsapp/normalize.py) reads Meta's `button` message (a template's quick reply) as a button press; [`router.py`](../../../packages/backend/apps/whatsapp/services/router.py) hands an id holding `:` to the handler's `on_template_button`, never the conversation's choices; the store's handler in [`menus.py`](../../../packages/backend/apps/whatsapp_shop/menus.py) answers through `orders.details_reply`, for the customer's own checkout only, with one "isn't available any more" for every other case. RED: `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_template_buttons.py apps/whatsapp_shop/tests/test_order_details_button.py -q -p no:cacheprovider`, `8 failed, 1 passed`, log `step-4-7-order-details-button-red.log`; GREEN: the same, `9 passed`, log `step-4-7-order-details-button-green.log`; `… pytest apps/whatsapp apps/whatsapp_shop -q -p no:cacheprovider`, `908 passed`, log `step-4-7-order-details-button-apps.log`.
+    - **Step 5, no link to the order:** `StoreCheckout.order_link_token` removed (migration `whatsapp_shop` 0007), with the order link's view, route and mount in `config/urls_api.py`, `order_status_url`, the unused `order_summary`, `test_order_link.py`, `test_orders.py` and the demo seed's tokens. RED: `test_order_updates.py`'s `test_no_order_gets_a_link_anyone_could_open`, `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp_shop/tests/test_order_updates.py -q -p no:cacheprovider`, `1 failed, 18 passed`, log `step-4-7-no-order-link-red.log`. GREEN: `docker compose run --rm -T -e DATABASE_URL= backend sh -c "python manage.py makemigrations --check --dry-run whatsapp_shop && pytest apps/whatsapp_shop apps/shopify -q -p no:cacheprovider"`, "No changes detected" and `394 passed`, log `step-4-7-no-order-link-green.log`. `config/urls_api.py` is outside the app, so the full backend run before the commit covers it.
+    - **The WhatsApp page's label (user story WA.D3.OM.J2.A2):** [`templateStatus.component.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/templateStatus.component.tsx) named only the two retired templates, so the new one showed as "shop_order_update: Approved"; it's now "Order update" (translation id `WhatsAppSettings / Templates / Order update`, its English default until the translation files have it), and any other name shows as Meta names it. RED: the page spec's "WA.D3.OM.J2.A2 order templates" tests moved to `shop_order_update`, `pnpm nx run webapp-whatsapp:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=whatsappSettings.component --verbose`, `2 failed, 54 passed`, each receiving "shop_order_update: …", log `step-4-7-template-label-red.log`. GREEN: `pnpm nx run webapp-whatsapp:test --skip-nx-cache -- --watchAll=false --maxWorkers=2`, `84 passed`, with `webapp-whatsapp:lint` and `:type-check` exit 0, logs `step-4-7-template-label-green.log`, `-lint.log`, `-types.log`.
+    - The story's counts come from the full backend run.
+  - **Found in J1 and J2.1's human checks (2026-11-10 to 2026-11-11), still to fix before the checks go on:**
+    - **Security, fixed 2026-11-13:** Meta's error messages can echo the request's access token, and the client put them in exceptions, logs, a command's output and the operator's email. [`client.py`](../../../packages/backend/apps/whatsapp/client.py)'s `_error_from` now removes the request's own token (from its `Authorization` header), and anything shaped like a Meta access token (`EAA` and 20 or more letters and digits), as "[access token removed]", keeping the rest of Meta's words. RED: three tests in `test_client.py`'s `TestErrors`, `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_client.py -q -p no:cacheprovider -k TestErrors`, `3 failed, 13 passed`, log `step-4-7-token-echo-red.log`. GREEN: `docker compose run --rm -T -e DATABASE_URL= backend sh -c "pytest apps/whatsapp -q -p no:cacheprovider; black --check apps/whatsapp/client.py apps/whatsapp/tests/test_client.py"`, `721 passed`, both files unchanged, log `step-4-7-token-echo-green.log`.
+    - **Setup:** step 6 prints `access_token_encrypted`; step 8's output is hard to read; step 3 needs its exact values in code blocks, an **Expect** for the scopes, and the restart as a code block, as do step 9 and J8; step 2 should name ngrok's inspector, http://localhost:4040/inspect/http, which belongs in the README's table too; values kept in shell variables are lost in a new terminal, so the journeys could keep them in a `logs/journey.env`.
+    - **Journeys:** J1 expects one number serving customers, J1.2 should mention Meta's `hello_world` and the "Active – Quality pending" status, and show each template's id with its name; J3 and J8 need a real team number, not the demo one; J2 should start with an empty cart; a cart made before Step 4.3a has no code, so its orders get no updates.
+    - **The admin's model names, fixed 2026-11-13:** Django made them from the class names ("Whats app templates", "Whats app identitys", "Shopify webhook deliverys", "shopify o auth state"). Every model of `apps.whatsapp` and `apps.shopify` now sets its `verbose_name`, and a plural where adding "s" is wrong, as `apps.payfast`'s models do (migrations `whatsapp` 0025 and `shopify` 0007, options only, made by `pnpm saas backend makemigrations`, then "No changes detected", logs `step-4-7-model-names-makemigrations.log` and `-2.log`). RED: the new `test_model_names.py` in both apps, `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/whatsapp/tests/test_model_names.py apps/shopify/tests/test_model_names.py -q -p no:cacheprovider`, `14 failed`, log `step-4-7-model-names-red.log`. GREEN: `docker compose run --rm -T -e DATABASE_URL= backend sh -c "pytest apps/whatsapp apps/shopify -q -p no:cacheprovider; black --check apps/whatsapp apps/shopify"`, `950 passed`, 147 files unchanged, log `step-4-7-model-names-green.log`.
+    - **The billing email card couldn't save, fixed 2026-11-19 (human check J3.3, user story WA.D6.OM.J1.A1):** the card saves through upstream's `updateTenant`, which sent only `id`, while the tenant middleware ([`middleware.py`](../../../packages/backend/apps/multitenancy/middleware.py)) finds the organization only from an explicit `tenantId`, so a real request found none and failed with `'NoneType' object has no attribute '_meta'`. The card showed "Check it's a valid email address" for it. Upstream's own `updateTenant` tests set the organization directly and skip that lookup. `UpdateTenantMutation` now declares an optional `tenant_id` in its `Input`, as upstream's `UpdateTenantMembershipMutation` does (one additive change to an upstream file, agents.md section 3.1), and the card sends `tenantId`. Upstream's own rename form sends the same request without it, so it most likely fails the same way: a decision for later.
+      - Backend RED: the new [`test_billing_email.py`](../../../packages/backend/apps/payfast/tests/test_billing_email.py), through the real `/api/graphql/` view, `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/payfast/tests/test_billing_email.py`, `1 failed, 1 passed` ("Field 'tenantId' is not defined by type 'UpdateTenantMutationInput'"; the Member's refusal already held), log `billing-email-red.log`.
+      - Backend GREEN: the same command, `2 passed`, log `billing-email-green.log`; then `docker compose run --rm -T -e DATABASE_URL= backend pytest apps/multitenancy apps/payfast`, `356 passed`, log `billing-email-green-apps.log`; `pnpm saas backend black`, 653 files unchanged. Schema and types: `pnpm nx run webapp-api-client:graphql:download-schema --skip-nx-cache`, then `pnpm nx run webapp-api-client:graphql:generate-types --skip-nx-cache`, since the first replayed the types from its cache.
+      - Frontend RED: the card's save mock expects `tenantId`, `pnpm nx run webapp-finances:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=billingEmailCard --verbose`, `1 failed, 2 passed` (the save was never sent to the mock), log `billing-email-card-red.log`. GREEN: the same, `3 passed`, log `billing-email-card-green.log`; `webapp-finances` lint and type-check exit 0, its tests `24 passed` suites and `109 passed` tests, and `webapp-api-client` and `webapp-tenants` type-check exit 0 (logs `billing-email-finances-*.log`, `billing-email-api-client-type-check.log`, `billing-email-tenants-type-check.log`).
+    - **Human checks, 2026-11-17 to 2026-11-19, run by the maintainer, all passed** (section 13, "Phase 4: journeys on your real number and dev store", talked through in chat one step at a time, on one real number serving customers, the second being unavailable):
+      - J1.1 to J1.4: `shop_order_update` submitted to both store numbers and approved, the old two templates deleted, the demo numbers refused and emailed, the WhatsApp page showing "Order update: Approved".
+      - J2.1 to J2.6: a card order with only "is paid" (#1010), matching the Shopify admin; a Cash on Delivery order from an empty cart, "received" then "is paid" (#1008); the day-old update as the template, with Order details (#1009); and, after a simulated `customers/redact`, "That order isn't available any more" (#1012).
+      - J3: the number made the team's ("Before J3.1"), `team_link_code` approved within minutes, the phone linked by the code it sent; My invoices' PDF; the billing email saved through the card once fixed (finding below); a trial started in PayFast's sandbox, `TRIALING` with `has_used_trial` true. The organization's subscription row first showed `TRIALING` with no token and a trial ended four days earlier, set by hand on 2026-11-12 for an earlier check; it was reset with `reset_to_free_plan` first.
+      - J4.1 to J4.5: a simulated refusal listed with Meta's reason, a Member seeing it without **Send again** and refused the invoice (403), and **Send again** delivering the update rebuilt from Shopify. J5.1 and J5.2: one email for a delivery past 3 days, then **Handle again**. J6.1: `invoicing.W001` for a name of only spaces.
+      - The checks' text was corrected afterwards (2026-11-19): your number chosen among the store's numbers in Setup 6; the cart message's total; two templates in J2.5, since WhatsApp greys a template's button out after one tap; a real `OPERATOR_EMAILS` inbox in J1.3; the team-number switch before J3.1 and back in J3.4; a real billing email allowed in J3.3.
+      - Findings for later, as decisions: an order line names no variant ("The Complete Snowboard", ordered as Electric); a refused `team_link_code` is emailed with the order template's wording; the billing email card shows one generic error for every failure; an expired login isn't renewed before a save (the card got a 401 after an hour); upstream's rename form sends no `tenantId` either; the WhatsApp page lists `team_link_code` under **Order update templates**, and shows that section on a team-only number.
+    - **Pre-commit runs, 2026-11-19, run by the maintainer after `pnpm saas down`** (README Testing):
+      - Backend: `pnpm nx run backend:test --skip-nx-cache > logs/backend-test.log 2>&1`, `2337 passed` in 31 minutes, log `backend-test.log`, ending with each story's counts, now in the user stories file.
+      - Every later `pnpm nx run` then failed with "Failed to process project graph": Nx's project map broke during the long run. `pnpm nx reset`, then `pnpm nx show projects` (exit code 0, 28 projects), fixed it.
+      - Workers: `pnpm nx run workers:test --skip-nx-cache`, `2 passed`. Lint and type-check of the 16 frontend projects, one at a time (`pnpm nx run $p:lint --skip-nx-cache`, `pnpm nx run $p:type-check --skip-nx-cache`): all 32 exit code 0.
+      - Frontend tests, the README's loop with `--json --outputFile=$PWD/logs/jest-$p.json`: 15 projects passed, and `webapp-finances` had 1 failure, upstream's Stripe `subscriptionPlanItem` "should not call onSelect", the race recorded at Step 2.8's commit (its `waitForApolloMocks()` waits only for the last mock). Nothing on this branch touches that component; run alone, `pnpm nx run webapp-finances:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --verbose`, `24 passed` suites and `109 passed` tests. Story counts: `node scripts/user-story-tests.js` over the 16 projects' JSON files.
+      - `pnpm saas down` leaves the `ngrok` container running, which Docker then reports as an "orphan container", since ngrok sits behind a Compose profile: a finding for later.
+      - CI on PR #12 then failed 5 checks. Backend and docs: `invalid tag "/backend"`, since `PROJECT_NAME=saas` had been deleted from `.env.test` on 2026-11-05 (Step 4.3's local fix for the test step's stale image) and CI's setup action copies `.env.test` to `.env`; restored, and locally the root `.env` sets the same `PROJECT_NAME` (the maintainer's choice), so the build and the test step name one image. webapp-whatsapp on Node 22: "offers no choice of app before one is registered" looked for the number's row before the accounts query had rendered it; it now waits (`findByTestId`), `pnpm nx run webapp-whatsapp:test --skip-nx-cache -- --watchAll=false --maxWorkers=2 --testPathPattern=whatsappSettings.component`, `56 passed` in 3 runs of 3, lint exit 0. agents.md section 1.3 gained the rule on changing files CI reads.
+    - **The admin shows times in UTC, kept (the maintainer's decision, 2026-11-13; agents.md section 5.3e):** date-times are stored and handled in UTC, and only the frontend shows them in a time zone. `TIME_ZONE` stays `"UTC"`; changing it would also move the process's clock under upstream's own `datetime.now()` calls.
+    - **The operator email's missing logo, explained 2026-11-13:** every email's layout points at `VITE_EMAIL_ASSETS_URL`'s `logo.png` (locally http://localhost:3000/email-assets/logo.png, served by the web app from `packages/webapp/public/email-assets/`), which the browser fetches when the email is opened, so it's missing whenever the web app isn't running; upstream's emails behave the same, and a deployment's address is the live web app's. J1.4 now says so; no code changed.
+    - **Smaller:** a command's `CommandError` lines interleave with its output; Meta still calls an old Meta app's `/api/chatbot/webhook` (404), and Flows' `ENDPOINT_AVAILABILITY` alerts arrive; docs saying protected customer data is set in the Dev Dashboard should say the Partner Dashboard (App distribution, the app, API access requests); a root `pnpm add` left `webapp-emails` without a linked package until `pnpm install --frozen-lockfile`, so agents.md section 5.3c should say to follow one with the other.
+- **Still to run for these steps:** the full backend and web runs with the stack stopped, before the commit (agents.md section 1.3). This PR's CHANGELOG entry notes the `.env.test` change.
+
+**Deliberately out of scope:**
+
+- **VAT and tax invoices:** the operator isn't VAT-registered and won't be soon (the maintainer, 2026-11-02); added as its own step if a VAT-registered deployment needs it.
+- **Invoices sent unasked** (a billing template on the team's number) and **invoices by email** (upstream's `invoice*` email templates).
+- **Stripe invoices:** Stripe issues its own.
+- **Credit notes for refunds:** a refund only adds to a payment's `refunded_amount` and never changes its invoice.
+- **PayFast payment links:** none documented; Peach Payments would be a payment backend of its own.
+
+**Planned human checks** (not runnable yet; written out in section 13 as their steps are built): a test order paid by card gets one "paid" message; an EFT order gets "received", then "paid" once marked paid; a retried webhook sends nothing twice; the next **Add to cart** after an order starts a new cart; a late "paid" goes out as the template; connecting a number that serves customers submits its order template (two until decision 30), and `whatsapp_publish_order_templates` reports it up to date the second time; the template's **Order details** answers with the order as Shopify has it, and a forgotten customer's tap gets "isn't available any more" (decision 30, replacing **View order**); "Plans and billing" for the Owner, and the "ask the owner" answer for a Member; a PayFast payment's invoice, numbered in sequence, downloaded by an Admin, refused to a Member, and absent from another organization; "My invoices" sending the PDF.
 
 ### Phase 5 — Embedded Signup (outline)
 
@@ -2284,9 +2494,7 @@ The design follows Chatwoot's conversation status, assignee and reply-window rul
   - A `whatsapp_publish_templates` command submits the authentication template (copy-code button, security line, expiry) once and stores its name and status.
   - The sender fills in the code and sends it.
   - A rejected or not-yet-approved template gives a clear error.
-- **Step 7.3 `sms`.**
-  - A sender behind an `SMS_PROVIDER` setting, empty by default.
-  - The provider is chosen when this step starts, with its docs cited (agents.md section 6.2).
+- **Step 7.3 `sms`: dropped on 2026-11-09** (D20's change): no SMS channel or provider; verification relies on WhatsApp.
 - **Step 7.4 Web app.** "Send me a code" on the profile's WhatsApp section, shown only when the channel isn't `whatsapp_inbound`, and a box to type the code.
 
 ## 10. Risks and mitigations
@@ -2352,6 +2560,8 @@ The kinds are defined in agents.md section 2.5. Each file's docstring says why i
 - **Sanity:**
   - [`test_settings.py`](../../../packages/backend/apps/whatsapp/tests/test_settings.py): each setting reads its environment variable.
   - [`test_checks.py`](../../../packages/backend/apps/whatsapp/tests/test_checks.py): a broken configuration fails at startup.
+  - [`apps/entitlements/tests/test_settings.py`](../../../packages/backend/apps/entitlements/tests/test_settings.py) (phase 3), [`apps/invoicing/tests/test_settings.py`](../../../packages/backend/apps/invoicing/tests/test_settings.py) (Step 4.4a): each setting reads its environment variable, in a fresh subprocess.
+  - [`apps/invoicing/tests/test_checks.py`](../../../packages/backend/apps/invoicing/tests/test_checks.py) (Step 4.4a): the warning when the supplier's name or address isn't set.
 - **Unit:**
   - [`test_builders.py`](../../../packages/backend/apps/whatsapp/tests/test_builders.py)
   - [`test_navigation.py`](../../../packages/backend/apps/whatsapp/tests/test_navigation.py)
@@ -2361,9 +2571,11 @@ The kinds are defined in agents.md section 2.5. Each file's docstring says why i
   - [`test_phone_numbers.py`](../../../packages/backend/apps/whatsapp/tests/test_phone_numbers.py)
   - [`apps/whatsapp_saas/tests/test_flow_json.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_flow_json.py): the Flow JSON files' shape.
   - [`test_enums.py`](../../../packages/backend/apps/whatsapp/tests/test_enums.py) and [`apps/phone_verification/tests/test_constants.py`](../../../packages/backend/apps/phone_verification/tests/test_constants.py): every enum stores its member names (Step 1.16).
+  - [`test_model_names.py`](../../../packages/backend/apps/whatsapp/tests/test_model_names.py) and [`apps/shopify/tests/test_model_names.py`](../../../packages/backend/apps/shopify/tests/test_model_names.py) (Step 4.7): the names the Django admin shows for each model.
 - **Integration:**
   - [`test_enum_migration.py`](../../../packages/backend/apps/whatsapp/tests/test_enum_migration.py) and [`apps/phone_verification/tests/test_channel_migration.py`](../../../packages/backend/apps/phone_verification/tests/test_channel_migration.py): Step 1.16's data migrations, run on rows in the test database; nothing faked.
   - [`test_models.py`](../../../packages/backend/apps/whatsapp/tests/test_models.py): the test database.
+  - [`test_template_buttons.py`](../../../packages/backend/apps/whatsapp/tests/test_template_buttons.py) (Step 4.7, decision 30): a template's quick-reply tap through the real router to a stand-in handler; its reading tests are unit, `normalize_webhook` on its own.
   - [`test_tasks.py`](../../../packages/backend/apps/whatsapp/tests/test_tasks.py): the test database.
   - [`test_client.py`](../../../packages/backend/apps/whatsapp/tests/test_client.py): the test database, with Meta's HTTP mocked.
   - [`test_webhook_views.py`](../../../packages/backend/apps/whatsapp/tests/test_webhook_views.py): the webhook route, with the Celery task's `delay` patched.
@@ -2393,11 +2605,39 @@ The kinds are defined in agents.md section 2.5. Each file's docstring says why i
   - [`apps/whatsapp_shop/tests/test_store_channels.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_store_channels.py): which store each external number sells from (Step 2.1b), in the test database; nothing faked.
   - [`apps/whatsapp_shop/tests/test_schema.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_schema.py): the store picker's API through the real GraphQL schema and permissions; nothing faked.
   - [`apps/whatsapp_shop/tests/test_seed_demo.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_seed_demo.py): `whatsapp_shop_seed_demo` after the two other seeds, in the test database; nothing faked.
+  - [`apps/payfast/tests/test_billing_email.py`](../../../packages/backend/apps/payfast/tests/test_billing_email.py) (Step 4.7, user story WA.D6.OM.J1.A1): the billing email card's `updateTenant` request through the real `/api/graphql/` view and its tenant middleware; nothing faked.
+  - Added in phases 2 to 4, in `apps/whatsapp` (listed here on 2026-11-05):
+    - [`test_one_number_for_both.py`](../../../packages/backend/apps/whatsapp/tests/test_one_number_for_both.py) (Step 2.7): one number for the team and the customers, through the real router, with two fake handlers, Meta's HTTP mocked and the send task's Celery `delay` patched.
+    - [`test_meta_apps.py`](../../../packages/backend/apps/whatsapp/tests/test_meta_apps.py), [`test_meta_apps_schema.py`](../../../packages/backend/apps/whatsapp/tests/test_meta_apps_schema.py) (Step 2.9): an organization's own Meta apps, through the service and the real GraphQL schema, with Meta's HTTP mocked.
+    - [`test_documents.py`](../../../packages/backend/apps/whatsapp/tests/test_documents.py) (Step 4.5b): a file sent as a document, with Meta's HTTP mocked.
+    - [`test_window.py`](../../../packages/backend/apps/whatsapp/tests/test_window.py) (Step 4.3c): the 24-hour window, from messages in the test database; nothing faked.
+    - [`test_templates.py`](../../../packages/backend/apps/whatsapp/tests/test_templates.py) (Step 4.3d-2): submitting and editing templates and queuing one, with `requests.post` faked and the send task's `delay` patched.
+  - In `apps/whatsapp_saas`:
+    - [`test_plans_and_billing.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_plans_and_billing.py) (Step 4.1), [`test_invoices.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_invoices.py) (Step 4.5b): through the real router and handler; only the send task's Celery `delay` is faked, and the invoices' PDFs are files in a temporary folder.
+  - In `apps/whatsapp_shop`, through the real router and handler unless said otherwise:
+    - [`test_handler.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_handler.py) (Step 2.2): who an external number answers; the send task's Celery `delay` and the store's name from Shopify are faked.
+    - [`test_browsing.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_browsing.py) (Step 2.3), [`test_product_and_cart.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_product_and_cart.py) (Step 2.4), [`test_checkout_code.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_checkout_code.py) (Step 4.3a): Shopify's Storefront API faked at `apps.shopify.storefront`'s functions.
+    - [`test_assistant.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_assistant.py) (Step 2.5): the store assistant, with a fake model, the Storefront API faked and the send task's Celery `delay` patched.
+    - [`test_privacy.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_privacy.py) (Step 2.6): `apps.shopify`'s real redact handlers reaching this app's receivers; nothing faked.
+    - [`test_order_updates.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_order_updates.py) (Steps 4.3c, 4.3d-2 and 4.7): `apps.shopify`'s order signals sent as its handlers send them; Shopify's Admin API faked at `apps.shopify.orders`'s `admin_client_for`, and the send task's `delay` patched.
+    - [`test_order_details_button.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_order_details_button.py) (Step 4.7, decision 30): a tap on the template's **Order details** through the real router, with the Admin API faked at `admin_client_for` and the send task's `delay` patched.
+    - [`test_order_templates.py`](../../../packages/backend/apps/whatsapp_shop/tests/test_order_templates.py) (Step 4.3d-2): the order templates, their task and command, on the log backend or with `requests.post` faked.
+  - In `apps.shopify`, for this plan:
+    - [`apps/shopify/tests/test_storefront.py`](../../../packages/backend/apps/shopify/tests/test_storefront.py) (Steps 2.2 and 4.3a): the Storefront API client, with `requests.post` faked.
+    - [`apps/shopify/tests/test_webhooks_orders.py`](../../../packages/backend/apps/shopify/tests/test_webhooks_orders.py) (Step 4.3b): the order webhooks through the real route, simulated by HMAC-signed posts; in Celery mode the task's `delay` is patched and the task run directly.
+    - [`apps/shopify/tests/test_order_details.py`](../../../packages/backend/apps/shopify/tests/test_order_details.py) (Step 4.7, decision 30): an order's details, Level 1 fields only, with `admin_client_for` faked.
+    - [`apps/shopify/tests/test_webhooks_handled.py`](../../../packages/backend/apps/shopify/tests/test_webhooks_handled.py) (Step 4.3e): every delivery handled, through the real route with HMAC-signed posts, in sync, Celery and no-worker dispatch; the topic's handler is a test double and the task's `delay` is patched.
+    - [`apps/shopify/tests/test_pending_deliveries.py`](../../../packages/backend/apps/shopify/tests/test_pending_deliveries.py) (Step 4.3e): the sweep, its command and its beat task, with the topic's handler a test double; its beat-schedule tests are sanity, reading settings in a fresh subprocess.
+    - [`apps/shopify/tests/test_admin_deliveries.py`](../../../packages/backend/apps/shopify/tests/test_admin_deliveries.py) (Step 4.3e): the deliveries' admin pages; nothing faked.
+  - In `apps.entitlements` (phase 3): [`test_catalog.py`](../../../packages/backend/apps/entitlements/tests/test_catalog.py), [`test_features.py`](../../../packages/backend/apps/entitlements/tests/test_features.py) (Stripe's objects are dj-stripe's copies, so Stripe is never called), [`test_schema.py`](../../../packages/backend/apps/entitlements/tests/test_schema.py) and [`test_where_checked.py`](../../../packages/backend/apps/entitlements/tests/test_where_checked.py) (the store's name from Shopify and the send task's Celery `delay` faked).
+  - In `apps.invoicing` (Steps 4.4a to 4.4c): [`test_issuing.py`](../../../packages/backend/apps/invoicing/tests/test_issuing.py), [`test_pdf.py`](../../../packages/backend/apps/invoicing/tests/test_pdf.py) (the PDF really rendered), [`test_from_payments.py`](../../../packages/backend/apps/invoicing/tests/test_from_payments.py) (only the task's Celery `delay` patched), [`test_schema.py`](../../../packages/backend/apps/invoicing/tests/test_schema.py), [`test_download.py`](../../../packages/backend/apps/invoicing/tests/test_download.py) and [`test_admin.py`](../../../packages/backend/apps/invoicing/tests/test_admin.py); nothing else faked, and PDFs are files in a temporary folder.
+  - In `apps.payfast`, for this plan: [`test_retention.py`](../../../packages/backend/apps/payfast/tests/test_retention.py) (Step 4.4p; nothing faked) and [`test_payment_completed.py`](../../../packages/backend/apps/payfast/tests/test_payment_completed.py) (Step 4.4b; the PayFast API mocked, and the signal's receiver a mock).
 - **Smoke:** [`apps/whatsapp_saas/tests/test_smoke.py`](../../../packages/backend/apps/whatsapp_saas/tests/test_smoke.py), from a link code through a confirmed item. Only Celery's queueing is replaced, by running each task at once.
 - **Web (Jest), all integration:** the components render with the real Apollo hooks, router and permission check, against Apollo's `MockedProvider`.
   - [`whatsappSettings.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/whatsappSettings.component.spec.tsx): the WhatsApp tab.
   - [`troubleshootPanel.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/routes/whatsappSettings/__tests__/troubleshootPanel.component.spec.tsx): the troubleshooting panel.
   - [`whatsappProfileSection.component.spec.tsx`](../../../packages/webapp-libs/webapp-whatsapp/src/components/whatsappProfileSection/__tests__/whatsappProfileSection.component.spec.tsx): the profile section.
+  - [`transactionHistory.invoices.spec.tsx`](../../../packages/webapp-libs/webapp-finances/src/payfast/__tests__/transactionHistory.invoices.spec.tsx) (Step 4.5a): **Download invoice** in the PayFast transaction history; the login renewal and the PDF request are spied on, and the browser's file save is faked, since jsdom has none.
 
 ### Planned human checks (phase 1)
 
@@ -2421,49 +2661,49 @@ Planned checks:
    - **Why:** Meta's signature is the only authority on this public URL. A 403 with no stored row proves nothing is processed before the check.
 2. **The same message twice is stored once** (Step 1.3).
    - **Why:** Meta retries.
-3. **Connect a number with the form, as an organization admin** (user story 11).
+3. **Connect a number with the form, as an organization admin** (user story WA.D3.OM.J1.A1).
    - **Why:** the form is the first proof that the credentials work, before anyone texts.
    - Prove the organization has no number first, connect one, then show the account row, with its secrets encrypted, and the webhook URL.
-4. **A member without `whatsapp.manage` can't connect a number, and someone outside the organization gets "not found"** (user story 11).
+4. **A member without `whatsapp.manage` can't connect a number, and someone outside the organization gets "not found"** (user story WA.D3.OM.J1.A1).
    - **Why:** a connected number lets the app speak for the business; "not found" stops outsiders learning which organizations exist.
-5. **A GET with an account's verify token marks that account's webhook verified; a wrong token gets 403** (user story 11).
+5. **A GET with an account's verify token marks that account's webhook verified; a wrong token gets 403** (user story WA.D3.OM.J1.A1).
    - **Why:** the GET carries no body, so the token itself is what identifies the account (D6).
-6. **Send a test message, then reply from the phone; the tab shows the last message received** (user story 11).
+6. **Send a test message, then reply from the phone; the tab shows the last message received** (user story WA.D3.OM.J1.A1).
    - Uses the maintainer's own Meta test number, read into a shell variable at run time.
-7. **An unlinked number gets only instructions** (user story 2).
+7. **An unlinked number gets only instructions** (user story WA.D1.OM.J1.A1).
    - **Why:** no data before linking.
    - Two senders side by side, one a seeded user's number and one unknown, get the same reply.
-8. **Linking with the shown code works** (user story 1).
+8. **Linking with the shown code works** (user story WA.D1.OM.J1.A2).
    - **Why:** both proofs together.
    - Prove the user isn't linked first, link them, then show the identity row.
-9. **A used or expired code fails** (user story 1).
+9. **A used or expired code fails** (user story WA.D1.OM.J1.A2).
    - **Why:** a code is single-use and short-lived.
-10. **A number linked to another account is refused** (user story 1).
+10. **A number linked to another account is refused** (user story WA.D1.OM.J1.A2).
     - **Why:** no takeover.
-11. **The mode switch persists** (user story 3).
+11. **The mode switch persists** (user story WA.D2.OM.J1.A1).
     - **Why:** the user's choice beats the default.
-12. **Organization list shows only accepted memberships** (user story 4).
+12. **Organization list shows only accepted memberships** (user story WA.D2.OM.J1.A2).
     - **Why:** a pending invitation is not access.
-13. **Create an organization through the form, confirm, then show the new organization and owner membership** (user story 5).
-14. **Items page 1, then 2, then back** (user story 6).
+13. **Create an organization through the form, confirm, then show the new organization and owner membership** (user story WA.D2.OM.J1.A3).
+14. **Items page 1, then 2, then back** (user story WA.D2.OM.J2.A1).
     - **Why:** paging keeps its cursor on the server, so an old button can't jump organizations.
-15. **A member without `features.crud.manage` can't create, even by replaying an old Confirm** (user story 9).
+15. **A member without `features.crud.manage` can't create, even by replaying an old Confirm** (user story WA.D1.OM.J2.A1).
     - **Why:** permission is rechecked when the action runs.
-16. **Another organization's item reads as "not found"** (user story 9).
+16. **Another organization's item reads as "not found"** (user story WA.D1.OM.J2.A1).
     - **Why:** nobody can probe other organizations' data.
-17. **Delete, then Cancel; the item is still there** (user story 6).
-18. **Products paging and search for an organization with a store** (user story 7).
+17. **Delete, then Cancel; the item is still there** (user story WA.D2.OM.J2.A1).
+18. **Products paging and search for an organization with a store** (user story WA.D2.OM.J2.A2).
     - The same request for an organization without a store gives "no store connected".
-19. **In AI mode, "add an item called Monthly report"** (user story 8).
+19. **In AI mode, "add an item called Monthly report"** (user story WA.D2.OM.J2.A3).
     - **Why:** the model can't confirm on the user's behalf.
     - Expect the Confirm and Cancel buttons, no item until Confirm, then the saved item.
-20. **Every reply has a way back** (user story 21).
+20. **Every reply has a way back** (user story WA.D2.OM.J3.A1).
     - **Why:** nobody is ever stuck (D17).
     - Show the seeded linked user's last 20 outbound messages as whole rows, each with a Back or Main menu option; then send `menu` in the middle of a form and see the main menu.
-21. **With the `log` backend, no request reaches Meta, and every reply is in the table** (user story 10).
-22. **Real phone, with the maintainer's own Meta test number and tunnel address read into shell variables at run time** (user stories 1, 5, 6 and 11).
+21. **With the `log` backend, no request reaches Meta, and every reply is in the table** (user story WA.D7.OP.J1.A1).
+22. **Real phone, with the maintainer's own Meta test number and tunnel address read into shell variables at run time** (user stories WA.D1.OM.J1.A2, WA.D2.OM.J1.A3, WA.D2.OM.J2.A1 and WA.D3.OM.J1.A1).
     - Steps: connect the number with the form, link, create an item, list items.
-23. **Troubleshoot the real number from the WhatsApp tab** (user story 23).
+23. **Troubleshoot the real number from the WhatsApp tab** (user story WA.D3.OM.J2.A1).
     - **Why:** these are the last-resort repairs a stuck customer will need, and they act on Meta's side, so only a real number proves them.
     - Show Meta's status for the number. Request a code and verify it, which an already-verified number should refuse with `136024`. Re-subscribe the app. Then show the action-log entries, with no PIN or code in them.
     - `register` is left out of routine checks, because each attempt counts against Meta's 10 per 72 hours.
@@ -2585,7 +2825,7 @@ Run these on their own, top to bottom, before committing 7.0.0 (Steps 1.19 to 1.
 
 4. **The web app,** at http://localhost:3000, logged in as yourself, with your organization chosen in the sidebar's switcher.
 
-#### Q1. WhatsApp is its own page in the sidebar, and Organization settings has no tab (Step 1.19, user story 11)
+#### Q1. WhatsApp is its own page in the sidebar, and Organization settings has no tab (Step 1.19, user story WA.D3.OM.J1.A1)
 
 - **Why:** one place to find WhatsApp, next to Shopify. The sidebar item and the page's route both need `whatsapp.view`, and the old tab's address is gone.
 - **Acts on:** `$ORG_A` and its internal number.
@@ -2605,7 +2845,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 3. In the address bar, replace that ending `/whatsapp` with `/tenant/settings/whatsapp`, and press Enter. **Expect:** the not-found page: the old tab's address no longer exists.
 4. Click **Organization** in the sidebar. **Expect:** the tabs Members, Roles, General, Subscription, Security, Activity Logs and Backups (those your role may see), and no **WhatsApp** tab.
 
-#### Q2. The main menu names the organization as an organization (Step 1.20, user story 4)
+#### Q2. The main menu names the organization as an organization (Step 1.20, user story WA.D2.OM.J1.A2)
 
 - **Why:** a personal organization is named after its owner's email, so without "Organization:" the menu reads as if it named a person.
 - **Acts on:** your phone, linked to `$ORG_A`'s internal number.
@@ -2698,7 +2938,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 ### The fast path
 
-#### 1. Connect your internal communications number on the WhatsApp page (user story 11)
+#### 1. Connect your internal communications number on the WhatsApp page (user story WA.D3.OM.J1.A1)
 
 - **Why:** every number belongs to an organization, and is connected by its admin to our one Meta app, with three values and no App secret (Step 1.18). Meta checks the token, and our app is subscribed to the number's WhatsApp Business account, before anything is saved.
 - **Acts on:** your organization `$ORG_A`, and your Meta test number as its internal number.
@@ -2729,7 +2969,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 If the forms list is empty, the worker's log says why: `docker compose logs celery_default --tail 50`.
 
-#### 2. Our app's webhook, set once (user story 11)
+#### 2. Our app's webhook, set once (user story WA.D3.OM.J1.A1)
 
 - **Why:** Meta sends every connected number's messages to our app's one webhook URL, checks the URL with `WHATSAPP_VERIFY_TOKEN`, and signs every message with `WHATSAPP_APP_SECRET` (Step 1.18). It's set once for the app, never per number or per organization.
 - **Acts on:** our Meta app's webhook settings. If it's already set from an earlier run with the same tunnel address and verify token, press **Verify and save** again anyway: it proves the backend answers.
@@ -2748,7 +2988,7 @@ echo "$TUNNEL_URL/api/whatsapp/webhook/"
 
 In the ngrok terminal, **expect:** `GET /api/whatsapp/webhook/ 200 OK`, and from now on `POST /api/whatsapp/webhook/ 200 OK` for every message: a `403 Forbidden` means `WHATSAPP_APP_SECRET` isn't our app's App secret.
 
-#### 3. A phone that isn't linked gets no reply (user story 2)
+#### 3. A phone that isn't linked gets no reply (user story WA.D1.OM.J1.A1)
 
 - **Why:** a store customer who finds the team's number hears nothing (maintainer's decision, 2026-10-22).
 - **Acts on:** your phone, not linked yet.
@@ -2763,7 +3003,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 **Expect:** your `hi` first, with `"direction": "INBOUND"` and `"status": "PROCESSED"`, and no `OUTBOUND` row after it. The WhatsApp page's row for the number now also shows **Message received**.
 
-#### 4. Link your phone from the profile page (user stories 1 and 3)
+#### 4. Link your phone from the profile page (user stories WA.D1.OM.J1.A2 and WA.D2.OM.J1.A1)
 
 - **Why:** both proofs at once: your login names the account, and Meta's signed webhook proves the phone. A member links once per organization.
 - **Acts on:** your account, your phone and `$ORG_A`'s internal number.
@@ -2785,7 +3025,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 **Expect:** one whole row: your user's id in `user_id`, the internal number's id in `account_id` (the same `id` as check 1's row), an empty `conversation_mode` (the default applies) and a `linked_at` time.
 
-#### 5. The main menu, in your organization (user stories 4 and 21)
+#### 5. The main menu, in your organization (user stories WA.D2.OM.J1.A2 and WA.D2.OM.J3.A1)
 
 - **Why:** the number belongs to one organization, so there's nothing to pick (maintainer's decision, 2026-10-22), and every screen offers a way back (D17).
 
@@ -2801,7 +3041,7 @@ docker compose run --rm -T backend python manage.py whatsapp_seed_demo --email "
 
 **Expect:** a line for each demo external number (`100000000000801` to `100000000000804`), the Member, the linked demo user, and `Internal number of <your organization>: <your phone number id>`.
 
-#### 6. Items, 7 to a page (user story 6)
+#### 6. Items, 7 to a page (user story WA.D2.OM.J2.A1)
 
 **On the phone:**
 
@@ -2811,7 +3051,7 @@ docker compose run --rm -T backend python manage.py whatsapp_seed_demo --email "
 4. Tap **Back**. **Expect:** page 2 again.
 5. Send `menu`. **Expect:** the main menu.
 
-#### 7. A new item through the form, saved only on Confirm (user stories 6, D9 and D11)
+#### 7. A new item through the form, saved only on Confirm (user story WA.D2.OM.J2.A1, D9 and D11)
 
 - **Why:** a form's answers are checked by the website's own rules, and nothing is saved before your own press.
 - **Acts on:** the item `Human check item` in your organization.
@@ -2847,7 +3087,7 @@ curl -s -X POST "https://graph.facebook.com/v26.0/$PHONE_NUMBER_ID/whatsapp_busi
 
 Run the first command again: still `[]`. **On the phone:** tap **Confirm**. **Expect:** `Created Human check item in <your organization>.` Run the first command once more. **Expect:** one whole row, `"name": "Human check item"`, with your organization's id in `tenant_id` (the same `tenant_id` as check 1's row).
 
-#### 8. Edit, then Delete with Cancel and Confirm (user story 6)
+#### 8. Edit, then Delete with Cancel and Confirm (user story WA.D2.OM.J2.A1)
 
 **On the phone:**
 
@@ -2860,7 +3100,7 @@ Run the first command again: still `[]`. **On the phone:** tap **Confirm**. **Ex
 
 Run check 7's first command. **Expect:** `[]`.
 
-#### 9. Renaming the organization (user story 5)
+#### 9. Renaming the organization (user story WA.D2.OM.J1.A3)
 
 **On the phone:**
 
@@ -2868,7 +3108,7 @@ Run check 7's first command. **Expect:** `[]`.
 2. Add ` (renamed)` to it, press **Continue**, then **Confirm**. **Expect:** `Renamed: the organization is now called <name> (renamed).`
 3. Rename it back the same way. Your shell's `$ORG_A` holds the old name, so the commands below still find it once it's back.
 
-#### 10. Products, newest first, with a typed search (user story 7)
+#### 10. Products, newest first, with a typed search (user story WA.D2.OM.J2.A2)
 
 - **Acts on:** your organization's connected Shopify store, from the Shopify plan's checks. Without one, step 1 tells you so.
 
@@ -2881,7 +3121,7 @@ Run check 7's first command. **Expect:** `[]`.
 3. Tap a product. **Expect:** its picture (for a JPEG or PNG), name, price and status, with **Back**, which returns to the same page.
 4. Send `menu`, go back to the store and tap **Search**. **Expect:** `Type what you're looking for in <your store>, …`. Type part of a product's name. **Expect:** `Products in <your store> matching "<your words>", newest first.`
 
-#### 11. The assistant: a write is confirmed by your press only (user stories 3 and 8)
+#### 11. The assistant: a write is confirmed by your press only (user stories WA.D2.OM.J1.A1 and WA.D2.OM.J2.A3)
 
 - **Why:** the model can only propose a write; the server shows its own summary, and only your Confirm runs it (D11).
 
@@ -2901,7 +3141,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 **On the phone:** tap **Confirm**. **Expect:** `Created Monthly report in <your organization>.` Then send `delete it`, and tap **Confirm**. **Expect:** `Deleted Monthly report.` Then send `mode menu`. **Expect:** `You're back on menus and forms. …`
 
-#### 12. Escape words work everywhere (user story 21)
+#### 12. Escape words work everywhere (user story WA.D2.OM.J3.A1)
 
 **On the phone:**
 
@@ -2909,7 +3149,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 2. Send `help`. **Expect:** a reply naming `menu`, `mode ai`, `mode menu`, `cancel` and `unlink`.
 3. Tap **Delete** on any demo item, then send `cancel` instead of pressing a button. **Expect:** `Cancelled.` and the main menu. Tapping that **Confirm** afterwards gets `That menu has expired, so here's the main menu.`, and the item is still listed.
 
-#### 13. Unlinking forgets the conversation, and the number goes quiet (user story 1)
+#### 13. Unlinking forgets the conversation, and the number goes quiet (user story WA.D1.OM.J1.A2)
 
 - **Why:** the next person linked to this phone must inherit nothing, and an unlinked phone hears nothing.
 
@@ -2927,7 +3167,7 @@ Link again from the profile page (check 4) before going on.
 
 ### The WhatsApp page and the profile page
 
-#### 14. What each role sees on the WhatsApp page (user story 11)
+#### 14. What each role sees on the WhatsApp page (user story WA.D3.OM.J1.A1)
 
 - **Why:** only `whatsapp.manage` connects, tests, troubleshoots and disconnects numbers; `whatsapp.view` sees their status.
 - **Acts on:** numbers that are already there. Nothing new gets connected in this check:
@@ -2942,7 +3182,7 @@ Link again from the profile page (check 4) before going on.
 3. **A second internal number is refused.** This tries, on purpose, to add another internal number while yours is connected. In the internal section, type the made-up values `100000000000999`, `200000000000999` and `EAAGfake`, and press **Connect number**. **Expect:** `Your organization's team already texts <your number>. Disconnect it first to connect another internal communications number.` Nothing is connected, Meta isn't asked, and your real number is unchanged.
 4. **A Member only looks.** Log out and log in as `whatsapp-member@example.com` (password `WhatsAppMember123!`). Click **WhatsApp** in the sidebar. **Expect:** the same numbers and proofs, and no forms and no buttons.
 
-#### 15. One link per organization on the profile page (user stories 1 and 3)
+#### 15. One link per organization on the profile page (user stories WA.D1.OM.J1.A2 and WA.D2.OM.J1.A1)
 
 - **Acts on:** the second organization the demo seeded, `WhatsApp demo: second organization`, and the demo user `whatsapp-linked@example.com` (password `WhatsAppLinked123!`), a Member there.
 
@@ -2950,7 +3190,7 @@ Link again from the profile page (check 4) before going on.
 2. In the second organization's block, choose **AI assistant**. **Expect:** only that block changes; your organization's stays as it was.
 3. In the second organization's block, press **Unlink**, then **Unlink my number**. **Expect:** that block offers to link again; your organization's is still linked.
 
-#### 16. Test message and troubleshooting on your internal number (user story 23)
+#### 16. Test message and troubleshooting on your internal number (user story WA.D3.OM.J2.A1)
 
 - **Why:** the repairs act on Meta's side, so only a real number proves them.
 
@@ -2990,6 +3230,917 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 - `Rows with an old value: 0`
 
 **In the web app,** only if `packages/backend/.env` has `PAYMENT_BACKEND=payfast`: open **Subscriptions** in the sidebar, then **Transaction history**. **Expect:** the same plan, price and dates as before the restart (a trial still says **Free trial**), and donations still labelled **Donation**.
+
+### Phase 4: journeys on your real number and dev store (Step 4.6)
+
+Rewritten on 2026-11-07 as journeys through the user stories (agents.md section 1.3): each step is something a store customer, an organization member or the operator does in a real client, your phone's WhatsApp, your dev store and its admin, or the web app, with what they should see written out in full. A `curl` stands in only for what a person can't make happen on demand, and says why; a database lookup shows what no client shows. Run the journeys in order: journey 1 submits the templates, and Meta's review can take hours before step J2.5 needs them.
+
+Extended on 2026-11-09 for Step 4.7, once domains D1, D5, D6 and D7 were built (agents.md section 1.3: human checks wait until a domain's journeys are built): Setup steps 9 and 10; J1.4 to J1.7, the operator's emails, the template status on the WhatsApp page and in the admin; a stage's message in J2.1; J3.5 to J3.7, the billing email, paying in PayFast's sandbox and a trial's first invoice; and journeys J5 to J8, sending a failed update again, Shopify webhooks the service gave up on, the supplier's details on invoices, and linking a phone with a code received on WhatsApp. J8 comes last: it changes how linking works, and deletes your contact on your number.
+
+Rewritten again on 2026-11-15, under agents.md section 1.3's rule that human checks spend the scarcest resource: 39 steps became 21.
+
+- **Order:** every setting and build comes first, and the stack starts once.
+- **Commands:** each one says what it does, and no step points back to another for a command.
+- **What's kept:** what the tests can't show: your phone, your dev store, Meta, PayFast's sandbox, the emails and the pages. Four journeys' steps repeat what the tests prove, J2.6, J4.4, J5 and J6: a privacy promise, and the only human check of their user stories.
+- **What's removed,** since the tests prove it:
+  - submitting the templates twice, the daily status check and the admin's template list ([`test_templates.py`](../../../packages/backend/apps/whatsapp/tests/test_templates.py), [`test_template_status.py`](../../../packages/backend/apps/whatsapp/tests/test_template_status.py), [`test_admin.py`](../../../packages/backend/apps/whatsapp/tests/test_admin.py))
+  - Shopify's retry ([`test_webhooks.py`](../../../packages/backend/apps/shopify/tests/test_webhooks.py))
+  - the web app's invoice download, a new organization's trial line, an Admin's download and another organization's invoice ([`apps/invoicing/tests/`](../../../packages/backend/apps/invoicing/tests/))
+  - the supplier's name read trimmed ([`apps/invoicing/tests/test_settings.py`](../../../packages/backend/apps/invoicing/tests/test_settings.py))
+  - a wrong link code and a link waiting for the phone's first message ([`test_link_by_code.py`](../../../packages/backend/apps/whatsapp/tests/test_link_by_code.py))
+  - most database lookups: the message on your phone proves the chain behind it
+- **Numbering:** the steps were renumbered, so records dated before 2026-11-15 use the old numbers, J1 to J8.
+
+#### Setup for the journeys
+
+**Already done once,** with nothing to do unless you start from a fresh database or a new store:
+
+- **Order updates switched on for your dev store** (2026-11-10), the operator guide's section 3d, steps 1 to 4 ([`packages/internal/docs/docs/features/whatsapp/index.mdx`](../../../packages/internal/docs/docs/features/whatsapp/index.mdx)).
+- **Two payment methods on your dev store:** **(for testing) Bogus Gateway**, and **Cash on Delivery** under **Manual payment methods**, both in **Settings**, **Payments**.
+- **Your PayFast sandbox values** in `packages/backend/.env`, from the PayFast plan's section 11, step 1.
+- **The tunnel's values,** `NGROK_AUTHTOKEN` and `NGROK_DOMAIN`, in the root `.env` next to `docker-compose.yml`, so `pnpm saas up` starts the tunnel (user story WA.D7.OP.J1.A2).
+
+1. **Every setting the journeys need, in `packages/backend/.env`, before the stack starts.** First, show your tunnel's domain, which one of the settings needs.
+   - `grep '^NGROK_DOMAIN=' .env`: prints the line of the root `.env` that starts with `NGROK_DOMAIN=`; `^` means "at the start of a line". It changes nothing, and the value isn't a secret.
+
+   ```shell
+   grep '^NGROK_DOMAIN=' .env
+   ```
+
+   **Expect:** one line, `NGROK_DOMAIN=` followed by your tunnel's domain.
+
+   Put these lines in `packages/backend/.env`, replacing any earlier line with the same name, and with that domain in place of `<your ngrok domain>`:
+
+   ```shell
+   WHATSAPP_SEND_BACKEND=META
+   OPERATOR_EMAILS=operator@example.com
+   PAYFAST_VERIFY_SOURCE_IP=False
+   PAYFAST_NOTIFY_URL_DEVELOPMENT=https://<your ngrok domain>/api/payfast/notify/
+   PHONE_VERIFICATION_CHANNEL=WHATSAPP_TEMPLATE
+   ```
+
+   What each line does:
+   - `META` sends messages to your phone; `LOG` would only write them to the log.
+   - The operator's emails go to an address the local mail catcher keeps.
+   - PayFast's sandbox notifications come in through the tunnel, from addresses that aren't on PayFast's live list.
+   - A member gets their link code on WhatsApp (J3.1), not on the page.
+
+   **Show** the lines as the backend will read them.
+   - `grep -E '^(…)=' packages/backend/.env`: prints each line that starts with one of the names in the brackets, then `=`; `-E` lets `|` mean "or". It changes nothing, and prints no secret.
+
+   ```shell
+   grep -E '^(PAYMENT_BACKEND|WHATSAPP_SEND_BACKEND|OPERATOR_EMAILS|PAYFAST_VERIFY_SOURCE_IP|PAYFAST_NOTIFY_URL_DEVELOPMENT|PHONE_VERIFICATION_CHANNEL)=' packages/backend/.env
+   ```
+
+   **Expect:** exactly 6 lines: `PAYMENT_BACKEND=payfast`, then the five lines above, with your tunnel's domain in the PayFast one.
+
+2. **The email templates the worker renders,** built in a first terminal, the one the stack will run in.
+   - `nvm use 20`: switches this terminal to Node 20, which the build and `pnpm saas` need.
+   - `pnpm nx run backend:build-email-renderer`: builds the email templates into the files the worker renders emails from. It writes only those files.
+
+   ```shell
+   nvm use 20
+   pnpm nx run backend:build-email-renderer
+   ```
+
+   **Expect:** it ends with `Successfully ran target build-email-renderer for project backend`.
+
+3. **Start the stack, once, in that same terminal, and leave it running.**
+   - `pnpm saas down`: stops every container of the stack, so the new settings are read when it starts.
+   - `pnpm saas up`: starts the backend, the workers, the web app, the mail catcher and the tunnel, applies any new migrations to the database, and keeps running in this terminal.
+
+   ```shell
+   pnpm saas down
+   pnpm saas up
+   ```
+
+   **Expect:** no `payfast.E00` errors as it starts. Then open these two pages in your browser:
+
+   ```text
+   http://localhost:3000
+   http://localhost:1080
+   ```
+
+   **Expect:** the web app, then the mail catcher's inbox, which keeps every email the stack sends from now on.
+
+   Open a second terminal at the repository's root; every later command runs there. Ask the tunnel where it forwards.
+   - `curl -s http://localhost:4040/api/tunnels`: asks ngrok's local inspector for its tunnels, as JSON; `-s` hides curl's progress bar. It changes nothing.
+   - `| jq -r '…'`: the pipe `|` hands that JSON to `jq`, which prints one line per tunnel: its public address, then where it forwards. `-r` prints plain text, without quotes.
+
+   ```shell
+   curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | .public_url + " -> " + .config.addr'
+   ```
+
+   **Expect:** exactly one line: `https://`, your tunnel's domain, then ` -> http://backend:5001`.
+
+4. **Your values,** typed once in the second terminal:
+   - your email, and your organization's exact name, both as the sidebar's switcher shows them
+   - your dev store's domain
+   - your phone's WhatsApp number in the stored format, country code first with no `+` or spaces (for example `27831234567`)
+
+   The app's Shopify secret is read from `.env` without being printed.
+   - `read -r -p "…" NAME`: shows the prompt and stores what you type in the shell variable `NAME`; `-r` keeps any backslash as typed, and `-p` gives the prompt.
+   - `SHOPIFY_API_SECRET=$(…)`: stores what the command inside `$( )` prints in that variable.
+   - `grep '^SHOPIFY_API_SECRET=' packages/backend/.env | cut -d= -f2-`: finds that line; `cut` keeps everything after the first `=` (`-d=` splits the line at `=`, `-f2-` keeps the second part onwards).
+   - `echo "… ${#SHOPIFY_API_SECRET} characters"`: prints only the secret's length; `${#NAME}` is a variable's length.
+
+   None of it changes a file.
+
+   ```shell
+   read -r -p "Your email: " OWNER_EMAIL
+   read -r -p "Your organization's exact name: " ORG_A
+   read -r -p "Your dev store's domain (….myshopify.com): " SHOP_DOMAIN
+   read -r -p "Your phone's WhatsApp number (27…): " PHONE
+   SHOPIFY_API_SECRET=$(grep '^SHOPIFY_API_SECRET=' packages/backend/.env | cut -d= -f2-)
+   echo "Shopify secret: ${#SHOPIFY_API_SECRET} characters"
+   ```
+
+   **Expect:** a length above 0.
+
+5. **The seed data for journeys 3 and 4.** That's two example PayFast payments for each organization you own, then their invoices, and an Admin and a Member of `$ORG_A`.
+   - `docker compose run --rm -T backend python manage.py <command>`: runs a management command in a one-off backend container; `--rm` deletes the container afterwards, and `-T` gives it no interactive terminal.
+   - `payfast_seed_demo --email "$OWNER_EMAIL"`: adds the example payments to the organizations of the user with your email.
+   - `invoicing_seed_demo --email … --organization "$ORG_A"`: issues their invoices, and adds the seeded Admin and Member to `$ORG_A`.
+
+   Both add rows to the database; running them again adds nothing.
+
+   ```shell
+   docker compose run --rm -T backend python manage.py payfast_seed_demo --email "$OWNER_EMAIL"
+   docker compose run --rm -T backend python manage.py invoicing_seed_demo --email "$OWNER_EMAIL" --organization "$ORG_A"
+   ```
+
+   **Expect,** from the second, exactly 5 lines:
+   - `Invoice INV-<year>-<number> (id …) for <your organization>: Donation, ZAR 50.00`
+   - the same line, ending `Monthly plan, ZAR 199.00`
+   - `Admin: invoicing-admin@example.com / InvoicingAdmin123! …`
+   - `Member: invoicing-member@example.com / InvoicingMember123! …`
+   - `Invoice … for Invoicing demo: second organization: Monthly plan, ZAR 199.00`
+
+   Then keep, in shell variables, the ids journeys 3 and 4 use: your organization as the web app's addresses name it, and your Monthly plan invoice, with its number.
+   - `NAME=$(…)`: stores what the command inside `$( )` prints in the variable `NAME`.
+   - `python manage.py shell -c "…"`: runs the Python between the quotes inside the backend; here it only reads.
+   - `to_global_id('TenantType', …)`: turns the organization's database id into the id the web app's addresses use.
+   - `2>/dev/null`: throws away the container's start-up messages, which go to the error output.
+   - `| tail -n 1`: keeps only the last line, the value printed.
+   - `echo "…"`: prints the three values.
+
+   ```shell
+   ORG_A_ID=$(docker compose run --rm -T backend python manage.py shell -c "from graphql_relay import to_global_id; from apps.multitenancy.models import Tenant; print(to_global_id('TenantType', str(Tenant.objects.filter(name='$ORG_A', user_memberships__user__email='$OWNER_EMAIL').first().id)))" 2>/dev/null | tail -n 1)
+   INVOICE_ID=$(docker compose run --rm -T backend python manage.py shell -c "from apps.invoicing.models import Invoice; print(Invoice.objects.filter(tenant__name='$ORG_A', pf_payment_id__startswith='seed-').order_by('sequence').last().id)" 2>/dev/null | tail -n 1)
+   INVOICE_NUMBER=$(docker compose run --rm -T backend python manage.py shell -c "from apps.invoicing.models import Invoice; print(Invoice.objects.get(pk='$INVOICE_ID').number)" 2>/dev/null | tail -n 1)
+   echo "Organization: $ORG_A_ID | your Monthly plan invoice: $INVOICE_ID, number $INVOICE_NUMBER"
+   ```
+
+   **Expect:** the organization's id, the invoice's id, and `INV-` followed by its number. None is empty, and none is a word like `Traceback`.
+
+6. **Your phone is a store customer on your number, not a linked member.** Show the number that sells from your dev store, and whether your phone is linked on it.
+   - `docker compose run --rm -T backend python manage.py shell -c "…"`: runs the Python between the quotes inside a one-off backend container. `--rm` deletes the container afterwards, and `-T` gives it no interactive terminal. It only reads.
+   - The Python prints that number's row, whole, as JSON (`json.dumps` with `indent=4`; `default=str` turns dates into text). Then it counts your phone's links as a member on it.
+   - `'$SHOP_DOMAIN'` and `'$PHONE'`: the shell puts in step 4's values before the command runs.
+
+   ```shell
+   docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppAccount, WhatsAppIdentity; print(json.dumps(list(WhatsAppAccount.objects.filter(storefront_channel__shop__shop_domain='$SHOP_DOMAIN', is_active=True).values()), indent=4, default=str)); print('Linked identities for your phone on it:', WhatsAppIdentity.objects.filter(contact__wa_id='$PHONE', account__storefront_channel__shop__shop_domain='$SHOP_DOMAIN').count())"
+   ```
+
+   **Expect:** one row for each number selling from your dev store, each with `"is_active": true` and a `"purpose"` serving customers, `EXTERNAL_COMMUNICATIONS` or `INTERNAL_AND_EXTERNAL_COMMUNICATIONS`. Choose the one whose chat you'll use on your phone, by its `"display_phone_number"`: the journeys call it **your number**. Then `Linked identities for your phone on it: 0`. If it's 1, send this from your phone to your number, then run the command again:
+
+   ```text
+   unlink
+   ```
+
+**Who's who:**
+
+- **Journey 1:** you're the operator, at the terminal and in the mail catcher.
+- **Journey 2:** you're a store customer, on your phone, and the business, in your dev store's admin.
+- **Journey 3:** you're your organization's Owner, with your phone linked as a member.
+- **Journey 4:** you're a store customer again, and the business on its WhatsApp page, then the seeded Member.
+- **Journeys 5 and 6:** you're the operator.
+
+Shopify, Meta and PayFast's sandbox are the real ones, through the tunnel, except where a step says it simulates them. The Django admin (journey 5) is at http://localhost:5001/admin/, logged in with the `ADMIN_EMAIL` and `ADMIN_DEFAULT_PASSWORD` in `packages/backend/.env`; only superusers reach it.
+
+#### J1. The operator submits every number's templates (user stories WA.D7.OP.J2.A1, WA.D3.OM.J2.A2 and WA.D1.OM.J1.A3)
+
+- **Why:** an order update more than 24 hours after the customer's last message can only go out as a template Meta has approved (decision 6). So each number serving customers gets `shop_order_update`, submitted to its WhatsApp Business account. Each team number gets `team_link_code`, the authentication template a member's link code arrives in (decision 29). One number Meta refuses mustn't keep the others from theirs, and the operator hears about it by email (Steps 4.6 and 4.7).
+- **Acts on:** every active number: yours, which serves your team and your customers, and the demo numbers from earlier checks' seed data (`100000000000801` and up), whose fake tokens Meta refuses as it would a revoked one.
+
+**J1.1. Submit both templates: yours are accepted, the demo numbers refused.** As the operator:
+
+- `docker compose run --rm -T backend python manage.py <command>`: runs a management command in a one-off backend container; `--rm` deletes the container afterwards, and `-T` gives it no interactive terminal.
+- `whatsapp_publish_order_templates`: submits `shop_order_update` to the WhatsApp Business account of every active number serving customers. It also deletes the two templates it replaced, `shop_order_paid` and `shop_order_received`, on Meta and in this app. It changes your WhatsApp Business account: Meta's deletion can't be undone, and a deleted name can't be used again for about 30 days.
+- `whatsapp_publish_link_templates`: submits `team_link_code` to the account of every active team number.
+- Both leave a template that's already up to date alone, so running them again changes nothing.
+
+```shell
+docker compose run --rm -T backend python manage.py whatsapp_publish_order_templates
+docker compose run --rm -T backend python manage.py whatsapp_publish_link_templates
+```
+
+**Expect,** from the first command:
+
+- a line naming your number, then `Submitted shop_order_update: template id <digits>`, or `shop_order_update is up to date: template id <digits>` if it was already submitted
+- for each demo number serving customers, a line naming it, then `Refused by Meta:` with Meta's reason
+- last, an error naming every demo number refused; it may print above the other lines
+
+From the second command:
+
+- if your number already serves your team: your number, then `team_link_code submitted, template id <digits>`, or `up to date` in place of `submitted`. If it serves only customers, no line names it: your number gets `team_link_code` when journey 3 makes it the team's.
+- for each demo team number, `refused by Meta:` with Meta's reason
+- last, an error naming them
+
+An id starting `log-` means Setup step 1's `WHATSAPP_SEND_BACKEND` isn't `META`.
+
+**J1.2. Meta lists the order template.** In Meta's WhatsApp Manager, on your number's WhatsApp Business account:
+
+```text
+https://business.facebook.com/wa/manage/message-templates/
+```
+
+**Expect:** `shop_order_update`, category **Utility**, language **English**, status **In review** or **Active**, with the body "Hello, this is {{1}}. There's an update on your order {{2}}. Tap Order details to see it." and a quick-reply button **Order details**. Meta can take up to a day to make it **Active**, which J2.5 needs. `team_link_code` is listed too only if your number already serves your team; otherwise journey 3's first step brings it.
+
+`shop_order_paid` and `shop_order_received` are gone.
+
+**J1.3. Each refused number reaches the operator by email, with the logo (Step 4.7).** Open the inbox of Setup step 1's `OPERATOR_EMAILS`: the mail catcher keeps `operator@example.com`'s, and a real address gets them in its own inbox.
+
+```text
+http://localhost:1080
+```
+
+**Expect:** one new email to that address for each `Refused by Meta:` and `refused by Meta:` line J1.1 printed, each with the subject "WhatsApp templates can't be used: action needed". Open one naming `shop_order_update`. **Expect:**
+
+- the logo at the top, then "WhatsApp templates can't be used"
+- the text naming `whatsapp_publish_order_templates`
+- one block: **Business:** the organization the demo number was seeded into, **Number:** that demo number, **Template:** `shop_order_update`, **Meta's reason:** starting "Meta refused the submission: Meta error 190"
+
+No email names your own number. Your browser fetches the logo from the web app, http://localhost:3000/email-assets/logo.png, when you open the email. If it's missing, the web app isn't running. A real inbox such as Gmail can't reach `localhost`, so there the logo shows as its alt text, "Logo", until the app is deployed. The refusals of `team_link_code` carry the same order-template wording, a known finding.
+
+**J1.4. The WhatsApp page shows your template's review status (user story WA.D3.OM.J2.A2).** Print your organization's WhatsApp page, the one **WhatsApp** in the sidebar opens.
+
+- `echo "…$ORG_A_ID…"`: prints the address, with Setup step 5's organization id in it. It changes nothing.
+
+```shell
+echo "http://localhost:3000/en/$ORG_A_ID/whatsapp"
+```
+
+Open it, logged in as yourself. **Expect,** on your number's row: **Order update templates**, with "Order update: Approved" in green. If Meta hasn't decided yet, it says "In review" instead, followed by the line "Order updates sent more than 24 hours after a customer's last message fail until Meta approves every template. Meta usually decides within a day." The demo numbers' rows have no **Order update templates**, since Meta refused theirs. Opening the page asked Meta for the status, since the last answer was more than 10 minutes old.
+
+#### J2. A store customer buys on WhatsApp and hears about each order (user stories WA.D4.SC.J1.A1, WA.D4.SC.J1.A2, WA.D5.SC.J1.A1, WA.D5.SC.J1.A2, WA.D5.SC.J1.A3, WA.D5.SY.J1.A1 and WA.D4.SC.J2.A1)
+
+- **Why:** the use case end to end: a customer finds a product in the chat, pays in the store's own Shopify checkout, and hears back on the same number, once per stage, with the order's details as Shopify has them (decisions 3, 7 and 30).
+- **Acts on:** your phone, as a store customer of your number; your dev store, its admin and its orders; and, in J2.5 and J2.6, the simulated parts named there.
+
+**J2.1. A card order: one "is paid" on your phone, and no "received" (user stories WA.D5.SC.J1.A1, WA.D5.SC.J1.A2 and WA.D5.SY.J1.A1).** On your phone, to your number:
+
+1. Send `menu`. **Expect:** "Hi, welcome to <your store's name>. Shop with us right here on WhatsApp: browse, search, and check out when you're ready.", with a **Menu** button.
+2. Tap **Menu**, then **Browse products**. **Expect:** "Products, newest first.", with a **Products** button listing up to 7 products, each with its price.
+3. Choose a product with one option. **Expect:** its picture, its name in bold, its price and description, and three buttons: **Add to cart**, **Buy now** and **Back**.
+4. Tap **Add to cart**. **Expect:** "Added <the product> to your cart. It holds 1 item: <currency> <price>.", with **Checkout**, **Your cart** and **Keep shopping**.
+5. Tap **Checkout**. **Expect:** two messages: "Review your cart on <your store's name>'s website." with a **View cart** button, then "Your cart from <your store's name> holds 1 item: <currency> <price>. Tap Checkout to pay in the shop's secure Shopify checkout." with a **Checkout** button.
+6. Tap that **Checkout**, enter the store's password if asked, and choose the test gateway. Type each of these in its box: **Card number**, **Expiration date**, then **Security code**:
+
+   ```text
+   1
+   ```
+
+   ```text
+   12 / 30
+   ```
+
+   ```text
+   123
+   ```
+
+   Pay, and note the order number and total on the thank-you page.
+
+**Expect,** on your phone within a minute of the thank-you page: exactly one new message, with a **Main menu** button, and no "received, awaiting payment" for this order. That the message arrived at all means Meta accepted it, which is when it counts as sent:
+
+```text
+Order #<the order number> is paid.
+1 × <the product>
+Total: <the currency> <the total, two decimals>
+Payment: Paid · Delivery: Not shipped yet
+```
+
+**J2.2. That message is the order as Shopify has it (user story WA.D5.SC.J1.A2, decision 30).** As the business, in your dev store's admin, open **Orders**, then the order whose number the thank-you page showed. **Expect:** the same order number, product, quantity and total as the message on your phone, the payment badge **Paid**, and the fulfillment badge **Unfulfilled**, which the message calls "Not shipped yet". The message was built from Shopify's answer when it was sent; the app keeps only the order's id.
+
+**J2.3. A Cash on Delivery order, from an empty cart: "received, awaiting payment" (user stories WA.D5.SC.J1.A3, WA.D5.SC.J1.A1 and WA.D5.SC.J1.A2).** On your phone, to your number:
+
+1. Send `menu`, tap **Menu**, then **Your cart**. **Expect:** "Your cart is empty.", with **Browse products** and **Main menu**: the card order took its cart with it.
+2. Tap **Browse products**, choose a product, then **Add to cart**. **Expect:** "Added <the product> to your cart. It holds 1 item: <currency> <price>.", with **Checkout**, **Your cart** and **Keep shopping**. The cart holds only this product.
+3. Tap **Checkout**. **Expect:** two messages: "Review your cart on <your store's name>'s website." with a **View cart** button, then "Your cart from <your store's name> holds 1 item: <currency> <price>. Tap Checkout to pay in the shop's secure Shopify checkout." with a **Checkout** button.
+4. Tap that **Checkout**, enter the store's password if asked, and complete the order with **Cash on Delivery**. Note its order number and total on the thank-you page.
+
+**Expect,** on your phone within a minute: exactly one new message, with a **Main menu** button:
+
+```text
+Order #<the order number> received, awaiting payment.
+1 × <the product>
+Total: <the currency> <the total, two decimals>
+Payment: Awaiting payment · Delivery: Not shipped yet
+```
+
+**J2.4. Marked paid in the admin: "is paid" on your phone (user story WA.D5.SC.J1.A2).** As the business, in your dev store's admin, open **Orders**, then the Cash on Delivery order whose number you just noted. Choose **Collect payment**, then **Mark as paid**.
+
+**Expect,** on your phone within a minute: exactly one new message, with a **Main menu** button:
+
+```text
+Order #<the Cash on Delivery order's number> is paid.
+1 × <the product>
+Total: <the currency> <the total, two decimals>
+Payment: Paid · Delivery: Not shipped yet
+```
+
+**J2.5. A day later, the update comes as the approved template, and Order details brings the details (simulated clock; user story WA.D5.SC.J1.A2, decision 30).** This needs `shop_order_update` **Active** in Meta's WhatsApp Manager:
+
+```text
+https://business.facebook.com/wa/manage/message-templates/
+```
+
+The 24-hour customer service window takes a day to close, so this step moves your own messages 25 hours into the past in the database instead of waiting. It places two orders, so two templates arrive: this step taps the first, and J2.6 keeps the second. WhatsApp lets a template's button be tapped only once, then greys it out (found 2026-11-18).
+
+1. On your phone, to your number, place two Cash on Delivery orders, one after the other. For each: send `menu`, tap **Menu**, **Browse products**, a product, **Add to cart**, **Checkout**, then the **Checkout** button, and complete the order with **Cash on Delivery**. Note both order numbers: the first is this step's, the second J2.6's. **Expect,** within a minute of each, exactly one new message, with a **Main menu** button:
+
+   ```text
+   Order #<its number> received, awaiting payment.
+   1 × <the product>
+   Total: <the currency> <its total, two decimals>
+   Payment: Awaiting payment · Delivery: Not shipped yet
+   ```
+
+2. **Move** every message you've sent to your number 25 hours into the past. Don't message your number from now until step 4, or the window opens again.
+   - `docker compose run --rm -T backend python manage.py shell -c "…"`: runs the Python between the quotes inside a one-off backend container; `--rm` deletes the container afterwards, and `-T` gives it no interactive terminal.
+   - The Python changes the database: it sets the time of every message your phone (`'$PHONE'`) sent to your number to 25 hours ago, then prints how many it changed.
+
+   ```shell
+   docker compose run --rm -T backend python manage.py shell -c "from datetime import timedelta; from django.utils import timezone; from apps.whatsapp.models import WhatsAppMessage; then = timezone.now() - timedelta(hours=25); print('Moved:', WhatsAppMessage.objects.filter(contact__wa_id='$PHONE', contact__account__storefront_channel__shop__shop_domain='$SHOP_DOMAIN', direction='INBOUND').update(sent_at=then, created_at=then))"
+   ```
+
+   **Expect:** `Moved:` and a number above 0: how many messages you've sent this number.
+
+3. As the business, in your dev store's admin, mark both orders paid: open **Orders**, then each order you noted, and choose **Collect payment**, then **Mark as paid**. **Expect,** on your phone within a minute of each, exactly one new message, with an **Order details** button:
+
+   ```text
+   Hello, this is <your number's verified name>. There's an update on your order #<its number>. Tap Order details to see it.
+   ```
+
+   The template carries no details: Meta reviewed its fixed wording, and the details come only once you tap. If no message arrives, Meta hasn't made `shop_order_update` **Active** yet; the update is then listed on the WhatsApp page under **Order updates that didn't go out**.
+
+4. On your phone, tap **Order details** under the **first** order's template only; leave the second's untapped for J2.6. **Expect,** within a minute, one new message with a **Main menu** button, the order as Shopify has it now:
+
+   ```text
+   Order #<its number>
+   1 × <the product>
+   Total: <the currency> <the total, two decimals>
+   Payment: Paid · Delivery: Not shipped yet
+   ```
+
+   The tap is a message from you, so it opens a new 24-hour window, and this answer is a normal message.
+
+**J2.6. When Shopify asks the store to forget you, Order details no longer finds your order (simulated; user story WA.D4.SC.J2.A1).** This step repeats what the tests prove, and is kept as a privacy promise you see with your own eyes. Shopify sends `customers/redact` about 10 days after a merchant asks it to erase a customer's data, later if they ordered recently. So this step sends it itself, for your phone, signed with the app's secret as Shopify signs it. Shopify's payload: https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance
+
+Build the request.
+
+- `BODY=$(jq -cn --arg phone "+$PHONE" --arg shop "$SHOP_DOMAIN" '{…}')`: builds the JSON body Shopify would send. `-n` starts from nothing, `-c` prints it on one line, and `--arg name value` passes a shell value in as `$name`.
+- `SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SHOPIFY_API_SECRET" -binary | base64)`: signs the body as Shopify does. `printf '%s'` prints it exactly, with no added newline; `openssl dgst -sha256 -hmac` computes an HMAC-SHA256 with the app's secret; `-binary` gives raw bytes, and `base64` turns them into text.
+- `WEBHOOK_ID="journey-redact-$(date +%s)"`: a webhook id no earlier run used; `date +%s` is the number of seconds since 1970.
+- `echo`: prints the id.
+
+None of it changes anything.
+
+```shell
+BODY=$(jq -cn --arg phone "+$PHONE" --arg shop "$SHOP_DOMAIN" '{shop_domain: $shop, customer: {phone: $phone}, orders_to_redact: []}')
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SHOPIFY_API_SECRET" -binary | base64)
+WEBHOOK_ID="journey-redact-$(date +%s)"
+echo "Webhook id: $WEBHOOK_ID"
+```
+
+**Expect:** `Webhook id: journey-redact-` followed by digits.
+
+**Send** it, as Shopify. It changes the database: your number forgets your phone, with its checkouts.
+
+- `curl -s "http://localhost:5001/api/shopify/webhooks/"`: posts to the backend's Shopify webhook address; `-s` hides curl's progress bar.
+- `-o /dev/null -w '%{http_code}\n'`: throws the response body away, and prints only the status code.
+- `-H '…'`: each adds one request header: the content type, then the topic, shop, webhook id and signature Shopify sends.
+- `--data-binary "$BODY"`: sends the body exactly as built, which the signature covers.
+- `\` at a line's end: the command continues on the next line.
+
+```shell
+curl -s -o /dev/null -w '%{http_code}\n' "http://localhost:5001/api/shopify/webhooks/" \
+  -H 'Content-Type: application/json' \
+  -H 'X-Shopify-Topic: customers/redact' \
+  -H "X-Shopify-Shop-Domain: $SHOP_DOMAIN" \
+  -H "X-Shopify-Webhook-Id: $WEBHOOK_ID" \
+  -H "X-Shopify-Hmac-Sha256: $SIG" \
+  --data-binary "$BODY"
+```
+
+**Expect:** `200`.
+
+**Show** that your number has forgotten you, before you tap anything.
+
+- `docker compose run --rm -T backend python manage.py shell -c "…"`: runs the Python between the quotes inside a one-off backend container; `--rm` deletes it afterwards, and `-T` gives it no interactive terminal. It only reads: it counts your phone's contacts on your number.
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "from apps.whatsapp.models import WhatsAppContact; print('Your contacts on this number:', WhatsAppContact.objects.filter(wa_id='$PHONE', account__storefront_channel__shop__shop_domain='$SHOP_DOMAIN').count())"
+```
+
+**Expect:** `Your contacts on this number: 0`.
+
+Then, on your phone, tap **Order details** under the template for J2.5's **second** order, the one still untapped. **Expect,** with a **Main menu** button (WhatsApp shows the word menu in bold):
+
+```text
+That order isn't available any more. Send *menu* for the main menu.
+```
+
+Your checkouts went with you, and the answer is the same as for an order that was never yours, so nobody learns which orders exist. That tap made you a new store customer, with no orders.
+
+#### J3. An Owner links their phone with a code from WhatsApp, gets the invoices on it, and pays for the plan (user stories WA.D1.OM.J1.A3, WA.D6.OM.J1.A1, WA.D6.OM.J1.A2 and WA.D6.OM.J2.A1)
+
+- **Why:**
+  - With `PHONE_VERIFICATION_CHANNEL` set to `WHATSAPP_TEMPLATE`, the organization's team number sends the link code in its authentication template, and the member types it on their profile. That proves the phone, with no SMS (D20, decision 29).
+  - An Owner holds `billing.manage` and `billing.view`, so the team's menu offers **Plans and billing**, a link to the Subscriptions page where PayFast takes payment. It also offers **My invoices**, which sends each invoice's PDF through Meta's media upload, never as a public link (decisions 9, 14 and 19).
+  - PayFast bills the organization's billing email, never whoever pays, so you can pay in the sandbox even though PayFast refuses its own merchant as a buyer (Step 4.7).
+- **Acts on:** you, the Owner of `$ORG_A`, and your phone; your number, which serves your team for this journey; the template `team_link_code`; `$ORG_A`'s seeded invoices; and the organization's billing email.
+
+**Before J3.1: your number becomes the team's.** Skip this if J1.1's second command already named your number. An organization has one team number, and earlier checks' seed data made the demo `+27 00 000 0805` `$ORG_A`'s, whose fake token Meta refuses, so no link code could reach your phone from it (found 2026-11-18).
+
+1. Print your organization's WhatsApp page, then open it, logged in as yourself.
+   - `echo "…$ORG_A_ID…"`: prints the address, with Setup step 5's organization id in it. It changes nothing.
+
+   ```shell
+   echo "http://localhost:3000/en/$ORG_A_ID/whatsapp"
+   ```
+
+   On the row **+27 00 000 0805**, "Demo: internal communications", press **Disconnect**, and confirm. **Expect:** that row says **Disconnected**. Disconnecting deletes only that demo number's seeded conversations.
+
+2. On your number's row, under **Who texts this number**, press **Change**, choose **Your team**, and save. **Expect:** the row says **Your team**, and no error. With `PHONE_VERIFICATION_CHANNEL=WHATSAPP_TEMPLATE` set, the change submits `team_link_code` to your number's WhatsApp Business account by itself.
+3. **Show** the team number and its template. It only reads: it prints the number `$ORG_A`'s team texts and its purpose, then the stored `team_link_code` for that number's business account, whole, as JSON.
+   - `docker compose run --rm -T backend python manage.py shell -c "…"`: runs the Python between the quotes inside a one-off backend container; `--rm` deletes it afterwards, and `-T` gives it no interactive terminal.
+
+   ```shell
+   docker compose run --rm -T backend python manage.py shell -c "import json; from apps.whatsapp.models import WhatsAppAccount, WhatsAppTemplate; from apps.multitenancy.models import Tenant; tenant = Tenant.objects.filter(name='$ORG_A', user_memberships__user__email='$OWNER_EMAIL').first(); team = WhatsAppAccount.objects.internal_for(tenant); print('Team number:', team.display_phone_number, team.purpose); print(json.dumps(list(WhatsAppTemplate.objects.filter(waba_id=team.waba_id, name='team_link_code').values()), indent=4, default=str))"
+   ```
+
+   **Expect:** `Team number:`, your number, then `INTERNAL_COMMUNICATIONS`; then exactly one row, `"name": "team_link_code"`, with a `"template_id"` of digits and a `"status"` of in review or approved. If the list is `[]`, the background submission hasn't run yet: run it again in a few seconds.
+
+**J3.1. Link your phone with the code WhatsApp sends (user story WA.D1.OM.J1.A3).** This needs `team_link_code` **Active** in Meta's WhatsApp Manager, usually within minutes:
+
+```text
+https://business.facebook.com/wa/manage/message-templates/
+```
+
+1. In the web app, logged in as yourself, open your profile page. In its WhatsApp section, on `$ORG_A`, type your phone's number and press **Get a link code**:
+
+   ```text
+   http://localhost:3000/en/profile
+   ```
+
+   **Expect:** no code on the page, but "We sent a code to <your number, all but its last four digits masked> on WhatsApp, from the number above. Type it here; it works once, until <a time 10 minutes away>.", a **Code** box and a **Link** button.
+
+2. On your phone, from your number. **Expect:** Meta's authentication message, "<6 digits> is your verification code. For your security, do not share this code.", with "This code expires in 10 minutes." under it and a **Copy code** button.
+3. Type the 6 digits in the **Code** box and press **Link**. **Expect:** "Linked to <your masked number> since <today>.", at once: your phone has written to your number before.
+4. Send `menu` from your phone to your number. **Expect:** the team's main menu, naming `$ORG_A`.
+
+**J3.2. My invoices sends a PDF (user story WA.D6.OM.J2.A1).** Print the invoice number to look for.
+
+- `echo "…$INVOICE_NUMBER"`: prints the number Setup step 5 kept. It changes nothing.
+
+```shell
+echo "Your Monthly plan invoice: $INVOICE_NUMBER"
+```
+
+On your phone, open the menu and choose **My invoices**. **Expect:** "<your organization>'s invoices, newest first. Tap one to get its PDF.", with an **Invoices** button. Tap it. **Expect:** exactly two invoices: the printed number, with "Monthly plan · ZAR 199.00" under it, and the Donation one, with "Donation · ZAR 50.00". Choose the Monthly plan one. **Expect:** a PDF document named after the printed number, ending `.pdf`. Open it. **Expect:**
+
+- **Invoice** (not "Tax Invoice"), with the printed number and its date
+- the supplier's name and address
+- **Bill to** `$ORG_A`
+- one line, "Monthly plan ZAR 199.00", and **Total ZAR 199.00**
+
+**J3.3. Set the billing email, then choose a plan from WhatsApp and pay in PayFast's sandbox (user stories WA.D6.OM.J1.A1 and WA.D6.OM.J1.A2).**
+
+1. Print the address **Choose a plan** should open.
+   - `echo "…$ORG_A_ID…"`: prints the address, with Setup step 5's organization id in it. It changes nothing.
+
+   ```shell
+   echo "http://localhost:3000/$ORG_A_ID/subscriptions"
+   ```
+
+2. On your phone, open the menu and choose **Plans and billing**. **Expect:** a message with a **Choose a plan** button. Press and hold it to copy its link. **Expect:** the same address as printed. Your phone can't open it, since `localhost` there means the phone itself, so open the printed address on your computer, logged in as yourself.
+3. **Expect,** on the Subscriptions page: a **Billing email** card, "PayFast bills this email for the organization's plan and donations, whoever pays.", with a **Billing email:** box. If none is set yet, it also says "None set, so PayFast bills the email of the person who created the organization." Type this address in the box, or a real one you can read that isn't your PayFast account's own (PayFast refuses a payment billed to its own merchant), and press **Save**:
+
+   ```text
+   billing-test@example.com
+   ```
+
+   **Expect:** "Saved. PayFast bills <the address> from now on." Until 2026-11-19 the card failed here, whatever the address, with "Check it's a valid email address": the save sent no `tenantId` (Step 4.7's findings).
+
+4. An organization gets one free trial, ever, so **show** whether `$ORG_A` has had one.
+   - `docker compose run --rm -T backend python manage.py shell -c "…"`: runs the Python between the quotes inside a one-off backend container; `--rm` deletes it afterwards, and `-T` gives it no interactive terminal. It only reads: it prints `$ORG_A`'s PayFast subscription as JSON.
+
+   ```shell
+   docker compose run --rm -T backend python manage.py shell -c "import json; from apps.payfast.models import PayFastSubscription; print(json.dumps(PayFastSubscription.objects.filter(tenant__name='$ORG_A', tenant__user_memberships__user__email='$OWNER_EMAIL').values('plan', 'status', 'has_used_trial', 'trial_end').first(), indent=4, default=str))"
+   ```
+
+   **Expect:** one subscription: `"plan": "free_plan"`, `"status": "ACTIVE"`, and `"has_used_trial"` either `false` (a trial comes next) or `true` (an earlier check used it, so you pay now). If `"plan"` is already `"monthly_plan"`, choose **Yearly** in step 5 instead, which PayFast charges from the end of the current period.
+
+5. On the Subscriptions page, press **Edit subscription** and choose **Monthly**. **Expect:** PayFast's sandbox at `sandbox.payfast.co.za`, showing either R 0.00 today and R 199.00 recurring, when a trial comes next (a 7-day trial, `SUBSCRIPTION_TRIAL_PERIOD_DAYS`), or R 199.00 today. Pay with the sandbox wallet. **Expect:** back in the web app, "Confirming your payment…", then the Subscriptions page with a "Payment successful" toast and plan **Monthly**; with a trial, a **Free trial expiry date** 7 days away. PayFast accepting the payment at all shows it billed the organization's email: it refuses its own merchant's.
+6. **Show** the subscription as PayFast's notification left it, through the tunnel. It's the same command as step 4; it only reads:
+
+   ```shell
+   docker compose run --rm -T backend python manage.py shell -c "import json; from apps.payfast.models import PayFastSubscription; print(json.dumps(PayFastSubscription.objects.filter(tenant__name='$ORG_A', tenant__user_memberships__user__email='$OWNER_EMAIL').values('plan', 'status', 'has_used_trial', 'trial_end').first(), indent=4, default=str))"
+   ```
+
+   **Expect:**
+   - **With a trial:** `"plan": "monthly_plan"`, `"status": "TRIALING"`, `"has_used_trial": true`, and a `"trial_end"` on the same date as the page's **Free trial expiry date**. On your phone, **My invoices** still lists exactly the two invoices of J3.2, since a free trial isn't a payment.
+   - **Without a trial:** `"plan": "monthly_plan"` and `"status": "ACTIVE"`. On your phone, **My invoices** lists three invoices, the new one first, "Monthly plan · ZAR 199.00", whose PDF names **Bill to** `$ORG_A`.
+
+**J3.4. Back to being a store customer.** Journey 4 needs your phone as a store customer of your number.
+
+1. On the WhatsApp page, on your number's row, under **Who texts this number**, press **Change**, choose **Your customers**, and save. A number that stops serving the team drops its members' links, as if each had sent `unlink`, and its store link was kept. **Expect:** the row says **Your customers**, with **Sells from** your dev store again.
+2. Under **Customers get**, choose **Menus**, since journey 4 uses the menus' buttons.
+3. **Show** it. It only reads: for each active number selling from your dev store, it prints the number, its purpose, and how many member links your phone has on it.
+   - `docker compose run --rm -T backend python manage.py shell -c "…"`: as above; the Python loops over the numbers and prints one line each.
+
+   ```shell
+   docker compose run --rm -T backend python manage.py shell -c "from apps.whatsapp.models import WhatsAppAccount, WhatsAppIdentity; [print(a.display_phone_number, '|', a.purpose, '| your member links on it:', WhatsAppIdentity.objects.filter(account=a, contact__wa_id='$PHONE').count()) for a in WhatsAppAccount.objects.filter(storefront_channel__shop__shop_domain='$SHOP_DOMAIN', is_active=True)]"
+   ```
+
+   **Expect:** one line per number selling from your store, and on your number's line `EXTERNAL_COMMUNICATIONS | your member links on it: 0`.
+
+4. Send `menu` from your phone to your number. **Expect:** the shop's welcome, "Hi, welcome to <your store's name>. Shop with us right here on WhatsApp: browse, search, and check out when you're ready.", with a **Menu** button.
+
+If you skipped "Before J3.1", because your number already served both, send `unlink` from your phone instead. **Expect:** "This number is now unlinked from your account. Link it again from your profile page."
+
+#### J4. The business sends again an order update WhatsApp couldn't deliver, and a Member can only look (user stories WA.D3.OM.J2.A3, WA.D5.SY.J1.A1 and WA.D6.OM.J2.A1)
+
+- **Why:**
+  - An update can fail for a cause a person must fix, such as the number's access or an unapproved template, or for a passing one that outlasted the send queue's hour of retries (decision 26). Either way it's listed on the WhatsApp page with Meta's reason in plain words.
+  - Once the cause is fixed, **Send again** asks Shopify for the order and builds the update fresh (decision 28).
+  - Seeing the list needs `whatsapp.view`, and sending again needs `whatsapp.manage`.
+  - Invoices sit behind `billing.view`, which a Member doesn't hold (decision 12), so the backend refuses a Member's download itself, whatever a page shows.
+- **Acts on:** your phone, a store customer of your number again; a new Cash on Delivery order; the WhatsApp page as you, the Owner, and as the seeded Member `invoicing-member@example.com`; `$ORG_A`'s Monthly plan invoice, `$INVOICE_ID`; and, in J4.2, the simulated failure named there.
+
+**J4.1. A Cash on Delivery order: "received, awaiting payment".** On your phone, to your number: send `menu`, tap **Menu**, **Browse products**, a product, **Add to cart**, **Checkout**, then the **Checkout** button, and complete the order with **Cash on Delivery**. Note its order number and total. **Expect,** within a minute, exactly one new message, with a **Main menu** button:
+
+```text
+Order #<its number> received, awaiting payment.
+1 × <the product>
+Total: <the currency> <its total, two decimals>
+Payment: Awaiting payment · Delivery: Not shipped yet
+```
+
+**J4.2. That update fails (simulated).** Meta refuses an update only for a real cause, such as a revoked access token, and revoking yours would stop your number for the rest of the journeys. So this step marks the update as Meta would have left it: refused with error 190, an access token rejected.
+
+- `docker compose run --rm -T backend python manage.py shell -c "…"`: runs the Python between the quotes inside a one-off backend container; `--rm` deletes it afterwards, and `-T` gives it no interactive terminal.
+- The Python changes the database: it marks your newest checkout's "received" message as failed, with Meta's error 190. Then it prints how many messages it changed, the checkout's id and the message's id.
+
+```shell
+docker compose run --rm -T backend python manage.py shell -c "from apps.whatsapp_shop.models import StoreCheckout; checkout = StoreCheckout.objects.filter(store_customer__contact__wa_id='$PHONE', shop__shop_domain='$SHOP_DOMAIN').order_by('-pk').first(); print('Marked failed:', type(checkout.received_message).objects.filter(pk=checkout.received_message_id).update(status='FAILED', error_code=190), '| checkout', checkout.pk, '| message', checkout.received_message_id)"
+```
+
+**Expect:** `Marked failed: 1`, then the checkout's id and the message's id.
+
+**J4.3. The WhatsApp page lists it, with Meta's reason in plain words (user story WA.D3.OM.J2.A3).** Print your organization's WhatsApp page.
+
+- `echo "…$ORG_A_ID…"`: prints the address, with Setup step 5's organization id in it. It changes nothing.
+
+```shell
+echo "http://localhost:3000/en/$ORG_A_ID/whatsapp"
+```
+
+Open it, logged in as yourself, and scroll down to the card if it isn't at the top.
+
+**Expect:** a card **Order updates that didn't go out**, "WhatsApp couldn't deliver these to your customers. Fix the cause, then send each one again: it's built fresh from the order in Shopify.", with exactly one row:
+
+- "Order received to <your WhatsApp profile name>, from <your number>"
+- "Failed <today's date and time>"
+- the reason "Meta rejected the number's access token: it expired or was revoked. Connect the number again with a new token, then send this again."
+- a **Send again** button
+
+**J4.4. A Member sees the failed update without Send again, and can't reach the invoices (user stories WA.D3.OM.J2.A3 and WA.D6.OM.J2.A1).** This step repeats what the tests prove, and is kept as the only human check of a Member's limits.
+
+1. **Prove** what the Member holds in `$ORG_A`.
+   - `docker compose run --rm -T backend python manage.py shell -c "…"`: runs the Python between the quotes inside a one-off backend container; `--rm` deletes it afterwards, and `-T` gives it no interactive terminal. It only reads: it prints, as JSON, whether the Member holds each of the four permissions in `$ORG_A`.
+
+   ```shell
+   docker compose run --rm -T backend python manage.py shell -c "import json; from apps.multitenancy.models import Tenant, user_has_permission; from apps.users.models import User; tenant = Tenant.objects.filter(name='$ORG_A', user_memberships__user__email='$OWNER_EMAIL').first(); member = User.objects.get(email='invoicing-member@example.com'); print(json.dumps({code: user_has_permission(member, tenant, code) for code in ('whatsapp.view', 'whatsapp.manage', 'billing.view', 'billing.manage')}, indent=4))"
+   ```
+
+   **Expect:** exactly `"whatsapp.view": true`, `"whatsapp.manage": false`, `"billing.view": false` and `"billing.manage": false`.
+
+2. In the web app, log out, then log in as the seeded Member, with this email and this password:
+
+   ```text
+   invoicing-member@example.com
+   ```
+
+   ```text
+   InvoicingMember123!
+   ```
+
+   Choose `$ORG_A` in the sidebar's switcher. **Expect:** no **Billing** section in the sidebar.
+
+3. Open **WhatsApp**. **Expect:** the card **Order updates that didn't go out**, with exactly one row: "Order received to <your WhatsApp profile name>, from <your number>", "Failed <today's date and time>", and the reason "Meta rejected the number's access token: it expired or was revoked. Connect the number again with a new token, then send this again.", and no **Send again** button.
+4. Print the invoice's download address.
+   - `echo "…$INVOICE_ID…"`: prints the address, with Setup step 5's invoice id in it. It changes nothing.
+
+   ```shell
+   echo "http://localhost:5001/api/invoicing/$INVOICE_ID/pdf/"
+   ```
+
+   Open it in the same browser, which sends the Member's login. **Expect:** no file, and the page shows exactly:
+
+   ```text
+   {"message":"You don't have permission to see this organization's invoices.","code":"permission_denied","is_error":true}
+   ```
+
+5. Log out, and log in as yourself again.
+
+**J4.5. Send again builds the update fresh and sends it (user stories WA.D3.OM.J2.A3 and WA.D5.SY.J1.A1).** On the WhatsApp page, in `$ORG_A`, press **Send again** on the row "Order received to <your WhatsApp profile name>". **Expect:** "Sent again to <your WhatsApp profile name>.", and the card gone. On your phone, within a minute, **Expect** exactly one new message, with a **Main menu** button. Your 24-hour window is open, so it's a normal message, not the template:
+
+```text
+Order #<the J4.1 order's number> received, awaiting payment.
+1 × <the product>
+Total: <the currency> <its total, two decimals>
+Payment: Awaiting payment · Delivery: Not shipped yet
+```
+
+That the message arrived means Meta accepted it, which is when it counts as sent.
+
+#### J5. The operator hears about Shopify webhooks the service gave up on, and handles them again (user story WA.D7.OP.J2.A2)
+
+- **Why:** Shopify retries a webhook whose handling keeps failing for 48 hours, and the sweep for 3 days (user story WA.D7.SY.J1.A1). Past that, nothing tries it again, so the operator gets one email listing it, and the admin's **Handle again** runs it once the cause is fixed. This journey repeats what the tests prove, and is kept as the user story's only human check.
+- **Acts on:** the operator, at the terminal, in the mail catcher and in the Django admin; one delivery dated 4 days back in J5.1.
+
+**J5.1. A delivery left unhandled past the sweep's 3 days (simulated) is emailed to the operator, once.** Nobody can wait out Shopify's 48 hours and the sweep's 3 days, so this step stores an unhandled `orders/paid` delivery for your store, dated 4 days back. Its order carries no checkout code, so handling it later changes nothing else.
+
+- `DELIVERY_ID="journey-given-up-$(date +%s)"`: a webhook id no earlier run used; `date +%s` is the number of seconds since 1970.
+- `docker compose run --rm -T backend python manage.py shell -c "…"`: runs the Python between the quotes inside a one-off backend container; `--rm` deletes it afterwards, and `-T` gives it no interactive terminal.
+- The Python changes the database: it stores the delivery, dates it 4 days back, and prints its id.
+
+```shell
+DELIVERY_ID="journey-given-up-$(date +%s)"
+docker compose run --rm -T backend python manage.py shell -c "from datetime import timedelta; from django.utils import timezone; from apps.shopify.models import ShopifyWebhookDelivery; row = ShopifyWebhookDelivery.objects.create(webhook_id='$DELIVERY_ID', topic='orders/paid', shop_domain='$SHOP_DOMAIN', payload={'id': 1, 'name': '#journey', 'note_attributes': []}); ShopifyWebhookDelivery.objects.filter(pk=row.pk).update(created_at=timezone.now() - timedelta(days=4)); print('Stored:', row.webhook_id)"
+```
+
+**Expect:** `Stored: journey-given-up-` followed by digits.
+
+The beat task runs the sweep every 15 minutes. As the operator, run it now, twice.
+
+- `docker compose run --rm -T backend python manage.py shopify_handle_pending_deliveries`: handles every unhandled delivery younger than 3 days, then emails the operator about older ones no email has listed yet. It changes the database: it marks what it handled, and which deliveries an email listed.
+
+```shell
+docker compose run --rm -T backend python manage.py shopify_handle_pending_deliveries
+docker compose run --rm -T backend python manage.py shopify_handle_pending_deliveries
+```
+
+**Expect:** each run ends with its counts, `handled=` and `failed=`, for the deliveries younger than 3 days; the 4-day-old one isn't tried. Then open the mail catcher:
+
+```text
+http://localhost:1080
+```
+
+**Expect:** exactly one new email to `operator@example.com`, "Shopify webhooks weren't handled: action needed". Among whatever deliveries it lists, one block is the one this step stored:
+
+- **Shop:** `$SHOP_DOMAIN`
+- **Topic:** `orders/paid`
+- **Received:** 4 days ago
+- **Last error:** "none recorded"
+- **Webhook id:** `journey-given-up-` and the digits printed above
+
+Its text says to choose **Handle again** in the Django admin. The second run sent no second email.
+
+**J5.2. Handle again in the admin.** Open the Django admin, logged in with the `ADMIN_EMAIL` and `ADMIN_DEFAULT_PASSWORD` in `packages/backend/.env`:
+
+```text
+http://localhost:5001/admin/
+```
+
+Open **Shopify**, then **Shopify webhook deliveries**, and filter **By handled: Not handled**. **Expect:** the delivery whose webhook id J5.1 printed, among the rows, with empty **Handled at** and **Last error** columns. Tick it, choose the action **Handle again**, and press **Go**. **Expect:** "1 handled, 0 failed.", and, with the same filter, that delivery no longer listed.
+
+#### J6. A blank supplier name is warned about at startup (user story WA.D6.OP.J1.A2)
+
+- **Why:** each invoice copies `INVOICE_SUPPLIER_NAME` and `INVOICE_SUPPLIER_ADDRESS` for good when it's issued, so a blank of only spaces must never reach one. The startup check warns about a value that's empty once trimmed. It's a warning, not an error, so payments keep working (decision 13). This journey repeats what the tests prove, and is kept as the user story's only human check.
+- **Acts on:** the operator, at the terminal; the setting as one command sees it, set for that command only.
+
+**J6.1. A name of only spaces is warned about.** As the operator:
+
+- `docker compose run --rm -T backend …`: runs a one-off backend container; `--rm` deletes it afterwards, and `-T` gives it no interactive terminal.
+- `-e INVOICE_SUPPLIER_NAME="   "`: sets that setting to three spaces, for this one container only. Your `.env` doesn't change.
+- `python manage.py check`: runs Django's startup checks, the ones the server runs as it starts. It changes nothing.
+
+```shell
+docker compose run --rm -T -e INVOICE_SUPPLIER_NAME="   " backend python manage.py check
+```
+
+**Expect:** a warning with the id `invoicing.W001`, "INVOICE_SUPPLIER_NAME is empty, so invoices for PayFast payments name no supplier.", with the hint "Set it to the business that issues the invoices, such as your company's registered name.", and no other warning about the supplier.
+
+### Experiment 4.3: the checkout code on a test order (2026-11-02)
+
+Phase 4's open questions about orders, answered by hand before Step 4.3a is built. Nothing here changes code; each result goes into phase 4's record. About 20 minutes, with your dev store's admin, a browser and a terminal.
+
+A WhatsApp customer reaches Shopify's checkout two ways today, so the experiment places one test order each way:
+
+- **Checkout** (and **Buy now**) sends the Storefront cart's own checkout link. Decision 2 puts the code on that cart with `cartCreate`; Shopify documents that "Attributes set on a cart carry over to the resulting order after checkout."
+- **View cart** sends a cart permalink (`cart_page_url`, Step 2.8, finding 10), which copies the items into the browser's own cart on the store's website, and the customer can check out from there. That cart isn't the chat's cart, so it has no code unless the link carries it. Shopify's permalink page documents `attributes[key]=value` on the link, shown "in the Notes section on the order details page" (https://shopify.dev/docs/apps/build/checkout/create-cart-permalinks). It doesn't say whether that still works with `storefront=true`, which opens the cart page instead of checkout.
+
+**What the experiment answers:**
+
+1. Does the order from the Storefront cart carry `_whatsapp_checkout` and its value?
+2. Does the order from the permalink, with `storefront=true`, carry it?
+3. Does the customer see the code anywhere: on the cart page, at checkout, on the thank-you page, on the order status page, or in the confirmation email?
+
+The webhook payload itself can't be seen yet: our app doesn't subscribe to order webhooks or hold `read_orders` (decision 8). The order's page in your Shopify admin shows the same attributes, and Shopify's `orders/create` payload names them `note_attributes`; Step 4.3b's human checks prove the payload.
+
+- **Acts on:** your dev store, connected to your organization on the Shopify page: two test orders, paid with Shopify's test gateway, so no money moves.
+- **Secrets:** the store's Admin token is kept in a shell variable, and only its length and first characters are printed.
+
+#### Setup for the experiment
+
+1. **The stack, in its own terminal, left running:**
+
+   ```shell
+   nvm use 20
+   pnpm saas up
+   ```
+
+   **Expect:** http://localhost:3000 loads.
+
+2. **Your dev store's domain, in a second terminal,** where every later command runs:
+
+   ```shell
+   read -r -p "Your dev store's domain (….myshopify.com): " SHOP_DOMAIN
+   ```
+
+3. **Test payments on the dev store.** In your Shopify admin, open **Settings**, then **Payments**. If a credit card provider is active, deactivate it; then choose Shopify's test gateway (listed as **(for testing) Bogus Gateway** or **Test payment gateway**), **Activate** it and **Save**. At checkout it takes the card number `1` for a successful payment, any 3-digit security code and any future expiry date (https://help.shopify.com/manual/checkout-settings/test-orders). If your store already has a manual payment method, such as **Cash on Delivery**, that works too: the order is placed unpaid, which is enough here.
+
+4. **The store's password,** from **Online Store**, then **Preferences**, **Password protection**. A dev store is usually password-protected, and both links open its "Enter store password" page first (E7c). Enter it once in the browser you use for the experiment.
+
+#### O1. The store's Admin token, in a shell variable
+
+- **Why:** the app sends the Admin token as a private Storefront token (Step 2.1b, decision 1), so the experiment's carts are made exactly as the chat's are.
+- **Acts on:** your dev store's row, read only. The app's own client refreshes the token if it's about to expire, and the token goes straight into `ADMIN_TOKEN`, not onto the screen:
+
+```shell
+ADMIN_TOKEN=$(docker compose run --rm -T backend python manage.py shell -c "from apps.shopify.client import admin_client_for; from apps.shopify.models import ShopifyShop; print(admin_client_for(ShopifyShop.objects.get(shop_domain='$SHOP_DOMAIN')).access_token)" 2>/dev/null | tail -n 1)
+echo "Admin token: ${#ADMIN_TOKEN} characters, starting ${ADMIN_TOKEN:0:6}"
+```
+
+**Expect:** a few dozen characters. A length of 0 or a word like `Traceback` means the token wasn't read: stop, and note what was printed.
+
+#### O2. A product to buy, picked by the command and kept in `VARIANT_ID`
+
+- **Why:** both carts need a variant Shopify can sell. The command picks the first one itself, so nothing is copied by hand. A product that needs a selling plan (a subscription) is skipped, because cart permalinks don't support selling plans.
+- **Acts on:** your dev store's products, read only.
+
+**List** the products for sale, saved to the log and shown whole:
+
+```shell
+curl -s https://$SHOP_DOMAIN/api/2026-10/graphql.json \
+  -H "Shopify-Storefront-Private-Token: $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n '{query: "query Products($filter: String) { products(first: 10, query: $filter) { nodes { title requiresSellingPlan variants(first: 3) { nodes { id title availableForSale } } } } }", variables: {filter: "available_for_sale:true"}}')" \
+  | tee logs/experiment-4.3-products.json | python3 -m json.tool
+```
+
+**Expect:** your products for sale, each with `requiresSellingPlan` and its variants.
+
+**Keep** the first variant for sale of the first product without a selling plan, and print it:
+
+```shell
+VARIANT_ID=$(jq -r '[.data.products.nodes[] | select(.requiresSellingPlan | not) | .variants.nodes[] | select(.availableForSale)][0].id' logs/experiment-4.3-products.json)
+echo "Variant: $VARIANT_ID"
+```
+
+**Expect:** `Variant: gid://shopify/ProductVariant/` followed by digits. `Variant: null` means no product could be picked: stop, and send the list printed above.
+
+#### O3. The Storefront cart with the code, and its checkout (answers question 1)
+
+- **Why:** this is decision 2's way: the same `cartCreate` the chat sends, with the code as a cart attribute. A real code is `wachk_` and 22 random characters; this one says which test it is.
+- **Acts on:** a new cart on your dev store holding one of `VARIANT_ID`, then the order paid from it.
+
+**Create** the cart, saved to the log and shown whole:
+
+```shell
+curl -s https://$SHOP_DOMAIN/api/2026-10/graphql.json \
+  -H "Shopify-Storefront-Private-Token: $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg variant "$VARIANT_ID" '{query: "mutation Cart($input: CartInput!) { cartCreate(input: $input) { cart { id checkoutUrl attributes { key value } } userErrors { field message code } } }", variables: {input: {lines: [{merchandiseId: $variant, quantity: 1}], attributes: [{key: "_whatsapp_checkout", value: "wachk_experiment_checkout"}]}}}')" \
+  | tee logs/experiment-4.3-cart.json | python3 -m json.tool
+```
+
+**Expect:** a cart with an `id`, a `checkoutUrl`, `"attributes"` holding `_whatsapp_checkout` with `wachk_experiment_checkout`, and `"userErrors": []`.
+
+**Keep** its checkout link, and print it:
+
+```shell
+CHECKOUT_URL=$(jq -r '.data.cartCreate.cart.checkoutUrl' logs/experiment-4.3-cart.json)
+echo "$CHECKOUT_URL"
+```
+
+**In the browser** where you entered the store's password (setup step 4), as the customer:
+
+1. **Open** the printed link. **Expect:** Shopify's checkout page: the product and its price in the order summary, and a form to fill in.
+2. **Look for the code:** press Ctrl+F and search for `wachk`. **Record** whether it's found.
+3. **Contact:** an email address you can read, for O6.
+4. **Delivery:** keep the **Country/Region** the form shows (your store's own country). Type the first name `Test`, the last name `Customer`, and a made-up street address, with a city and postal code from that country; if it asks for a province or state, pick any.
+5. **Shipping method:** the first one offered.
+6. **Payment,** with the test gateway from setup step 3: **Card number** `1`, **Expiration date** `12 / 30`, **Security code** `123`, **Name on card** `Test Customer`.
+7. **Press Pay now.** **Expect:** the thank-you page, "Thank you, Test!".
+8. **Look for the code again:** Ctrl+F, `wachk`. **Record** whether it's found.
+
+If a field above isn't on the form, skip it; if the form asks for one that isn't listed, type any made-up value.
+
+#### Resuming in a new terminal
+
+Shell variables live only as long as their terminal window. If it was closed after O3, set the two that O4 needs again; O4 to O7 need neither the stack nor the Admin token. Type your dev store's domain at the prompt:
+
+```shell
+read -r -p "Your dev store's domain (….myshopify.com): " SHOP_DOMAIN
+```
+
+Then read the product again from the list O2 saved, which needs no token and doesn't call Shopify:
+
+```shell
+VARIANT_ID=$(jq -r '[.data.products.nodes[] | select(.requiresSellingPlan | not) | .variants.nodes[] | select(.availableForSale)][0].id' logs/experiment-4.3-products.json)
+echo "Variant: $VARIANT_ID"
+```
+
+**Expect:** the same `Variant: gid://shopify/ProductVariant/…` as O2 printed. If the browser asks for the store's password again, enter it (setup step 4).
+
+#### O4. The permalink with the code, and its checkout (answers question 2)
+
+- **Why:** this is the **View cart** link the chat sends, which fills the browser's own cart; the code is added in the documented `attributes[key]=value` form, to see whether it survives `storefront=true` and reaches the order. `${VARIANT_ID##*/}` is the variant's number, the part after the last `/`, which a permalink takes.
+- **Acts on:** your browser's cart on your store's website, holding one of `VARIANT_ID`, then the order paid from it.
+
+**Build** the link, keep it, and print it:
+
+```shell
+VIEW_CART_URL="https://$SHOP_DOMAIN/cart/${VARIANT_ID##*/}:1?storefront=true&attributes[_whatsapp_checkout]=wachk_experiment_view_cart"
+echo "$VIEW_CART_URL"
+```
+
+**Expect:** the address ending `:1?storefront=true&attributes[_whatsapp_checkout]=wachk_experiment_view_cart`.
+
+**In the same browser,** as the customer:
+
+1. **Open** the printed link. **Expect:** the store's cart page, holding the product.
+2. **Look for the code:** Ctrl+F, `wachk`. **Record** whether it's found.
+3. **Press Check out.** **Expect:** Shopify's checkout page.
+4. **Look for the code:** Ctrl+F, `wachk`. **Record** whether it's found.
+5. **Contact:** the same email address as in O3.
+6. **Delivery:** keep the **Country/Region** the form shows. Type the first name `Test`, the last name `Customer`, and a made-up street address, with a city and postal code from that country; if it asks for a province or state, pick any.
+7. **Shipping method:** the first one offered.
+8. **Payment:** **Card number** `1`, **Expiration date** `12 / 30`, **Security code** `123`, **Name on card** `Test Customer`.
+9. **Press Pay now.** **Expect:** the thank-you page, "Thank you, Test!".
+10. **Look for the code again:** Ctrl+F, `wachk`. **Record** whether it's found.
+
+#### O5. The two orders in your Shopify admin (questions 1 and 2)
+
+- **Why:** an order's page shows what Shopify stored on the order. These are the same attributes the `orders/create` webhook carries as `note_attributes`, which Step 4.3b will match on.
+- **Acts on:** the two orders O3 and O4 placed, read only.
+
+**In your Shopify admin,** open **Orders**. The two newest orders are at the top: O4's first, then O3's. Open each in turn, and on its page press Ctrl+F and search for `wachk`.
+
+**Expect:** a **Notes** or **Additional details** section that lists `_whatsapp_checkout`. **Record**, for each order: its number, such as `#1001`, and whether `_whatsapp_checkout` is listed, with which value. It should be `wachk_experiment_checkout` on O3's order and `wachk_experiment_view_cart` on O4's.
+
+#### O6. What the customer is sent (question 3)
+
+- **Why:** the code is only for our app to find the chat; a customer shouldn't see it. The underscore at the start of `_whatsapp_checkout` is meant to keep it hidden, but Shopify doesn't document that for cart attributes.
+- **Acts on:** the two order confirmation emails sent to the address from O3 and O4.
+
+**In your inbox,** open each order's confirmation email and press Ctrl+F, `wachk`. Then press the email's **View your order** button, which opens the order status page, and press Ctrl+F, `wachk` there too.
+
+**Record**, for each order: whether `wachk` is found in the email, and on the order status page.
+
+#### O7. Tidy up
+
+```shell
+unset ADMIN_TOKEN VARIANT_ID CHECKOUT_URL VIEW_CART_URL SHOP_DOMAIN
+```
+
+**Expect:** no output. `logs/experiment-4.3-products.json` and `logs/experiment-4.3-cart.json` hold no secret, only products, the cart's id and its checkout link; they stay in the gitignored `logs/` folder. The two test orders can stay on the dev store, or be cancelled from each order's page (**More actions**, then **Cancel order**). Leave the test gateway active for phase 4's later checks.
+
+**Send back** these lines, filled in with what you recorded:
+
+- O3: found `wachk` at checkout? On the thank-you page?
+- O4: found `wachk` on the cart page? At checkout? On the thank-you page?
+- O5: O3's order: its number, and `_whatsapp_checkout` listed with which value? O4's order: the same.
+- O6: found `wachk` in O3's email? On its order status page? In O4's email? On its order status page?
+
+#### Results (run by the maintainer, 2026-11-02 to 2026-11-04)
+
+Setup steps 1 to 4 and O1 to O7 were run as written, on the maintainer's dev store with the test gateway, a United States address and USD (the store's default; Step 2.1b, decision 2). The terminal was closed after O3, and the two variables were set again as in "Resuming in a new terminal". The orders are called O3's and O4's here; their numbers, confirmation codes and the customer's email stay out of the plan.
+
+- **O1:** the Admin token read, 38 characters.
+- **O2:** the first product picked was a snowboard without a selling plan. A first version of O2 had the maintainer type the variant id; the bare number failed in `cartCreate` with "Invalid global id", so O2 now picks and keeps the id itself.
+- **O3, question 1:** `cartCreate` returned the cart with `_whatsapp_checkout` set to `wachk_experiment_checkout` and no user errors. Paid with card `1`; thank-you page reached. `wachk` not found at checkout or on the thank-you page.
+- **O4, question 2:** the permalink opened the store's cart page holding the product; paid the same way. `wachk` not found on the cart page, at checkout, or on the thank-you page.
+- **O5, questions 1 and 2: yes, both orders carry the code.** O3's order lists `_whatsapp_checkout` with `wachk_experiment_checkout`, and O4's with `wachk_experiment_view_cart`, under **Notes**, then **Additional details**, on each order's page.
+- **O5, also seen:** the orders came through different sales channels. O3's order, from the Storefront cart made with the app's token, is listed under the app's own channel; O4's, from the permalink, under **Online Store**. So a business's Orders list already shows which orders came from the chat's cart.
+- **O6, question 3: the customer sees the code nowhere.** `wachk` not found in either confirmation email, or on either order status page opened from the email's **View your order**.
+- **O7:** variables unset; the test gateway left active; both test orders kept on the dev store.
+
+**Led to:** decision 21 (the **View cart** link carries the cart's code). **Still open:** the `orders/create` payload's field name for the code (`note_attributes` in Shopify's samples), checked by Step 4.3b's human checks from the first real delivery.
 
 ### Step 2.9 and findings 15 to 22: your own Meta app, and the fixes (2026-11-01)
 
@@ -3430,7 +4581,7 @@ show_links
 
 ### Step 2.8 and phase 3: the fixes, and Shopify and WhatsApp on a paid plan (2026-10-31)
 
-Run these on their own, top to bottom: the web app at http://localhost:3000, your phone, and a terminal. They check Step 2.8's findings 1, 2, 4, 6, 7, 8, 10, 11, 12, 13 and 14, gather finding 5's evidence, prove the GraphQL watcher keeps its patch, and check phase 3 (user stories 26, 27 and 28) on your own organization, whose plan the checks change from the terminal.
+Run these on their own, top to bottom: the web app at http://localhost:3000, your phone, and a terminal. They check Step 2.8's findings 1, 2, 4, 6, 7, 8, 10, 11, 12, 13 and 14, gather finding 5's evidence, prove the GraphQL watcher keeps its patch, and check phase 3 (user stories WA.D6.OP.J1.A1, WA.D6.OM.J3.A2 and WA.D6.OM.J3.A1) on your own organization, whose plan the checks change from the terminal.
 
 #### Setup for these checks
 
@@ -3481,7 +4632,7 @@ grep -c "GraphQL query not found" packages/webapp-libs/webapp-api-client/src/gra
 
 **Expect:** 1 or more. Then look at the `pnpm saas up` terminal for a minute: the type generation runs once, not over and over.
 
-#### PL1. On the free plan, the WhatsApp and Shopify pages are read-only (phase 3, decisions 3 and 5; user stories 26 and 27)
+#### PL1. On the free plan, the WhatsApp and Shopify pages are read-only (phase 3, decisions 3 and 5; user stories WA.D6.OP.J1.A1 and WA.D6.OM.J3.A2)
 
 - **Why:** Shopify and WhatsApp come with the paid plans; a lapsed or free organization keeps its numbers and stores, sees them, and gets one way back.
 - **Acts on:** your organization's PayFast subscription row.
@@ -3572,7 +4723,7 @@ Link your phone again from your profile page if P11 of phase 2 didn't. From your
 
 On the WhatsApp page, under **Customers get** on your number. **Expect:** "Members who linked their phone choose their own on their profile page." Change **Who texts this number** to **Your customers** and back to **Your team and your customers**, confirming each. **Expect:** a toast each time, such as "+27 … now serves your team and your customers."
 
-#### PL4. A Member sees what's unlocked, never what's paid (phase 3, decision 8; user story 28)
+#### PL4. A Member sees what's unlocked, never what's paid (phase 3, decision 8; user story WA.D6.OM.J3.A1)
 
 - **Why:** Members have no `billing.view`, yet their pages must know what's unlocked.
 - **Acts on:** your organization, back on the free plan, viewed by a Member.
@@ -3585,7 +4736,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 Log in as a Member of your organization (Shopify plan's checks seeded one), and open **WhatsApp**. **Expect:** the box with "Ask the organization's owner to choose a plan." and no link; no **Subscriptions** or **Payments** in the sidebar.
 
-#### PL5. A lapsed plan keeps everything, and comes back as it was (phase 3, decision 3; user story 27)
+#### PL5. A lapsed plan keeps everything, and comes back as it was (phase 3, decision 3; user story WA.D6.OM.J3.A2)
 
 - **Why:** businesses stop and restart plans as money allows.
 - **Acts on:** your organization's row, cancelled, then trialling again.
@@ -3625,7 +4776,7 @@ curl -s "https://$SHOP_DOMAIN/api/2026-10/graphql.json" \
 
 ### Phase 2: a customer shops on your WhatsApp number
 
-Run these on their own, top to bottom, on a real phone (user stories 12, 13, 14, 16 and 21, Step 2.7). You have one Meta number, connected as your team's. P1 makes it serve your customers too. P3 unlinks your phone, so you text it as a customer. P11 turns the number back and relinks you, leaving everything as it was.
+Run these on their own, top to bottom, on a real phone (user stories WA.D4.SC.J1.A1, WA.D4.SC.J1.A2, WA.D4.SC.J2.A1, WA.D5.SC.J1.A1 and WA.D4.SC.J1.A3, Step 2.7). You have one Meta number, connected as your team's. P1 makes it serve your customers too. P3 unlinks your phone, so you text it as a customer. P11 turns the number back and relinks you, leaving everything as it was.
 
 Shopify's privacy webhooks (Step 2.6) aren't checked here: a real one needs Shopify to send it. Their tests run the real handlers.
 
@@ -3684,7 +4835,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 **On your phone,** send `menu` to your number. **Expect:** **You're working in Organization: …**, the team's main menu, as before P1.
 
-#### P3. Unlinked, you're a customer (user stories 12 and 14)
+#### P3. Unlinked, you're a customer (user stories WA.D4.SC.J1.A1 and WA.D4.SC.J2.A1)
 
 - **Why:** anyone not linked on a number serving customers is a store customer of its store.
 - **Acts on:** your phone's link, which P11 restores.
@@ -3694,7 +4845,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 1. Send `unlink`. **Expect:** **This number is now unlinked from your account. Link it again from your profile page.**
 2. Send `hi`. **Expect:** **Welcome to** your number's business name, **What would you like to do?**, and a **Menu** list of **Browse products**, **Search**, **Your cart** and **Main menu**.
 
-#### P4. Browsing shows only what can be bought (Step 2.3, user story 12)
+#### P4. Browsing shows only what can be bought (Step 2.3, user story WA.D4.SC.J1.A1)
 
 - **Why:** Experiment 2.1a, result 3: the Storefront API lists products that can't be bought.
 - **Acts on:** your dev store's products, read live, nothing stored.
@@ -3711,7 +4862,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 1. Send `menu`, choose **Search**. **Expect:** **Type what you're looking for…**. Send `snowboard`. **Expect:** **Products matching "snowboard".** and a list of them.
 2. Send `menu`, choose **Search**, and send `kayak`. **Expect:** **Nothing for sale matches "kayak".**, with **Search again**, **Browse all** and **Main menu**.
 
-#### P6. A product, and one with options (Step 2.4, user story 13)
+#### P6. A product, and one with options (Step 2.4, user story WA.D4.SC.J1.A2)
 
 - **Why:** the customer sees what they'd see on the store's page, and picks an option before buying.
 - **Acts on:** one product with one variant, and one with several, from your dev store.
@@ -3721,7 +4872,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 1. From **Browse products**, choose a product with no options. **Expect:** its picture (if it has a JPEG or PNG one), its name in bold, its price and description, and **Add to cart**, **Buy now** and **Back**. **Back** returns to the same page of the list.
 2. Choose a product with options (such as sizes). **Expect:** **… comes in N options. Which one would you like?**, a list of the options for sale with their prices. Choose one. **Expect:** the product's name with the option, its price, and the same three buttons.
 
-#### P7. A cart with two products, and its checkout (Step 2.4, phase 2 decision 1, user story 16)
+#### P7. A cart with two products, and its checkout (Step 2.4, phase 2 decision 1, user story WA.D5.SC.J1.A1)
 
 - **Why:** the whole point of phase 2: one tap from the chat into the shop's own Shopify checkout (D13).
 - **Acts on:** a Storefront cart on your dev store, and your store customer row. Nothing is paid.
@@ -3776,7 +4927,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 ### Step 2.1b: the store each external number sells from
 
-Run these on their own, top to bottom (user story 25). They use the seeded demo numbers and stores, so they need no tunnel and no second real Meta number.
+Run these on their own, top to bottom (user story WA.D3.OM.J1.A3). They use the seeded demo numbers and stores, so they need no tunnel and no second real Meta number.
 
 #### Setup for 2.1b
 
@@ -3816,7 +4967,7 @@ Run these on their own, top to bottom (user story 25). They use the seeded demo 
 
 **Who can do what:** `whatsapp.view` (Owner, Admin and Member) sees each external number's store; `whatsapp.manage` (Owner and Admin) chooses and changes it. A store is offered only if it's the organization's own, still installed, not waiting for a reinstall, and holding `unauthenticated_read_product_listings` and `unauthenticated_write_checkouts`.
 
-#### S1. Each external number shows the store it sells from, or that none is chosen (user story 25)
+#### S1. Each external number shows the store it sells from, or that none is chosen (user story WA.D3.OM.J1.A3)
 
 - **Why:** a customer texting a number sees that number's store only, and a number with no store says so instead of answering with nothing.
 - **Acts on:** the demo external numbers `100000000000801` to `100000000000803` of `$ORG_A`, and the demo store `linked-demo.myshopify.com`.
@@ -3831,7 +4982,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 **In the web app,** click **WhatsApp** in the sidebar. **Expect,** under **External communications numbers**: `…801`'s row says **No store chosen: its customers get no reply until one is.**, and `…802`'s and `…803`'s say **Sells from linked-demo.myshopify.com**. Your internal number's row, and the disconnected `…804`'s, say nothing about a store.
 
-#### S2. Only stores that can sell on WhatsApp are offered, and an admin changes a number's store (user story 25)
+#### S2. Only stores that can sell on WhatsApp are offered, and an admin changes a number's store (user story WA.D3.OM.J1.A3)
 
 - **Why:** a number can only sell from a store that holds the storefront scopes and is still installed; the uninstalled and reinstall demo stores are never offered.
 - **Acts on:** `$ORG_A`'s stores, and the demo number `100000000000802`.
@@ -3857,7 +5008,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 
 **Expect:** `100000000000802`'s row now has your dev store's domain and a newer `updated_at`; `100000000000803`'s is unchanged.
 
-#### S3. The connect form asks which store an external number sells from (user story 25)
+#### S3. The connect form asks which store an external number sells from (user story WA.D3.OM.J1.A3)
 
 - **Why:** an external number is connected together with its store (Step 2.1b, decision 5); nothing is sent until both are filled in.
 - **Acts on:** the external section's connect form; nothing is connected.
@@ -3868,7 +5019,7 @@ docker compose run --rm -T backend python manage.py shell -c "import json; from 
 2. Press **Connect number** without filling anything in. **Expect:** "Choose the store this number sells from", and the three "… is required" messages; nothing is sent.
 3. The internal section's form has no **Store** picker: the team's number never sells.
 
-#### S4. A Member sees the stores but can't change them (user story 25)
+#### S4. A Member sees the stores but can't change them (user story WA.D3.OM.J1.A3)
 
 - **Why:** only `whatsapp.manage` chooses a number's store; `whatsapp.view` sees it.
 - **Acts on:** the seeded Member `whatsapp-member@example.com` of `$ORG_A`, from `whatsapp_seed_demo`.
@@ -4090,8 +5241,32 @@ The new scopes stay in `.env`: Step 2.1b adds them for every store anyway.
 4. **Which payment provider a store uses inside Shopify Checkout.** Closed on 2026-10-15: not this app's concern (D13).
 5. **Shopify protected customer data.** A public app needs approval to receive store customers' phone numbers in order webhooks (section 6.2). Development stores work without it.
 6. **WhatsApp Business app coexistence in South Africa.** Using a business's existing app number is not documented for South Africa; this matters only for phase 5.
-7. **`render.yaml` declares no `SHOPIFY_*` or `PAYFAST_*` keys** today. The WhatsApp keys are added there in Step 1.15; whether the missing ones are added too is the maintainer's call. The WhatsApp keys were added on 2026-10-20.
+7. **`render.yaml` declares no `SHOPIFY_*` or `PAYFAST_*` keys** today. The WhatsApp keys are added there in Step 1.15; whether the missing ones are added too is the maintainer's call. The WhatsApp keys were added on 2026-10-20. Closed on 2026-11-05: the maintainer deploys on Render's free plan from its dashboard, not from a `render.yaml` Blueprint, so `render.yaml` isn't changed further; new settings are documented in `packages/backend/.env.shared` and set in the dashboard. The invoice supplier follows this: `INVOICE_SUPPLIER_NAME` and `INVOICE_SUPPLIER_ADDRESS` take `.env.shared`'s example values in a developer's untracked `.env`, and the real business's only in Render's dashboard.
 8. **One active platform account, enforced by the database:** Step 1.13d, after the human checks (maintainer's choice, 2026-10-20). Superseded on 2026-10-22: Step 1.17 removes the platform number and enforces one active internal communications number per organization instead.
+9. **No test reaches a third-party service, whatever a developer's `.env` says** (found 2026-11-05, Step 4.3d-2: two tests reached Meta's real API with a test factory's fake token). Two layers, the maintainer's choice:
+   - **Now:** the root [`conftest.py`](../../../packages/backend/conftest.py)'s `whatsapp_reaches_no_one` pins `WHATSAPP_SEND_BACKEND=LOG` for every test, beside this fork's `plans_dont_decide` (phase 3); a test that wants Meta's backend sets it and fakes `requests.post`. It keeps the suite's result the same on every machine.
+   - **A step of its own after phase 4:** a backstop refusing any request to a host other than the stack's own (db, redis, localstack), so a forgotten pin fails loudly for every provider, Meta, Shopify, OpenAI or PayFast. First find where the `responses` library is set up with pass-through allowed (the leaked request's log showed `request.allowed-passthru`), and refuse unregistered requests there; `pytest-socket`, a new pinned dependency the maintainer installs, only if that can't. It needs its own full backend run.
+10. **A Shopify order update is lost when its handling fails** (found 2026-11-05, while reviewing Step 4.3). The webhook view saves the delivery, final at once, and then runs its handler. If the handler fails, Shopify's retry carries the same webhook id and is answered as a duplicate, so the update is lost without a trace. With Celery dispatch, Shopify always gets its 200 and never retries; `process_shopify_webhook` declares `max_retries=3` but never calls `self.retry()`; and a broker that is down when the view queues the task loses the update the same way. Decided on 2026-11-05, the maintainer's choice for the long term: Step 4.3e records whether each delivery was handled, and both dispatch modes try again until it is. Saving and handling in one transaction was set aside, because it fixes only sync dispatch.
+11. **Replaced Flows stay published on Meta** (found 2026-11-05, while reviewing Step 4.3d-2). Meta can't edit or delete a published Flow, only deprecate it, so each new version of a form is a new Flow, named with the first 8 characters of its content hash (`apps/whatsapp/services/flows.py`). The old one stays published, and `WhatsAppFlow`'s row is overwritten with the new id, so the old id is lost. Decided on 2026-11-05, the maintainer's choice for the long term, as a step of its own after phase 4, in `apps.whatsapp`:
+    - Each published version keeps its own row: Meta's id, the name used on Meta, when it was replaced, and when it was deprecated.
+    - A replaced version is deprecated after a grace period, so a form sent just before the change still opens. Before the RED test, Meta's docs are checked for what a deprecated Flow does to a message already in a chat; that sets the grace period.
+    - One service function does the deprecating, called after every publish (the command and the connect task), by a management command for cron, and by a beat task. So it works without a background worker (`CELERY_TASK_ALWAYS_EAGER=True`, no beat): an old version then waits at most until the next publish.
+    - The admin shows each form's versions.
+    - `whatsapp_publish_flows` goes on past a number Meta refuses, and fails at the end naming each one, as `whatsapp_publish_order_templates` does since Step 4.6 (the maintainer's choice, 2026-11-06, folded in here since this step rewrites Flow publishing). Today it stops at the first refusal, and `test_publish_flows.py` expects that.
+    - Deprecating at once was set aside, because a form sent minutes earlier might stop opening; leaving old Flows alone, because the list keeps growing and the ids needed to clean up are lost.
+12. **The tunnel for local webhooks** (2026-11-05). Meta and Shopify reach the backend on port 5001 (`BACKEND_HOST_PORT` in the root `.env`) through an ngrok tunnel, started by hand today. The ngrok address in `packages/webapp/vite.config.mts`'s `allowedHosts` came from upstream (release 5.0.0, PR #685), so it stays as it is (agents.md section 3.4); the tunnel never goes through Vite. Decided on 2026-11-05, the maintainer's choice, built in Step 4.6:
+    - A new, optional `docker-compose.ngrok.yml` with one `ngrok` service: ngrok's official image, pinned to an exact version, tunnelling to `backend:5001` on Compose's network. Its tag and its domain flag (ngrok renamed `--domain` to `--url`) are checked when it's written.
+    - A developer switches it on by adding the file to `COMPOSE_FILE` in their untracked root `.env`; `.env.test`'s `COMPOSE_FILE` doesn't list it, so test runs never start a tunnel. Deleting the file removes it completely (agents.md section 3.1). A service in `docker-compose.local.yml` behind a Compose profile was set aside, because it changes an upstream file.
+    - `NGROK_AUTHTOKEN` and the developer's static domain live only in that untracked `.env`; the tracked file names the variables, never their values.
+    - Section 13's Setup switches the file on in place of starting ngrok by hand, and the operator guide gets a short note on receiving webhooks locally.
+    - No automated test, since it's configuration (the maintainer's call, agents.md section 2.1); a human check shows Meta's **Verify and save** succeeding through it.
+    - **Revised 2026-11-06, the maintainer's choices** (Step 4.6's record): `pnpm saas up` starts five named services, so a file switched on through `COMPOSE_FILE` still needed the tunnel started by hand. `NGROK_DOMAIN` is now the one switch, read by the CLI, and the service moved into `docker-compose.local.yml` behind an `ngrok` profile, the option set aside above, for consistency with upstream's other local-only services. `docker-compose.ngrok.yml` is gone, and the CLI's choice of services has a test.
+13. **Two Celery tasks from earlier steps don't yet work well without a worker** (found 2026-11-05, against agents.md section 4.1's rule set that day). The maintainer's choice: fixed after this PR's commit, each with its RED first.
+    - **`apps.whatsapp`'s `process_inbound_message`:** with `CELERY_TASK_ALWAYS_EAGER=True`, the reply is worked out inside Meta's webhook request, a failure is swallowed, and nothing tries an unanswered inbound message again.
+    - **`apps.invoicing`'s `issue_invoice`:** it has no retry, and nothing catches up a completed payment left without an invoice.
+14. **`packages/backend/media/` isn't ignored by git** (found 2026-11-06, Step 4.6). With `STORAGE_BACKEND=local`, upstream's local storage writes files there, such as invoice PDFs, inside the mounted `packages/backend`, so `git add .` would commit them. `.gitignore` is upstream's file (agents.md section 3.1), so it's the maintainer's call, after this PR's commit. Deployments and the maintainer's development use S3 or R2, which write nothing there.
+15. **ESLint crashes on the `saas` CLI package** (found 2026-11-06, Step 4.6). `pnpm --filter @sb/cli exec eslint <file>` stops with "Error while loading rule '@typescript-eslint/no-empty-function': Cannot read properties of undefined (reading 'allow')" before linting anything, on upstream's untouched `src/commands/down.ts` too (log `step-4.6-cli-lint-upstream-file.log`). The CLI's `eslint.config.js` turns that rule on, and the installed `@typescript-eslint` 7.18 with ESLint 9.39 can't load it. Upstream's configuration, so the maintainer's call after this PR's commit; Step 4.6's CLI files were checked with Prettier instead.
+16. **An order update Meta refuses is never sent again** (found 2026-11-07, Step 4.6's first pass of the human checks). When Meta refuses the message (error 190, an expired or revoked token, say), the checkout's `received_sent_at` or `paid_sent_at` is set all the same, and the webhook still answers 200, so Shopify doesn't send it again and the store customer never hears about their order. With the demo numbers' fake tokens that's expected; with a real business whose token has lapsed, updates are lost without a trace beyond the `FAILED` message. To decide with the maintainer: whether a stage counts as sent only once Meta accepts it, and what tries again (the deliveries' sweep, or the outbox's own retry with open question 9). **Decided 2026-11-08 (decisions 26 and 27, user story WA.D5.SY.J1.A1, built in Step 4.7):** a stage keeps its message and counts as sent only once Meta accepts it; the outbox retries a passing failure for an hour, with a worker or, through the webhooks' sweep, without one. A refusal like error 190 is permanent, so it goes to the business's failed list, with Send again once the token is replaced (user story WA.D3.OM.J2.A3, still to build).
 
 ## 15. Sources
 
@@ -4101,4 +5276,4 @@ The new scopes stay in `.env`: Step 2.1b adds them for every store anyway.
 - Chatwoot's conversation model and reply-window rule, for phase 6. https://github.com/chatwoot/chatwoot
 - django-helpdesk's assignee and follow-up models, a plain Django precedent for phase 6. https://github.com/django-helpdesk/django-helpdesk
 - The earlier Shopify plan: [`2026-10-03-shopify-app-installation-plan.md`](2026-10-03-shopify-app-installation-plan.md).
-- Working rules: [`docs/superpowers/agents.md`](../agents.md).
+- Working rules: [`agents.md`](../../../agents.md), at the repository root.

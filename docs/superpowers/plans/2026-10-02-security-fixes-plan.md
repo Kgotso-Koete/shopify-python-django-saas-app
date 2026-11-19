@@ -2,7 +2,7 @@
 
 Known security weaknesses in this repository, what each one risks, and how to fix it. Each item is fixed
 test-first (RED before GREEN), like the rest of the codebase
-([`docs/superpowers/agents.md`](../agents.md)). The human maintainer picks the order and approves each fix.
+([`agents.md`](../../../agents.md)). The human maintainer picks the order and approves each fix.
 
 This repository is public, so items describe the weakness and the fix, never a working attack.
 

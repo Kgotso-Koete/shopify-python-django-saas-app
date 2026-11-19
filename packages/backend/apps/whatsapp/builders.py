@@ -11,9 +11,9 @@ Two kinds of overflow are treated differently:
 - our own code breaking a rule (an over-long id, too many buttons or rows, no way back) raises
   BuilderError: that's a bug to fix, not data to squeeze.
 
-Every reply offers a way back, so nobody is ever stuck (plan decision D17, user story 21): every
-interactive message carries WAY_BACK_FOOTER, button messages keep a button for Back or Main menu,
-lists always end with Main menu, and plain text goes out with a Main menu button.
+Every reply offers a way back, so nobody is ever stuck (plan decision D17, user stories WA.D2.OM.J3.A1 and
+WA.D4.SC.J1.A3): every interactive message carries WAY_BACK_FOOTER, button messages keep a button for Back
+or Main menu, lists always end with Main menu, and plain text goes out with a Main menu button.
 
 Meta's limits, linked next to where each is used:
 - reply buttons: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/interactive-reply-buttons-messages.md
@@ -47,6 +47,9 @@ LINK_TEXT_MAX = 20
 LINK_BODY_MAX = 1024
 # Pictures: the caption is at most 1024 characters; JPEG or PNG, up to 5 MB.
 IMAGE_CAPTION_MAX = 1024
+# Documents: the caption is at most 1024 characters; a PDF is up to 100 MB.
+# https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/document-messages.md
+DOCUMENT_CAPTION_MAX = 1024
 # Flows: Meta advises a call-to-action of 30 characters or fewer.
 FLOW_CTA_MAX = 30
 
@@ -150,6 +153,51 @@ def image_message(link: str, *, caption: str) -> dict:
     carries the way back (D17). The caption comes from data, so it's cut to fit.
     """
     return {"type": "image", "image": {"link": link, "caption": _fit(caption, IMAGE_CAPTION_MAX)}}
+
+
+def document_message(media_id: str, *, filename: str, caption: str) -> dict:
+    """
+    A file Meta holds, by the id its media upload returned (WhatsAppClient.upload_media), such as an
+    invoice's PDF (WhatsApp plan phase 4, D15): never a link, so the file is never public. Like a
+    picture it has no buttons, so it's only sent just before a message that carries the way back (D17).
+    """
+    return {
+        "type": "document",
+        "document": {"id": media_id, "filename": filename, "caption": _fit(caption, DOCUMENT_CAPTION_MAX)},
+    }
+
+
+def template_message(
+    name: str,
+    *,
+    language: str,
+    body: list[str],
+    url_suffix: str | None = None,
+    quick_reply_payload: str | None = None,
+) -> dict:
+    """
+    An approved message template `name`, with its body's blanks in order (WhatsApp plan phase 4, Step
+    4.3d-2). The one kind of message Meta lets a business send after the 24-hour window. Its first button,
+    if the template has one, takes either a link's variable (`url_suffix`, such as a copy-code button's
+    code) or a quick reply's `quick_reply_payload`, which Meta sends back when the customer taps it (Step
+    4.7). Its text and buttons are the template's own, so the way back (D17) is whatever the template carries.
+    https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-message-templates
+    """
+    components = [{"type": "body", "parameters": [{"type": "text", "text": text} for text in body]}]
+    if url_suffix is not None:
+        components.append(
+            {"type": "button", "sub_type": "url", "index": "0", "parameters": [{"type": "text", "text": url_suffix}]}
+        )
+    if quick_reply_payload is not None:
+        components.append(
+            {
+                "type": "button",
+                "sub_type": "quick_reply",
+                "index": "0",
+                "parameters": [{"type": "payload", "payload": quick_reply_payload}],
+            }
+        )
+    return {"type": "template", "template": {"name": name, "language": {"code": language}, "components": components}}
 
 
 def link_button(body: str, *, display_text: str, url: str) -> dict:

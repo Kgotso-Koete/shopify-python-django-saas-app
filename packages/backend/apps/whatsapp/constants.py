@@ -55,9 +55,9 @@ class ConnectionMethod(models.TextChoices):
 
     # From the seed_whatsapp command, removed in Step 1.17 with the numbers it made; no row uses it now.
     SEED = "SEED", "Seed command"
-    # An organization admin typed the ids and secrets into the WhatsApp tab's form (user story 11).
+    # An organization admin typed the ids and secrets into the WhatsApp tab's form (user story WA.D3.OM.J1.A1).
     MANUAL = "MANUAL", "Form"
-    # Phase 4: Meta's Embedded Signup popup (user story 18).
+    # Phase 4: Meta's Embedded Signup popup (user story WA.D3.OM.J1.A2).
     EMBEDDED_SIGNUP = "EMBEDDED_SIGNUP", "Embedded Signup"
 
 
@@ -85,6 +85,11 @@ class MessageKind(models.TextChoices):
     # Outbound only: a picture sent on its own, such as a store's logo at its welcome (Step 2.8,
     # finding 13). An inbound picture is still UNSUPPORTED.
     IMAGE = "IMAGE", "Image"
+    # Outbound only: a file Meta holds by its media id, such as an invoice's PDF (plan phase 4, Step 4.5b).
+    DOCUMENT = "DOCUMENT", "Document"
+    # Outbound only: an approved message template with its blanks filled in, the one kind Meta lets a
+    # business send after the 24-hour window, such as an order update (plan phase 4, Step 4.3d-2).
+    TEMPLATE = "TEMPLATE", "Template"
 
 
 class MessageDirection(models.TextChoices):
@@ -129,6 +134,24 @@ class ConversationMode(models.TextChoices):
     WHATSAPP_FORM = "WHATSAPP_FORM", "Menus and forms"
     # Free text goes to the AI assistant, which calls the same operations as the menus (plan D10).
     AGENTIC = "AGENTIC", "AI assistant"
+
+
+class TemplateStatus(models.TextChoices):
+    """
+    Where a message template is in Meta's review (plan Step 4.7, user story WA.D3.OM.J2.A2), in this app's
+    own names; services/templates.py translates Meta's statuses as they come in.
+    https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates
+    """
+
+    # Submitted or edited, not decided yet; Meta's PENDING, or IN_APPEAL after a rejection is appealed.
+    IN_REVIEW = "IN_REVIEW", "In review"
+    APPROVED = "APPROVED", "Approved"
+    # Meta's rejected_reason says why.
+    REJECTED = "REJECTED", "Rejected"
+    # Meta paused it after poor feedback from the people who got it; it can't be sent until it's unpaused.
+    PAUSED = "PAUSED", "Paused"
+    # It can't be sent at all: Meta's DISABLED, and any status Meta adds later that this app doesn't know.
+    DISABLED = "DISABLED", "Disabled"
 
 
 class SendBackend(models.TextChoices):

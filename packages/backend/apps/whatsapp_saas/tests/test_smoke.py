@@ -37,7 +37,7 @@ from .. import tasks as saas_tasks
 from ..flows import SCREEN_NAMES
 from .chat import Screen
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D3.OM.J1.A1", "WA.D1.OM.J1.A2", "WA.D2.OM.J2.A1")]
 
 WEBHOOK_URL = "/api/whatsapp/webhook/"
 APP_SECRET = "our-app-secret"

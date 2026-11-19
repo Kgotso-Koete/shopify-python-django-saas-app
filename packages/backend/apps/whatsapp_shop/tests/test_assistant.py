@@ -1,7 +1,7 @@
 """
-Tests for the store assistant (WhatsApp plan Step 2.5, phase 2 decisions 2 and 3, user stories 12,
-13 and 21): on a number set to the assistant, a customer's words go to it, with this app's tools and
-instructions.
+Tests for the store assistant (WhatsApp plan Step 2.5, phase 2 decisions 2 and 3, user story
+WA.D4.SC.J1.A4): on a number set to the assistant, a customer's words go to it, with this app's tools
+and instructions.
 
 - the model is told which shop it serves, by the store's own name in Shopify, and gets exactly four
   tools: finding products, showing a list of products, showing a product and showing the cart; none
@@ -33,7 +33,7 @@ from ..models import StoreCustomer
 from ..tools import TOOLS
 from .chat import customer_of, selling_number, send, store
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.story("WA.D4.SC.J1.A4")]
 
 
 def product(number=1):

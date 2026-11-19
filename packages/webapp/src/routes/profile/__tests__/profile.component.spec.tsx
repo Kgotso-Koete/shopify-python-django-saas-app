@@ -1,3 +1,5 @@
+// Kind of test: integration (agents.md section 2.5). Why: the WhatsApp plan's tests here render the profile page
+// with the real Apollo hooks; the backend is Apollo's MockedProvider.
 import { currentUserFactory, fillCommonQueryWithUser } from '@sb/webapp-api-client/tests/factories';
 import { screen } from '@testing-library/react';
 
@@ -31,7 +33,7 @@ describe('Profile: Component', () => {
   });
 
   // The WhatsApp section, from @sb/webapp-whatsapp (WhatsApp plan Step 1.14).
-  it('should show the WhatsApp section', async () => {
+  it('WA.D1.OM.J1.A2 should show the WhatsApp section', async () => {
     render(<Component />, { apolloMocks: [fillCommonQueryWithUser(currentUserFactory())] });
 
     // Upstream's CardTitle is a div, not a heading, so the card is found by its words.

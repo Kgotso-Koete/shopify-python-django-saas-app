@@ -119,3 +119,34 @@ services:
       - '${MAILCATCHER_WEB_HOST_PORT:-1080}:1080'
       - '${MAILCATCHER_SMTP_HOST_PORT:-1025}:1025'
     restart: always
+
+  # Fork addition (WhatsApp plan Step 4.6): an optional ngrok tunnel, so Meta's and Shopify's webhooks
+  # reach the backend on this machine, at https://<NGROK_DOMAIN>/api/whatsapp/webhook/ and
+  # https://<NGROK_DOMAIN>/api/shopify/webhooks/.
+  #
+  # NGROK_DOMAIN in the root .env is the switch (see .env.shared): `pnpm saas up` names this service
+  # when it's set (packages/internal/cli/src/lib/composeServices.ts). The "ngrok" profile keeps Compose
+  # from starting it on its own, so with NGROK_DOMAIN empty nothing about the tunnel runs.
+  #
+  # ngrok's Docker guide: https://ngrok.com/docs/using-ngrok-with/docker/
+  # The agent's flags (--url replaced the deprecated --domain): https://ngrok.com/docs/agent/cli/
+  # Compose profiles: https://docs.docker.com/compose/how-tos/profiles/
+  ngrok:
+    profiles: ['ngrok']
+    # The official image, pinned to an exact version.
+    image: ngrok/ngrok:3.39.13-alpine
+    # An HTTP tunnel from the static domain to the backend service's own port on Compose's network
+    # (5001 inside the container, whatever BACKEND_HOST_PORT maps it to on this machine). The variables
+    # default to empty because Compose reads this file on every command; `pnpm saas up` refuses a
+    # domain without its authtoken.
+    command: ['http', 'backend:5001', '--url=${NGROK_DOMAIN:-}']
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+    ports:
+      # The agent's page listing each request it forwarded, at http://localhost:4040.
+      - '${NGROK_INSPECT_HOST_PORT:-4040}:4040'
+    # Opens the tunnel only once the backend container has started.
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped

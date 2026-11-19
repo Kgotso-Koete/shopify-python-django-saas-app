@@ -20,6 +20,7 @@ API version 2026-10: https://shopify.dev/docs/api/storefront/latest
 
 import json
 from typing import Any
+from urllib.parse import quote
 
 import requests
 from django.conf import settings
@@ -281,11 +282,20 @@ def get_product(shop, product_id: str) -> dict[str, Any] | None:
     return product
 
 
-def create_cart(shop, variant_id: str, *, phone: str | None) -> dict[str, Any]:
-    """A new cart holding one of the variant, for the customer with this phone (E.164, with +) if known."""
+def create_cart(
+    shop, variant_id: str, *, phone: str | None, attributes: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """
+    A new cart holding one of the variant, for the customer with this phone (E.164, with +) if known.
+    `attributes` are set on the cart, and "carry over to the resulting order after checkout"
+    (https://shopify.dev/docs/api/storefront/latest/objects/Attribute), as the WhatsApp checkout code
+    does (WhatsApp plan phase 4, decision 2).
+    """
     cart_input = {"lines": [_line(variant_id)]}
     if phone:
         cart_input["buyerIdentity"] = {"phone": phone}
+    if attributes:
+        cart_input["attributes"] = [{"key": key, "value": value} for key, value in attributes.items()]
     return _cart_change(shop, CART_CREATE, "cartCreate", {"input": cart_input}, variant_id=variant_id, had=0)
 
 
@@ -298,7 +308,7 @@ def add_to_cart(shop, cart_id: str, variant_id: str, *, had: int = 0) -> dict[st
     return _cart_change(shop, CART_LINES_ADD, "cartLinesAdd", variables, variant_id=variant_id, had=had)
 
 
-def cart_page_url(shop, cart: dict[str, Any]) -> str:
+def cart_page_url(shop, cart: dict[str, Any], *, attributes: dict[str, str] | None = None) -> str:
     """
     The shop's own cart page holding `cart`'s items (WhatsApp plan Step 2.8, finding 10): a cart
     permalink, "https://{shop}.myshopify.com/cart/#{variant_id}:#{quantity}(,...)", where
@@ -306,10 +316,18 @@ def cart_page_url(shop, cart: dict[str, Any]) -> str:
     https://shopify.dev/docs/apps/build/checkout/create-cart-permalinks
     It's a copy of the chat's cart on the website; changes made there don't come back to the chat.
     Like the checkout link, it "cannot bypass storefront passwords".
+
+    `attributes` go on the link as the same page documents, `attributes[key]=value`, and reach the
+    order placed from that cart; that this holds with storefront=true was shown on a dev store
+    (WhatsApp plan section 13, Experiment 4.3; phase 4, decision 21). The brackets are left as written
+    there, and each key and value is escaped.
     """
     # A variant's id is "gid://shopify/ProductVariant/11"; the permalink takes its number.
     items = ",".join(f"{line['variant_id'].rsplit('/', 1)[-1]}:{line['quantity']}" for line in cart["lines"])
-    return f"https://{shop.shop_domain}/cart/{items}?storefront=true"
+    extra = "".join(
+        f"&attributes[{quote(key, safe='')}]={quote(value, safe='')}" for key, value in (attributes or {}).items()
+    )
+    return f"https://{shop.shop_domain}/cart/{items}?storefront=true{extra}"
 
 
 def website_cart_url(shop) -> str:
